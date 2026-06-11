@@ -1,0 +1,362 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{linknavy}{RGB}{25,50,110}
+\usepackage[colorlinks=true,linkcolor=linknavy,citecolor=linknavy,urlcolor=linknavy]{hyperref}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\newtheorem{proposition}{Proposition}
+\theoremstyle{definition}
+\newtheorem{axiom}{Axiom}
+\newtheorem{definition}{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+
+\newcommand{\Th}{T_h}
+\newcommand{\Tc}{T_c}
+\newcommand{\Ts}{T_s^{\mathrm{eff}}}
+\newcommand{\eps}{\varepsilon}
+
+\title{Thermodynamic Bounds and Mass-Trade Criteria for\\ Heat Rejection in Orbital Data Centers}
+\author{Dan Lee-Odinson\thanks{Contact: dan.lee.odinson@gmail.com. ORCID: \href{https://orcid.org/0009-0009-9504-0796}{0009-0009-9504-0796}. See Acknowledgments for a description of the multi-model derivation and audit methodology.}}
+\date{June 11, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Orbital data centers must reject waste heat by far-field thermal radiation, and the resulting radiator area requirements are widely regarded as the binding engineering constraint on the concept. We derive, within a gray-body effective-sink radiator model, a set of exact thermodynamic results governing this constraint. First, we prove that the Carnot efficiency evaluated at the environmental sink temperature is unattainable by any heat engine with a material cold reservoir at finite radiator area and positive throughput, and we characterize both limiting routes (infinite area at fixed throughput; vanishing throughput at fixed area). Second, we show that radiator area per unit work output is minimized, along the reversible lower envelope, at a cold-side temperature $\Tc^{*}=\tfrac{3}{4}\Th$ with a $25\%$ efficiency ceiling, and we give an exact implicit characterization of the nonzero-sink optimum, $\Tc^{*}/\Th=(3+q^{4})/4$ with $q=\Ts/\Tc^{*}$, whose fractional shift above $\tfrac{3}{4}\Th$ is exactly $q^{4}/3$. Third, we prove that converting waste heat to work before rejection multiplies required radiator area by at least $(\Th/\Tc)^{3}$, with equality only for reversible conversion at zero sink temperature. Fourth, we show no cyclic system can sustain its compute load solely from its own waste heat. Finally, we state reduced-order mass-trade criteria for radiator-type selection, heat-pump inclusion, and topping-cycle inclusion. All quantitative claims are verified by an accompanying machine-executable test suite (Python and Wolfram Language). The central design implication is that orbital thermal management is a \emph{temperature-architecture} problem: within the model, the temperature at which heat finally leaves the system dominates fixed-temperature efficiency optimizations.
+\end{abstract}
+
+\section{Introduction}
+
+In June 2026, the World Economic Forum cautioned an industry actively raising capital for orbital data centers that the physics of cooling in orbit ``may be more complex than some think'' \cite{wef2026}. The caution is quantifiable. A computing facility in vacuum has no air and no water to carry heat away; essentially all waste heat must leave by far-field thermal radiation, governed by the Stefan--Boltzmann law, and at server-class temperatures the required radiating area is of order $10^{3}\,\mathrm{m^{2}}$ per megawatt (\cite{eetimes2026}; Corollary~\ref{cor:refscale} supplies the internal reference calculation of $2630\,\mathrm{m^{2}}$ per megawatt under stated assumptions). Every square meter of it must be launched.
+
+Discussion of this problem in the technical and trade literature frequently couples two further ideas: that the $2.7\,$K cosmic microwave background is an enormously favorable cold reservoir for waste-heat-to-electricity conversion, and that such conversion could substantially offset the power and cooling budget of an orbital facility. Both ideas require care. The cold side of any real heat engine is a physical radiator whose temperature is set by its own radiative balance rather than by the sky temperature; and extracting work before rejection \emph{lowers} the rejection temperature, which by the quartic law \emph{increases} the radiator area required per watt rejected.
+
+This paper makes those folk observations precise. Working within an explicitly scoped gray-body, isothermal, effective-sink radiator model (Section~\ref{sec:model}), we prove a hierarchy of results separated into three levels: \textbf{Level A} model identities (Section~\ref{sec:levelA}), \textbf{Level B} reversible thermodynamic lower bounds (Section~\ref{sec:levelB}), and \textbf{Level C} reduced-order architecture decision criteria with empirical inputs (Section~\ref{sec:levelC}). The main results are:
+
+\begin{enumerate}
+  \item \textbf{Non-attainability} (Theorem~\ref{thm:nonattain}): no engine with a material cold reservoir attains the sink-temperature Carnot efficiency at finite radiator area and positive heat or work throughput; the limit is approached only as $A\to\infty$ at fixed throughput, or as throughput vanishes at fixed area. Efficiencies numerically close to the limit are not forbidden but command extreme area (a worked example at $99\%$ efficiency requires ${\sim}6.4\times10^{9}\,\mathrm{m^{2}}$ per megawatt).
+  \item \textbf{The $\tfrac{3}{4}$ rule} (Theorem~\ref{thm:34rule}): along the reversible lower envelope, radiator area per unit work is minimized at $\Tc^{*}=\tfrac{3}{4}\Th$, with efficiency ceiling $25\%$. For irreversible engines with efficiency a fixed fraction of Carnot, the optimum shifts upward (we tabulate examples). This optimum is distinct in both objective and transfer law from the Curzon--Ahlborn maximum-power result \cite{curzon1975}, and is consistent with radiator-limited space-power optimization studies \cite{nasa1989,energyreports2022}.
+  \item \textbf{Exact nonzero-sink correction} (Theorem~\ref{thm:sink}): the optimum satisfies the quintic $4\Tc^{5}-3\Th \Tc^{4}-\Th (\Ts)^{4}=0$, equivalently $\Tc^{*}/\Th=(3+q^{4})/4$ with $q=\Ts/\Tc^{*}$, giving an exact fractional shift $q^{4}/3$ above $\tfrac{3}{4}\Th$ (below $2\%$ for $q\le0.49$).
+  \item \textbf{Conversion area penalty} (Corollary~\ref{cor:penalty}): any engine rejecting at $\Tc<\Th$ requires at least $(\Th/\Tc)^{3}$ times the radiator area of direct rejection at $\Th$; the penalty is strictly larger for irreversible engines and for any nonzero sink. At the $\tfrac{3}{4}$ optimum the minimum penalty is $(4/3)^{3}\approx2.37$ for $25\%$ recovery.
+  \item \textbf{No self-powering} (Theorem~\ref{thm:selfpower}): a cyclic system cannot sustain a positive compute load solely by reconverting its own waste heat; recirculated recovery sustains at most $1/(1-\eta)$ watts of compute per external watt.
+\end{enumerate}
+
+Thermoradiative (negative-illumination) devices \cite{strandberg2011,santhanam2016}, in which part of the outgoing photon flux is converted directly to electrical work, fall outside the premise of a material cold reservoir in Theorem~\ref{thm:nonattain} and require a separate detailed-balance treatment; we delimit but do not analyze them. High-temperature wide-bandgap electronics, which set how far the hot side can be raised in practice, are likewise treated as empirical inputs \cite{gesic,uiucgan}.
+
+All quantitative claims in this paper are verified by a machine-executable test suite provided as supplementary material in two independent forms: a Python assertion script and a Wolfram Language symbolic verification suite. The manuscript was developed through an iterative adversarial workflow across multiple frontier AI systems with computer-algebra verification; see Acknowledgments.
+
+\section{Model, Axioms, and Definitions}\label{sec:model}
+
+\subsection{Scope}
+
+All results are exact within the following model: a gray, diffuse, isothermal radiating surface of hemispherical infrared emissivity $\eps\in(0,1]$ and total emitting area $A$ (a two-sided panel of planform area $A_{p}$ has $A=2A_{p}$), exchanging with a lumped radiative environment characterized by a single view-factor-weighted effective sink temperature $\Ts=F^{1/4}T_{s}$, where $T_{s}$ is an environmental brightness temperature and $F\in[0,1]$ a view-factor weighting. Where environmental and surface effects can be represented by fixed effective properties and a lumped sink temperature, they alter only model parameters; where absorbed loads, spectral properties, geometry, or temperatures depend on the design variables, they may also alter the functional form of the heat balance and the resulting optimum. Direct application to a flight architecture therefore requires separate environmental heat-load and view-factor modeling \cite{nasaguidebook,spenvis}.
+
+Terminal heat rejection to vacuum occurs in this model by far-field electromagnetic radiation. Open-cycle mass ejection and deliberate export of coherent or nonthermal radiation are outside the model. Near-field radiative transfer and vacuum phonon tunneling operate only across sub-wavelength gaps and require a second material body that must itself radiate; they are internal transport mechanisms, not terminal rejection.
+
+The worked sink value $\Ts=220\,$K used in examples is an \emph{illustrative} effective sink temperature for low Earth orbit under the lumped model, not a claim about the temperature of space; published lumped values for Earth-viewing surfaces span roughly $200$--$260\,$K (e.g., \cite{nasaguidebook,spenvis}).
+
+\subsection{Axioms}
+
+\begin{axiom}[Gray-body radiative rejection]\label{ax:sb}
+Net radiated power is
+\begin{equation}
+P_{\mathrm{net}}=\eps\sigma A\bigl(\Tc^{4}-(\Ts)^{4}\bigr),
+\qquad \sigma=5.670374419\times10^{-8}\,\mathrm{W\,m^{-2}\,K^{-4}}.
+\label{eq:sb}
+\end{equation}
+\end{axiom}
+
+\begin{axiom}[Second law]\label{ax:carnot}
+Any cyclic engine operating between reservoirs at $\Th>\Tc$ satisfies $\eta\le1-\Tc/\Th$; any cyclic heat pump satisfies $\mathrm{COP}_{c}=Q_{c}/W\le \Tc/(\Th-\Tc)$. Equivalently (Kelvin--Planck), no cyclic device converts heat drawn from a single thermal reservoir entirely into work.
+\end{axiom}
+
+\begin{axiom}[First law]\label{ax:first}
+For an engine, $Q_{h}=W+Q_{c}$; for a heat pump, $Q_{h}=Q_{c}+W$.
+\end{axiom}
+
+\begin{axiom}[Lumped compute heat model]\label{ax:compute}
+In steady operation, electrical energy not exported in signals, stored energy, or other retained forms ultimately appears as heat; those fractions are assumed negligible, so compute power $P$ dissipates as heat at the source temperature. Net rejection requires $\Tc>\Ts$.
+\end{axiom}
+
+\begin{definition}[Reversible engine]\label{def:rev}
+An engine attaining equality in the Carnot bound, $\eta=1-\Tc/\Th$. With Axiom~\ref{ax:first} this yields the reversible heat split $Q_{c}/Q_{h}=\Tc/\Th$. All uses of this equality below are labeled reversible; generic engines receive the corresponding inequality bound.
+\end{definition}
+
+Level A results follow from Axioms~\ref{ax:sb} and \ref{ax:first}; Level B results from Axioms~\ref{ax:sb}--\ref{ax:compute} plus Definition~\ref{def:rev} where labeled; Level C results additionally require the reduced-order mass models and empirical parameters identified in Section~\ref{sec:levelC}.
+
+\section{Level A: Model Identities}\label{sec:levelA}
+
+\begin{lemma}[Radiator area requirement]\label{lem:area}
+Rejecting heat flow $Q_{c}>0$ at radiator temperature $\Tc$ requires
+\begin{equation}
+A=\frac{Q_{c}}{\eps\sigma\bigl(\Tc^{4}-(\Ts)^{4}\bigr)}.
+\label{eq:area}
+\end{equation}
+\end{lemma}
+\begin{proof}
+Invert \eqref{eq:sb} with $P_{\mathrm{net}}=Q_{c}$; positive and well defined by Axiom~\ref{ax:compute}.
+\end{proof}
+
+\begin{corollary}[Area ratio between rejection temperatures]\label{cor:ratio}
+For equal heat load and emissivity, rejecting at $T_{2}$ instead of $T_{1}$ (with $T_{2}>T_{1}>\Ts$) changes area by the exact factor
+\begin{equation}
+R=\frac{A_{1}}{A_{2}}=\frac{T_{2}^{4}-(\Ts)^{4}}{T_{1}^{4}-(\Ts)^{4}},
+\end{equation}
+and the zero-sink approximation $R_{0}=(T_{2}/T_{1})^{4}$ carries exact relative deviation
+\begin{equation}
+\frac{R}{R_{0}}-1=\frac{(\Ts/T_{1})^{4}-(\Ts/T_{2})^{4}}{1-(\Ts/T_{1})^{4}}
+\;<\;\frac{(\Ts/T_{1})^{4}}{1-(\Ts/T_{1})^{4}}.
+\end{equation}
+\emph{Worked example} ($T_{1}=293$\,K, $T_{2}=600$\,K, $\Ts=220$\,K): $R_{0}=17.585$ while $R=25.312$ exactly ($R=6697760000/264604779$); the exact ratio is $43.9\%$ greater than the zero-sink estimate, equivalently the estimate is $30.5\%$ below the exact value. The warm sink penalizes the colder radiator disproportionately, so hot rejection is \emph{more} advantageous than the idealized quartic ratio suggests.
+\end{corollary}
+
+\begin{corollary}[Reference scale]\label{cor:refscale}
+$Q_{c}=1\,$MW at $\Tc=293\,$K, $\eps=0.91$, $\Ts\approx0$ requires $A=2630\,\mathrm{m^{2}}$ of emitting surface, i.e.\ ${\sim}1315\,\mathrm{m^{2}}$ of two-sided panel planform, consistent with the ${\sim}1200\,\mathrm{m^{2}/MW}$ figures quoted in the trade literature for slightly different assumptions \cite{eetimes2026}.
+\end{corollary}
+
+\begin{lemma}[COP identity]\label{lem:cop}
+For any heat pump, $\mathrm{COP}_{h}=\mathrm{COP}_{c}+1$.
+\end{lemma}
+\begin{proof}
+Divide $Q_{h}=Q_{c}+W$ (Axiom~\ref{ax:first}) by $W$.
+\end{proof}
+
+\section{Level B: Reversible Thermodynamic Lower Bounds}\label{sec:levelB}
+
+\subsection{Non-attainability of sink-temperature Carnot efficiency}
+
+\begin{theorem}[Non-attainability]\label{thm:nonattain}
+For any finite area $A$ and strictly positive rejected heat flow $Q_{c}$, Lemma~\ref{lem:area} forces
+\begin{equation}
+\Tc^{4}=(\Ts)^{4}+\frac{Q_{c}}{\eps\sigma A}>(\Ts)^{4},
+\qquad\text{hence}\qquad
+\eta\le1-\frac{\Tc}{\Th}<1-\frac{\Ts}{\Th}.
+\end{equation}
+The sink-temperature Carnot value is not attained by any system with finite area and positive heat or work throughput. It is approached only along two limiting routes: (i) at fixed nonzero heat or work throughput, as $A\to\infty$; (ii) at fixed finite area, as throughput $Q_{c}\to0$.
+\end{theorem}
+
+\begin{proof}
+The strict inequality is immediate from Lemma~\ref{lem:area}. \emph{Route (i), fixed heat throughput:} at fixed $Q_{c}>0$, $\Tc^{4}-(\Ts)^{4}=Q_{c}/(\eps\sigma A)\to0$ iff $A\to\infty$. \emph{Route (i), fixed work throughput:} for fixed $W>0$, Axiom~\ref{ax:carnot} gives $Q_{c}/W\ge\Tc/(\Th-\Tc)$, hence
+\begin{equation}
+\frac{A}{W}\;\ge\;\frac{\Tc}{\eps\sigma(\Th-\Tc)\bigl(\Tc^{4}-(\Ts)^{4}\bigr)},
+\label{eq:fixedW}
+\end{equation}
+which diverges as $\Tc\to(\Ts)^{+}$ when $\Ts>0$; for $\Ts=0$ the bound reduces to $1/[\eps\sigma(\Th-\Tc)\Tc^{3}]$, which diverges as $\Tc\to0^{+}$. \emph{Route (ii):} at fixed $A<\infty$, $\Tc^{4}-(\Ts)^{4}\to0$ iff $Q_{c}\to0$.
+\end{proof}
+
+\begin{remark}[Near-limit efficiencies are extreme-area, not impossible]\label{rem:99}
+Claims that obtain ${\sim}99\%$ efficiency merely by substituting the $2.7\,$K cosmic background for the material cold-reservoir temperature are incomplete rather than impossible: a finite-throughput design must solve for $\Tc>T_{s}$ and the associated area. For $\Th=300\,$K, $T_{s}=2.7\,$K, $\Tc=3.0\,$K, reversible efficiency is $99.0\%$, and at $W=1\,$MW the rejected heat is $Q_{c}=W\Tc/(\Th-\Tc)\approx10.1\,$kW, requiring ideal blackbody area $A\approx6.4\times10^{9}\,\mathrm{m^{2}}$ (finite, but roughly six million times the reference scale of Corollary~\ref{cor:refscale}, and far outside the design space this model contemplates).
+\end{remark}
+
+\begin{remark}[Direct radiative converters]
+Thermoradiative and negative-illumination devices \cite{strandberg2011,santhanam2016}, in which part of the outgoing photon flux is converted directly to electrical work, fall outside the premise of a material cold reservoir in Theorem~\ref{thm:nonattain} and require a separate detailed-balance treatment. No claim of uniqueness is made for that architecture, and no second-law exception is implied.
+\end{remark}
+
+\subsection{The \texorpdfstring{$\tfrac{3}{4}$}{3/4} rule}
+
+\begin{theorem}[Reversible lower-envelope optimum, zero sink]\label{thm:34rule}
+For any engine producing work $W$ and rejecting at $\Tc$ through a radiator with $\Ts=0$,
+\begin{equation}
+\frac{A}{W}=\frac{1-\eta}{\eta\,\eps\sigma \Tc^{4}}
+\;\ge\;\frac{1}{\eps\sigma\bigl(\Th \Tc^{3}-\Tc^{4}\bigr)},
+\label{eq:envelope}
+\end{equation}
+with equality iff the engine is reversible. The right-hand side is minimized at
+\begin{equation}
+\Tc^{*}=\tfrac{3}{4}\Th,
+\qquad
+\eta\bigl(\Tc^{*}\bigr)=25\%.
+\end{equation}
+This is the optimum of the reversible lower envelope; it is not the operating optimum of every irreversible engine.
+\end{theorem}
+
+\begin{proof}
+Axiom~\ref{ax:first} gives $Q_{c}=W(1-\eta)/\eta$, and Axiom~\ref{ax:carnot} gives $(1-\eta)/\eta\ge\Tc/(\Th-\Tc)$, establishing \eqref{eq:envelope}. Minimizing the bound is equivalent to maximizing $f(\Tc)=\Th \Tc^{3}-\Tc^{4}$ on $(0,\Th)$:
+\[
+f'(\Tc)=\Tc^{2}\,(3\Th-4\Tc)=0\ \Rightarrow\ \Tc^{*}=\tfrac{3}{4}\Th,
+\qquad
+f''\bigl(\Tc^{*}\bigr)=-\tfrac{9}{4}\Th^{2}<0,
+\]
+and $f\to0$ at both endpoints, so the interior critical point is the global maximum of $f$, hence the global minimum of the bound. The reversible efficiency there is $1-\tfrac{3}{4}=25\%$.
+\end{proof}
+
+\begin{remark}[Irreversible engines]\label{rem:irr}
+For an engine with efficiency law $\eta=a(1-\Tc/\Th)$, $0<a<1$, the area-per-work optimum shifts upward; representative values of the optimal $y^{*}=\Tc/\Th$ are:
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+$a$ (fraction of Carnot) & optimal $\Tc/\Th$\\
+\midrule
+$1.0$ & $0.7500$\\
+$0.8$ & $0.7645$\\
+$0.5$ & $0.7808$\\
+\bottomrule
+\end{tabular}
+\end{center}
+Engine selection in practice requires the engine's actual $\eta(\Tc)$ law.
+\end{remark}
+
+\begin{remark}[Relation to Curzon--Ahlborn]
+The Curzon--Ahlborn efficiency $1-\sqrt{\Tc/\Th}$ \cite{curzon1975} arises in an endoreversible maximum-power model with finite-rate linear heat transfer. Theorem~\ref{thm:34rule} optimizes a different objective (radiator area per unit work) under a radiative $T^{4}$ rejection law; no agreement should be expected. Optima in the neighborhood of $\tfrac{3}{4}\Th$ are reproduced by radiator-limited space-power studies \cite{nasa1989,energyreports2022}.
+\end{remark}
+
+\begin{corollary}[Conversion area penalty]\label{cor:penalty}
+Relative to direct rejection of $Q_{h}$ at $\Th$, any engine rejecting at $\Tc<\Th$ requires, at $\Ts=0$,
+\begin{equation}
+\frac{A_{\mathrm{engine}}}{A_{\mathrm{direct}}}
+=(1-\eta)\Bigl(\frac{\Th}{\Tc}\Bigr)^{4}
+\;\ge\;\Bigl(\frac{\Th}{\Tc}\Bigr)^{3},
+\end{equation}
+with equality only in the reversible limit. At $\Tc=\tfrac{3}{4}\Th$ the minimum penalty is $(4/3)^{3}\approx2.370$ for $25\%$ recovery; irreversibility increases it (e.g.\ $a=0.8$ at the same $\Tc$ gives $\approx2.528$). With a common nonzero sink the exact expression is
+\begin{equation}
+\frac{A_{\mathrm{engine}}}{A_{\mathrm{direct}}}
+=(1-\eta)\,\frac{\Th^{4}-(\Ts)^{4}}{\Tc^{4}-(\Ts)^{4}}
+\;\ge\;\Bigl(\frac{\Th}{\Tc}\Bigr)^{3}\,
+\frac{1-(\Ts/\Th)^{4}}{1-(\Ts/\Tc)^{4}}
+\;>\;\Bigl(\frac{\Th}{\Tc}\Bigr)^{3},
+\end{equation}
+so the cubic penalty is a universal lower bound whose equality requires both reversibility and $\Ts=0$.
+\end{corollary}
+
+\begin{proof}
+$A_{\mathrm{direct}}=Q_{h}/[\eps\sigma(\Th^{4}-(\Ts)^{4})]$ and $A_{\mathrm{engine}}=Q_{h}(1-\eta)/[\eps\sigma(\Tc^{4}-(\Ts)^{4})]$ by Lemma~\ref{lem:area} and Axiom~\ref{ax:first}; apply $1-\eta\ge\Tc/\Th$ (Axiom~\ref{ax:carnot}). For $\Ts>0$, $\Tc<\Th$ makes the final fraction exceed unity.
+\end{proof}
+
+\subsection{Exact nonzero-sink optimum}
+
+\begin{theorem}[Implicit characterization of the nonzero-sink optimum]\label{thm:sink}
+With effective sink $\Ts>0$, the reversible-envelope optimum $\Tc^{*}$ satisfies the quintic stationarity equation
+\begin{equation}
+4\Tc^{5}-3\Th \Tc^{4}-\Th(\Ts)^{4}=0,
+\label{eq:quintic}
+\end{equation}
+equivalently the exact implicit characterization
+\begin{equation}
+\frac{\Tc^{*}}{\Th}=\frac{3+q^{4}}{4},
+\qquad q\equiv\frac{\Ts}{\Tc^{*}},
+\label{eq:fixedpoint}
+\end{equation}
+with exact fractional shift above $\tfrac{3}{4}\Th$ equal to $q^{4}/3$. The optimum is unique in $(\Ts,\Th)$ and strictly increasing in $\Ts$; the shift is at most $0.49^{4}/3\approx1.9216\%$ for $q\le0.49$.
+\end{theorem}
+
+\begin{proof}
+By Lemma~\ref{lem:area} and Definition~\ref{def:rev}, minimizing $A/W$ is equivalent to maximizing
+\[
+g(\Tc)=\frac{(\Th-\Tc)\bigl(\Tc^{4}-(\Ts)^{4}\bigr)}{\Tc}
+=\Th \Tc^{3}-\Tc^{4}-\frac{\Th(\Ts)^{4}}{\Tc}+(\Ts)^{4}.
+\]
+Then $g'(\Tc)=3\Th \Tc^{2}-4\Tc^{3}+\Th(\Ts)^{4}/\Tc^{2}$; setting $g'=0$ and multiplying by $\Tc^{2}>0$ yields \eqref{eq:quintic}. Dividing \eqref{eq:quintic} by $4\Th \Tc^{4}$ gives \eqref{eq:fixedpoint}, and the fractional shift is $\bigl(\Tc^{*}-\tfrac{3}{4}\Th\bigr)/\bigl(\tfrac{3}{4}\Th\bigr)=(q^{4}/4)/(3/4)=q^{4}/3$, monotone in $q$. In reduced variables $y=\Tc/\Th$, $r=\Ts/\Th$, stationarity reads $4y^{5}-3y^{4}=r^{4}$; for $y\ge\tfrac{3}{4}$, $\frac{d}{dy}(4y^{5}-3y^{4})=4y^{3}(5y-3)>0$, so the physical root is unique and strictly increasing in $\Ts$. Since $g(\Ts)=g(\Th)=0$ with $g>0$ between, the stationary point is the interior maximum.
+\end{proof}
+
+\begin{remark}[Computation]
+The fixed-point map $\Phi(T)=\tfrac{\Th}{4}\bigl[3+(\Ts/T)^{4}\bigr]$ has $|\Phi'(\Tc^{*})|=4q^{4}/(3+q^{4})<1$ for all physical $q<1$, so iteration of \eqref{eq:fixedpoint} is locally convergent. At the illustrative design point $\Th=600\,$K, $\Ts=220\,$K: $\Tc^{*}=457.98675408138325\,$K (high-precision evaluation of the exact algebraic root; cross-checked by Newton iteration with quintic residual below $10^{-25}$ and by fixed-point iteration), a shift of $+1.7748\%$ matching $q^{4}/3$ to all computed digits. The $\tfrac34$ rule therefore survives at sub-$2\%$ accuracy in the relevant regime, with an analytic error formula in place of numerical tables. No claim is made regarding solvability of \eqref{eq:quintic} by radicals.
+\end{remark}
+
+\subsection{Heat pumps and self-powering}
+
+\begin{theorem}[Heat-pump overhead and area ratio]\label{thm:pump}
+Pumping the thermal load $Q_{c}$ extracted at $\Tc$ up to rejection at $\Th$ requires work
+$W/Q_{c}=1/\mathrm{COP}_{c}\ge(\Th-\Tc)/\Tc$, and the radiator must reject $Q_{h}=Q_{c}(1+1/\mathrm{COP}_{c})$. Pumping from unpumped rejection temperature $T_{1}$ to pumped temperature $T_{2}$ with common sink $\Ts$, equal emissivity and view geometry,
+\begin{equation}
+\frac{A_{\mathrm{pump}}}{A_{\mathrm{direct}}}
+=\Bigl(1+\frac{1}{\mathrm{COP}_{c}}\Bigr)\,
+\frac{T_{1}^{4}-(\Ts)^{4}}{T_{2}^{4}-(\Ts)^{4}}.
+\end{equation}
+\emph{Worked example} ($T_{1}=353$\,K, $T_{2}=520$\,K, $\Ts=220$\,K, $\mathrm{COP}_{c}=1.15$): exact ratio $0.348$ (zero-sink approximation $0.397$). At $\Tc=353$\,K, $\Th=520$\,K the Carnot bounds are $\mathrm{COP}_{c}\le353/167\approx2.114$ and $\mathrm{COP}_{h}\le520/167\approx3.114$, consistent with Lemma~\ref{lem:cop}; minimum overhead is $0.473$\,W per watt of load. The range $\mathrm{COP}_{c}\approx1.0$--$1.3$ used in examples is an empirical parameter for vapor-compression machines at ${\sim}170\,$K lift, not derived from the axioms.
+\end{theorem}
+
+\begin{proof}
+Axioms~\ref{ax:carnot}--\ref{ax:first}, Lemmas~\ref{lem:area} and \ref{lem:cop}.
+\end{proof}
+
+\begin{theorem}[No waste-heat self-powering]\label{thm:selfpower}
+No cyclic system can sustain a positive compute load solely by converting its own internally generated waste heat back into work. Under Axiom~\ref{ax:compute} with compute power $P$, recovery efficiency $\eta<1$ (strict by Theorem~\ref{thm:nonattain} at finite area and positive throughput), and recovered work recirculated to the bus,
+\begin{equation}
+P_{\mathrm{ext}}=P(1-\eta)>0 .
+\end{equation}
+External energy resources other than the waste heat itself (solar, nuclear, beamed, or stored chemical) are outside this claim.
+\end{theorem}
+
+\begin{proof}
+Steady-state bus balance: $P=P_{\mathrm{ext}}+W_{\mathrm{rec}}$ with $W_{\mathrm{rec}}=\eta P$, so $P_{\mathrm{ext}}=P(1-\eta)>0$. Self-powering would require $\eta\ge1$: a cyclic device converting heat from a single effective reservoir entirely into work, contradicting the Kelvin--Planck statement (Axiom~\ref{ax:carnot}).
+\end{proof}
+
+\begin{remark}
+Recirculation sustains $P/P_{\mathrm{ext}}=1/(1-\eta)$ watts of compute per external watt ($\eta=0.25$ gives $1.33$). Recovery therefore reduces the external supply requirement by a bounded factor and cannot eliminate it.
+\end{remark}
+
+\section{Level C: Architecture Decision Criteria}\label{sec:levelC}
+
+The following are decision criteria under explicitly reduced mass models with empirical inputs; their verdicts flip with parameter values, while their algebraic validity is parameter-independent. Empirical parameters appearing below (areal densities $\rho_{A}$, specific masses, COP values, margin factors $\delta$) are catalogued in the supplementary material and must be normalized to equal delivered duty.
+
+\begin{proposition}[Radiator selection]\label{prop:p1}
+Let $\rho_{A}$ denote effective system areal density normalized to equal delivered rejection capacity (equal rejected power, operating temperature, effective emissivity, view geometry, lifetime and availability). Droplet radiators are mass-favorable over solid panels iff
+\begin{equation}
+\rho_{A,\mathrm{droplet}}\,(1+\delta_{\mathrm{capture}})
+<\rho_{A,\mathrm{solid}}\,(1+\delta_{\mathrm{debris}}).
+\end{equation}
+\end{proposition}
+
+\begin{proposition}[Heat-pump inclusion: necessary first-order condition]\label{prop:p2}
+Under the stated reduced mass model, including pump and ancillary masses, active thermal upgrade is mass-favorable only if
+\begin{equation}
+\rho_{A}\,\bigl(A_{\mathrm{direct}}-A_{\mathrm{pump}}\bigr)
+>\frac{Q_{c}}{\mathrm{COP}_{c}}\,m_{\mathrm{array}}
++M_{\mathrm{pump}}+M_{\mathrm{ancillary}},
+\end{equation}
+with $A_{\mathrm{pump}}$ from Theorem~\ref{thm:pump} and $m_{\mathrm{array}}$ the array specific mass (kg per electrical watt). A full verdict requires the complete mass ledger.
+\end{proposition}
+
+\begin{proposition}[Topping-cycle inclusion]\label{prop:p3}
+With engine specific mass per watt of thermal input $s_{h}=M_{\mathrm{engine}}/Q_{h}$, the engine is mass-favorable under the reduced model iff
+\begin{equation}
+s_{h}<\eta\,m_{\mathrm{array}}
++\rho_{A}\,\frac{A_{\mathrm{direct}}-A_{\mathrm{engine}}}{Q_{h}},
+\end{equation}
+equivalently, per watt recovered ($s_{e}=s_{h}/\eta$), $s_{e}<m_{\mathrm{array}}+\rho_{A}(A_{\mathrm{direct}}-A_{\mathrm{engine}})/(\eta Q_{h})$. Since $A_{\mathrm{engine}}>A_{\mathrm{direct}}$ (Corollary~\ref{cor:penalty}), the area term is negative: the engine must overcome both its own mass and its area penalty, with $\eta\le\tfrac14$ at the reversible-envelope optimum.
+\end{proposition}
+
+\section{Discussion}\label{sec:discussion}
+
+Within the adopted radiator model, increasing rejection temperature reduces required emitting area by the exact factor of Corollary~\ref{cor:ratio}, and a warm sink amplifies the effect. Whether that reduction yields a lower-mass, lower-power, more reliable, or longer-lived complete architecture is governed by the Level C criteria and their empirical inputs, notably the maximum qualified junction temperature of the compute technology: silicon's practical limit is typically near $100$--$150\,^{\circ}$C, while SiC and GaN devices have demonstrated operation at $500$--$800\,^{\circ}$C \cite{gesic,uiucgan}, making wide-bandgap electronics the natural lever for hot-side elevation. Within the model, rejection temperature is the budget from which every other thermal choice is purchased.
+
+The results bound, rather than recommend, waste-heat recovery: Corollary~\ref{cor:penalty} prices recovery in area (a minimum of $2.37\times$ at $25\%$ recovery), Theorem~\ref{thm:selfpower} caps what it can return, and Proposition~\ref{prop:p3} states the exact condition under which its mass trade closes. Thermoradiative conversion, in which the radiator surface is itself the generator, is the one architecture outside these bounds and merits the separate detailed-balance analysis indicated in Section~\ref{sec:levelB}.
+
+\textbf{Limitations.} All results are exact only within the gray-body, isothermal, effective-sink model. Design-dependent absorbed loads, spectral and directional surface properties, non-isothermal radiators, multi-surface view factors, and transient orbital environments can alter the functional form of the heat balance and hence the optima. Flight application requires environment-resolved thermal modeling \cite{nasaguidebook}. The Level C criteria are first-order mass conditions; a complete system trade requires the full mass and reliability ledger.
+
+\section{Conclusion}
+
+The complexity the World Economic Forum warned of in June 2026 is real, and within the adopted model it is also exactly characterizable. The temperature at which heat finally leaves the system enters the area requirement quartically and dominates fixed-temperature efficiency optimization. The reversible-envelope optimum for combined rejection and recovery sits at $\Tc^{*}=\tfrac34\Th$, with a sink correction of exactly $q^{4}/3$. Conversion before rejection always costs area. No architecture bootstraps from its own waste heat. These bounds frame the empirical engineering trades that will determine whether orbital computing closes as a system. The bounds are proved and the trades are stated. What remains is engineering.
+
+\section*{Acknowledgments}
+
+This manuscript came out of an iterative, adversarial workflow I ran across multiple AI systems: derivations and drafting by Claude Fable 5 (Anthropic), literature-armed review by Perplexity deep research, and two formal proof audits with independent computer-algebra verification by GPT~5.5 using the Wolfram plugin. Each round's corrections are recorded in the revision history of the supplementary source document, and every quantitative claim is machine-verified by the supplementary test suites. Remaining errors are mine.
+
+\section*{Data and Code Availability}
+
+Supplementary material accompanying this preprint includes: (i) a Python assertion suite verifying every central numerical claim; (ii) a Wolfram Language symbolic verification suite (stationarity, second-order conditions, limits, exact rationals, and high-precision roots); and (iii) the audited source document with full revision history.
+
+\begin{thebibliography}{12}
+\bibitem{curzon1975} F.~L. Curzon and B.~Ahlborn, ``Efficiency of a Carnot engine at maximum power output,'' \emph{American Journal of Physics} \textbf{43}, 22--24 (1975).
+\bibitem{strandberg2011} R.~Strandberg, ``Theoretical efficiency limits for thermoradiative energy conversion,'' \emph{Journal of Applied Physics} \textbf{109}, 104512 (2011).
+\bibitem{santhanam2016} P.~Santhanam and S.~Fan, ``Thermal-to-electrical energy conversion by diodes under negative illumination,'' \emph{Physical Review B} \textbf{93}, 161410(R) (2016).
+\bibitem{nasa1989} J.~A. Bamberger et al., ``Megawatt Class Nuclear Space Power Systems (MCNSPS) conceptual design and evaluation report,'' NASA NTRS 19890013610 (1989).
+\bibitem{energyreports2022} Y.~Zhang et al., ``Performance analysis and optimization of an irreversible Carnot heat engine cycle for space power plant,'' \emph{Energy Reports} \textbf{8} (2022).
+\bibitem{nasaguidebook} NASA, \emph{Passive Thermal Control Engineering Guidebook}, v4.0, NTRS 20230013900 (2023).
+\bibitem{spenvis} ESA, ``Satellite irradiation: solar, albedo and Earth infrared environments,'' SPENVIS background documentation.
+\bibitem{lapotin2022} A.~LaPotin et al., ``Thermophotovoltaic efficiency of 40\%,'' \emph{Nature} \textbf{604}, 287--291 (2022).
+\bibitem{gesic} GE Research, ``SiC semiconductor device operation at extreme temperatures,'' IMAPS (demonstrations to $500\,^{\circ}$C junction temperature; intrinsic capability toward $800\,^{\circ}$C).
+\bibitem{uiucgan} University of Illinois ECE, ``Record-setting gallium nitride transistor operates at $800\,^{\circ}$C'' (December 2025).
+\bibitem{eetimes2026} EE Times, ``The hidden physics of running data centers in orbit'' (February 2026).
+\bibitem{wef2026} World Economic Forum, ``Why cooling is the real obstacle to space-based data centres'' (June 2026).
+\end{thebibliography}
+
+\end{document}
