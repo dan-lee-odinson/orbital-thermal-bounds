@@ -6,7 +6,7 @@
 and
 
 # The AI1 Design Point: A Bounds-Based Analysis of SpaceX's Orbital Data-Center Satellite
-*Companion paper to "Thermodynamic Bounds" applying its radiator-area bounds to the industrial design point: SpaceX's AI1 Satellite announcement. Included are the preprint, its LaTeX source, and Python verification suite. (See /Companion )*
+*Companion paper to "Thermodynamic Bounds" applying its radiator-area bounds to the industrial design point: SpaceX's AI1 Satellite announcement. Included are the preprint, its LaTeX source, and Python verification suite. (see `companion/`)*
 
 **Archived version:** DOI: [https://doi.org/10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)
 
@@ -90,20 +90,23 @@ Every reported figure in the paper traces to a quoted source (the key statements
 
 | File | Description |
 |---|---|
-| `companion/ai1-design-point.pdf` | The companion paper (8 pages, Revision 4, review-approved) |
-| `companion/ai1-design-point.tex` | LaTeX source |
+| `companion/ai1-design-point-r4.pdf` | The companion paper (8 pages, Revision 4, review-approved, DOI-stamped) |
+| `companion/ai1-design-point.tex` | LaTeX source (Revision 4) |
 | `companion/verify_ai1.py` | Assertion suite: both area interpretations, both power bases, both sensitivity branches, overhead cases, display-rounding policy. Run: `python3 verify_ai1.py` |
+| `companion/response-to-review.md` | Response to the first formal review round (workflow record) |
+| `companion/response-to-second-review.md` | Response to the second formal review round (workflow record) |
+| `companion/response-to-final-review.md` | Response to the final review round (workflow record) |
 
 The suite's expected output states its scope precisely: "All radiator-model calculations and manuscript display-rounding assertions pass. External thermophysical property values are not computed by this suite." Ammonia properties are reference values from the NIST Chemistry WebBook (SRD 69), cited in the paper.
 
 ### How to cite the companion paper
 
-> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. [(https://doi.org/10.5281/zenodo.20670772)](https://doi.org/10.5281/zenodo.20670772)]
+> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. [https://doi.org/10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)
 
 BibTeX:
 
 ```bibtex
-@misc{leeodinson2026orbitalthermal,
+@misc{leeodinson2026ai1,
   author       = {Lee-Odinson, Dan},
   title        = {The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite},
   year         = {2026},
