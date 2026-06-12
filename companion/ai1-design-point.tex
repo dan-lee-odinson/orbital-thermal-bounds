@@ -15,7 +15,7 @@
 \newcommand{\eps}{\varepsilon}
 
 \title{The AI1 Design Point: A Bounds-Based Analysis of\\ SpaceX's Orbital Data-Center Satellite}
-\author{Dan Lee-Odinson\thanks{Contact: dan.lee.odinson@gmail.com. ORCID: \href{https://orcid.org/0009-0009-9504-0796}{0009-0009-9504-0796}. Companion to the theory preprint at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}. Revision 4, incorporating three rounds of formal peer review; see Acknowledgments.}}
+\author{Dan Lee-Odinson\thanks{Contact: dan.lee.odinson@gmail.com. ORCID: \href{https://orcid.org/0009-0009-9504-0796}{0009-0009-9504-0796}. Companion to the theory preprint at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}. This paper: \href{https://doi.org/10.5281/zenodo.20670772}{doi:10.5281/zenodo.20670772}. Revision 4, incorporating three rounds of formal peer review; see Acknowledgments.}}
 \date{June 12, 2026 (Revision 4)}
 
 \begin{document}
@@ -39,7 +39,7 @@ A caution on evidence quality applies throughout. The inputs are reported figure
 
 Table~\ref{tab:specs} compiles the reported figures with the source class and the reading adopted here.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \footnotesize
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.5cm}p{1.1cm}>{\raggedright\arraybackslash}X}
@@ -80,7 +80,7 @@ The framework's area law (Lemma~1 of \cite{leeodinson2026}) inverts to give the 
 \end{equation}
 Throughout, $\eps = 0.91$ and $\Ts = 220$~K, an illustrative LEO value within the published 200--260~K range. For the double-sided reading, $\Ts$ is to be understood as the \emph{area-weighted effective sink for the combined two-face emitting area}, $(\Ts)^{4} = \tfrac{1}{2}\,(T_{s,1}^{4}+T_{s,2}^{4})$ for equal faces; the two faces of a real panel need not see equal environments. Table~\ref{tab:operating} gives all four combinations of area reading and power basis.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lcc}
 \toprule
@@ -112,7 +112,7 @@ Within the model, the reported thermal choices are point for point the ones the 
 
 A capacity-only sensitivity at fixed radiator temperature is insufficient, because a real system may respond to degraded conditions by increasing temperature, reducing load, or both. Table~\ref{tab:twobranch} therefore reports both branches. The two varied parameters are independent parameters of the lumped model by construction; the physical mechanisms behind them (coating aging and contamination; attitude and view-factor drift) can be correlated in practice, and the specific values are illustrative bounding choices rather than mission-sourced predictions, so the table is an \emph{illustrative combined stress case}, not a forecast.
 
-\begin{table}[h]
+\begin{table}[ht]
 \centering
 \begin{tabular}{lcc}
 \toprule
@@ -152,7 +152,7 @@ This paper came out of an iterative adversarial workflow I ran across multiple A
 
 \section*{Data and Code Availability}
 
-The assertion suite verifying all radiator-model calculations and displayed derived values in this paper, externally sourced thermophysical property data excluded (\texttt{verify\_ai1.py}; fourteen blocks covering both area interpretations, both power bases, both sensitivity branches, the overhead parameterization, display-rounding policy, and the provisional ISS conventions) accompanies it as supplementary material. The theory framework is archived at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893} and mirrored at \url{https://github.com/dan-lee-odinson/orbital-thermal-bounds}.
+The assertion suite verifying all radiator-model calculations and displayed derived values in this paper, externally sourced thermophysical property data excluded (\texttt{verify\_ai1.py}; fourteen blocks covering both area interpretations, both power bases, both sensitivity branches, the overhead parameterization, display-rounding policy, and the provisional ISS conventions) accompanies it as supplementary material. This paper and its suite are archived at \href{https://doi.org/10.5281/zenodo.20670772}{doi:10.5281/zenodo.20670772}; the theory framework is archived at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}; both are mirrored at \url{https://github.com/dan-lee-odinson/orbital-thermal-bounds}.
 
 \begin{thebibliography}{10}
 \bibitem{leeodinson2026} D.~Lee-Odinson, ``Thermodynamic bounds and mass-trade criteria for heat rejection in orbital data centers,'' Zenodo preprint, June 12, 2026. \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}
