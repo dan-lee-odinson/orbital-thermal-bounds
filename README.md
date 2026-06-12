@@ -75,7 +75,7 @@ BibTeX:
 
 On June 9–10, 2026, SpaceX announced AI1, its first orbital data-center satellite. The companion paper in `companion/` applies this repository's thermodynamic bounds to the announced design and establishes its coherence within the gray-body radiator model, under one specific reading of the reported figures.
 
-**Archived version:** Zenodo DOI: *[pending — will be added on publication]*
+**Archived version:** Zenodo DOI: [https://doi.org/10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)
 
 What it shows, briefly: treating the reported 110 m² of radiators as double-sided panel planform (the reading SpaceX itself states — "radiating both sides, orientated knife-edge to the sun"), the implied radiator surface temperature is about 337 K at the 120 kW sustained load and about 353 K if the 150 kW peak runs continuously. The alternative total-emitting-area reading requires 391–412 K, which strongly disfavors the subcritical ammonia loop secondary coverage describes as likely. An illustrative combined stress case (emissivity 0.91 → 0.80, effective sink 220 → 260 K) removes about 40 kW of fixed-temperature capacity — the entire reported peak-to-sustained headroom plus 10 kW — or raises the sustained equilibrium by about 22 K into unreported temperature and pressure limits. The reduced-order model does not rule the design out; margin, the engineering interior, and the economics remain open.
 
@@ -93,9 +93,23 @@ The suite's expected output states its scope precisely: "All radiator-model calc
 
 ### How to cite the companion paper
 
-> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. *[DOI pending]*
+> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. [(https://doi.org/10.5281/zenodo.20670772)](https://doi.org/10.5281/zenodo.20670772)]
 
-A BibTeX entry will be added when the DOI is minted.
+BibTeX:
+
+```bibtex
+@misc{leeodinson2026orbitalthermal,
+  author       = {Lee-Odinson, Dan},
+  title        = {The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite},
+  year         = {2026},
+  month        = jun,
+  publisher    = {Zenodo},
+  version      = {v1},
+  doi          = {10.5281/zenodo.20670772},
+  url          = {https://doi.org/10.5281/zenodo.20670772},
+  note         = {Preprint}
+}
+```
 
 ## License
 
