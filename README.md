@@ -1,11 +1,15 @@
 # Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers
+*Machine-verified thermodynamic bounds for orbital data center thermal architecture: the preprint, its LaTeX source, the audited proof document, and two independent verification suites (Python and Wolfram Language).*
 
-Machine-verified thermodynamic bounds for orbital data center thermal architecture: the preprint, its LaTeX source, the audited proof document, and two independent verification suites (Python and Wolfram Language).
+and
+
+# The AI1 Design Point: A Bounds-Based Analysis of SpaceX's Orbital Data-Center Satellite
+*Companion paper to "Thermodynamic Bounds" applying its radiator-area bounds to the industrial design point: SpaceX's AI1 Satellite announcement. Included are the preprint, its LaTeX source, and Python verification suite. (See /Companion )*
 
 **Author:** Dan Lee-Odinson ([ORCID 0009-0009-9504-0796](https://orcid.org/0009-0009-9504-0796)) | dan.lee.odinson@gmail.com
 
-**Archived version:** [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650894.svg)](https://doi.org/10.5281/zenodo.20650894)
-
+**Archived version:** DOI: [https://zenodo.org/badge/DOI/10.5281/zenodo.20650894.svg)](https://doi.org/10.5281/zenodo.20650894)
+**Archived version:** DOI: [https://doi.org/10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)
 ---
 
 ## What this is
