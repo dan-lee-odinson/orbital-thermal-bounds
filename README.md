@@ -53,7 +53,7 @@ This work was produced through an iterative, adversarial workflow across multipl
 
 ## How to cite
 
-> Lee-Odinson, D. (2026). Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers. Zenodo. [Version 2] [https://doi.org/10.5281/zenodo.20650893](https://doi.org/10.5281/zenodo.20650893)
+> Lee-Odinson, D. (2026). Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers. Zenodo. [Version 3] [https://doi.org/10.5281/zenodo.20650893](https://doi.org/10.5281/zenodo.20650893)
 
 BibTeX:
 
@@ -65,7 +65,7 @@ BibTeX:
   year         = {2026},
   month        = jun,
   publisher    = {Zenodo},
-  version      = {v2},
+  version      = {v3},
   doi          = {10.5281/zenodo.20650893},
   url          = {https://doi.org/10.5281/zenodo.20650893},
   note         = {Preprint}
