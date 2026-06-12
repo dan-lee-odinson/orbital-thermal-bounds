@@ -1,0 +1,170 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{microtype}
+\usepackage{xcolor}
+\definecolor{linknavy}{RGB}{25,50,110}
+\usepackage{xurl}
+\usepackage[colorlinks=true,linkcolor=linknavy,citecolor=linknavy,urlcolor=linknavy]{hyperref}
+
+\newcommand{\Tc}{T_c}
+\newcommand{\Th}{T_h}
+\newcommand{\Ts}{T_s^{\mathrm{eff}}}
+\newcommand{\eps}{\varepsilon}
+
+\title{The AI1 Design Point: A Bounds-Based Analysis of\\ SpaceX's Orbital Data-Center Satellite}
+\author{Dan Lee-Odinson\thanks{Contact: dan.lee.odinson@gmail.com. ORCID: \href{https://orcid.org/0009-0009-9504-0796}{0009-0009-9504-0796}. Companion to the theory preprint at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}. Revision 4, incorporating three rounds of formal peer review; see Acknowledgments.}}
+\date{June 12, 2026 (Revision 4)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+On June 9--10, 2026, SpaceX announced AI1, an orbital data-center satellite reported at 150~kW peak and 120~kW sustained compute with up to 110~m$^{2}$ of deployable liquid radiators. We apply the radiator-area bounds of a contemporaneous, independently derived thermodynamic framework (Lee-Odinson, 2026) to the reported figures, using the reported compute powers as the radiative heat load. Treating the 110~m$^{2}$ as double-sided panel planform (220~m$^{2}$ emitting; SpaceX states the radiators radiate from both sides), the equilibrium radiator temperature is approximately 337~K at the sustained load and approximately 353~K under a continuous-peak hypothetical; a total-emitting-area reading instead requires 391~K to 412~K, which strongly disfavors a conventional subcritical loop using ammonia, the coolant secondary coverage describes as likely, though public information cannot rule the sustained case out. An illustrative combined stress case (emissivity 0.91 to 0.80; effective sink 220 to 260~K) removes about 40~kW of fixed-temperature capacity, consuming the full 30~kW peak-to-sustained headroom plus a further 10~kW, or equivalently raises the sustained-load equilibrium by about 22~K into unreported temperature and pressure limits. The reduced-order radiative model does not rule out the reported design point; allowable operating temperatures, coolant phase and pressure, internal gradients, the complete power budget, and the economics remain unreported and open. All radiator-model calculations and displayed derived values, excluding externally sourced thermophysical property data, are verified by an accompanying assertion suite.
+\end{abstract}
+
+\section{Introduction}
+
+On June 9--10, 2026, ahead of a planned initial public offering, SpaceX released the first detailed design description of AI1, a satellite the company positions as the opening generation of orbital AI data centers, alongside an announced factory (``Gigasat,'' Bastrop, Texas) targeted at a gigawatt per year of orbital compute capacity by late 2027 \cite{dcd2026,toms2026,tomsgigasat2026}. The announcement places a concrete, numerically specified industrial design inside a problem space that until now has been argued mostly in the abstract: whether vacuum heat rejection permits data-center-class computing in orbit, and at what cost in radiator area and mass.
+
+A contemporaneous preprint by the present author derives exact bounds for that problem space within a gray-body effective-sink radiator model \cite{leeodinson2026}. The preprint was derived independently of the AI1 announcement and contains no reference to it; the two are contemporaneous, and this paper makes no claim of prediction. This paper applies the framework to the reported design point and finds no contradiction within the model. The framework's area law is quantitatively exercised by the reported figures; its recovery penalty and self-powering bound are not engaged on the available record, because no waste-heat recovery stage is reported and no self-powering claim is made.
+
+Section~\ref{sec:reported} compiles the reported specifications with per-row sourcing and ambiguities. Section~\ref{sec:implied} computes the implied operating temperatures under both readings of the reported radiator area and both reported power levels, and applies a coolant-class screen. Section~\ref{sec:application} states which framework results the design exercises. Section~\ref{sec:margins} presents a two-branch sensitivity analysis with an explicit heat-load overhead parameterization. Section~\ref{sec:scaleup} locates AI1 against flight practice and constellation arithmetic under stated conventions. Section~\ref{sec:open} lists what remains unreported.
+
+A caution on evidence quality applies throughout. The inputs are reported figures from announcement-week coverage of unflown hardware, treated as a stated design point; conclusions are conditional on them. The primary SpaceX presentation has not been independently transcribed for this analysis, and journalism remains secondary evidence. The analysis is built to be re-run: if the figures move, the assertion suite re-prices the design point in seconds.
+
+\section{The reported design and its ambiguities}\label{sec:reported}
+
+Table~\ref{tab:specs} compiles the reported figures with the source class and the reading adopted here.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm}>{\raggedright\arraybackslash}p{4.5cm}p{1.1cm}>{\raggedright\arraybackslash}X}
+\toprule
+Quantity & Reported wording & Source & Interpretation; ambiguity \\
+\midrule
+Peak power & ``the right place is around the 150kW peak power level'' (Dahl); ``150kW peak'' (Musk) & \cite{dcd2026} & Peak power level; compute vs.\ total system power not fully disambiguated; peak duration unreported \\
+Sustained compute & ``we can support 120kW of average compute'' (Dahl) & \cite{dcd2026} & Steady compute basis; primary for steady-state analysis \\
+Radiators & ``a 110 sqm deployable liquid radiator, with redundant pumping loops''; ``radiating both sides, orientated knife-edge to the sun'' (Musk) & \cite{dcd2026,toms2026} & Double-sided planform, stated directly; \cite{toms2026} adds ``up to,'' treated as maximum effective area \\
+Radiator flux & ``about 1,400W per sqm for the radiators'' (Musk, stated as assumption/target) & \cite{dcd2026} & Planform flux design figure \\
+Solar-array areal density & ``250W per sq m for the solar array'' (Musk, stated as assumption/target) & \cite{dcd2026} & Array power density only \\
+Total array output & Not independently established & --- & Do not infer without qualification \\
+Coolant & SpaceX has not named it; ammonia ``the likely fluid'' (expectation attributed to Hugh Lewis, Univ.\ of Birmingham) & \cite{gagadget2026} & Expected/likely, not confirmed; phase unreported \\
+Wingspan; height & 70 m; 20 m deployed & \cite{dcd2026} & Tip-to-tip; includes non-array structure \\
+Specific power & 70 kW per metric ton & \cite{toms2026} & Normalization (peak, sustained, bus) unreported \\
+Compute hardware & interchangeable GPU modules; Nvidia Rubin baseline & \cite{gagadget2026} & Junction temperature limits unreported \\
+Heritage & ``not some magic\ldots technology we've already made with the Starlink V3 satellites''; ``much simpler than a Starlink satellite'' (Musk) & \cite{dcd2026} & Subsystem reuse; thermal system has no flown analogue at this class \\
+\bottomrule
+\end{tabularx}
+\caption{Reported AI1 figures with exact quoted wording where available (June 2026 announcement coverage), per-row sources, and ambiguities.}
+\label{tab:specs}
+\end{table}
+
+The power budget cannot be checked for closure from public reporting: total solar-array output is not independently established (the 250~W/m$^{2}$ figure is an areal density Musk states as an assumption, not a rated output), and compute power is not identical to either generation or radiator heat load. Pumps, avionics, communications, power conversion, battery charging, and thermal-control electronics all draw power and most of it returns as heat. This paper makes the radiator-load assumption explicit by writing
+\begin{equation}
+Q_{\mathrm{rad}} = (1+f)\,P_{\mathrm{compute}},
+\qquad
+f = \frac{P_{\mathrm{bus}}+P_{\mathrm{pump}}+P_{\mathrm{conversion}}-P_{\mathrm{exported}}}{P_{\mathrm{compute}}},
+\label{eq:overhead}
+\end{equation}
+and computing the baseline at $f=0$ with the overhead sensitivity given in Section~\ref{sec:margins}. One secondary cross-check survives the sourcing audit: the reported specific power implies roughly 2.1~t on a peak basis or 1.7~t on a sustained basis, the normalization being unreported.
+
+\section{Implied operating points}\label{sec:implied}
+
+The framework's area law (Lemma~1 of \cite{leeodinson2026}) inverts to give the equilibrium radiator temperature required to reject heat load $Q_{\mathrm{rad}}$ through emitting area $A$:
+\begin{equation}
+\Tc = \left[\frac{Q_{\mathrm{rad}}}{\eps\sigma A} + (\Ts)^{4}\right]^{1/4}.
+\end{equation}
+Throughout, $\eps = 0.91$ and $\Ts = 220$~K, an illustrative LEO value within the published 200--260~K range. For the double-sided reading, $\Ts$ is to be understood as the \emph{area-weighted effective sink for the combined two-face emitting area}, $(\Ts)^{4} = \tfrac{1}{2}\,(T_{s,1}^{4}+T_{s,2}^{4})$ for equal faces; the two faces of a real panel need not see equal environments. Table~\ref{tab:operating} gives all four combinations of area reading and power basis.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Reading & 120 kW sustained & 150 kW continuous peak \\
+\midrule
+Two-sided planform (220 m$^{2}$) & \textbf{337.1 K} (64 $^{\circ}$C) & 353.16 K (80 $^{\circ}$C) \\
+Total emitting area (110 m$^{2}$) & 391.5 K (118 $^{\circ}$C) & 411.8 K (139 $^{\circ}$C) \\
+\bottomrule
+\end{tabular}
+\caption{Implied equilibrium radiator temperatures at $f=0$ ($\eps=0.91$, $\Ts=220$ K). The sustained two-sided case (bold) is the primary steady-state operating point. The continuous-peak column is the continuous-peak hypothetical: it assumes the 150 kW peak persists indefinitely, which the reporting does not establish; transient peaks cannot be resolved without heat-capacity and control information.}
+\label{tab:operating}
+\end{table}
+
+\textbf{Coolant-class screen.} SpaceX has not named the coolant; secondary coverage describes ammonia, the International Space Station's working fluid, as the likely choice, an expert expectation attributed to Hugh Lewis of the University of Birmingham \cite{gagadget2026}. The loop phase is likewise unreported. Ammonia's critical point is 405.5~K and roughly 113~bar. Under the total-emitting-area reading, the continuous-peak hypothetical (411.8~K) exceeds the critical temperature outright and is incompatible with any subcritical ammonia loop. The sustained case (391.5~K) is not thermodynamically excluded: it leaves less than 14~K of headroom before the critical point and implies an ammonia saturation pressure near 88~bar at the radiator surface temperature \cite{nist}, and because the coolant must be at least as hot as the emitting surface, the remaining temperature and pressure margins would be narrow; the public information is insufficient to declare that architecture impossible, but it is strongly disfavored. Under the double-sided reading both cases retain more than 50~K of margin, with lower-bound saturation pressures (evaluated at the radiator surface temperature, as the minimum pressure maintaining liquid phase there) of roughly 41~bar at the continuous-peak point. The double-sided reading is additionally stated directly in the announcement: Musk describes the radiators as ``radiating both sides, orientated knife-edge to the sun'' \cite{dcd2026}. The double-sided interpretation is therefore adopted, conditional on the reported coolant class; unconventional supercritical or alternative-fluid architectures are not excluded by this argument, only unsupported by the reporting, and pressure feasibility is outside the present model.
+
+\textbf{Flux reconciliation.} Dividing 150~kW by 110~m$^{2}$ gives 1{,}364~W/m$^{2}$, matching the ``about 1,400W per sqm'' radiator assumption Musk states in the announcement \cite{dcd2026}; that is planform flux, and Musk frames both areal figures as targets (``over time, we think we can do about 250W and 1,400W, respectively''). Under the double-sided reading the net radiative flux per emitting face is 545~W/m$^{2}$ at the sustained load and 682~W/m$^{2}$ at the continuous-peak hypothetical; the decomposition at 353.16~K is gross emission of 803~W/m$^{2}$ less a sink-equivalent 121~W/m$^{2}$. The reported area, the reported flux figure, the reported two-face orientation, and the gray-body arithmetic close on a consistent design point.
+
+\textbf{The ``up to'' qualifier.} The computed temperatures assume the full planform is thermally effective, uniformly heated, and unobstructed; real panels carry inactive structure, plumbing, fin-efficiency and view-factor losses, and nonuniformity. The values in Table~\ref{tab:operating} are therefore lower bounds on required temperature under each reading. As an illustrative case, at 85\% effective area the sustained point rises from 337~K to 349~K.
+
+\section{Application of the framework}\label{sec:application}
+
+\textbf{Exercised: the area law and the quartic logic.} The quoted radiator design assumption itself implies elevated-temperature rejection: 1{,}400~W/m$^{2}$ of planform with both faces emitting requires a surface near 353~K (Section~\ref{sec:implied}), consistent with the quartic-law incentive to reduce radiator area. At the continuous-peak point, rejecting at 353~K rather than an illustrative 293~K comparison temperature reduces required area by the sink-corrected factor 2.6; the 110~m$^{2}$ planform would need roughly 290~m$^{2}$ at the cooler temperature. The reported knife-edge attitude concept is qualitatively consistent with reducing absorbed environmental load, but the resulting effective sink cannot be determined without orbit- and attitude-resolved view factors; Section~\ref{sec:margins} prices a 40~K sink excursion at 17\% of fixed-temperature capacity.
+
+\textbf{Not engaged on the available record: the recovery penalty and the self-powering bound.} No waste-heat-to-electricity stage is reported and no self-powering claim is made, so neither result is exercised; these are non-conflicts rather than tests, and absence from announcement coverage is not certainty about the detailed architecture. The framework identifies direct rejection as the area-optimal choice whenever recovered work cannot displace more system mass than added radiator area costs; the reported architecture is consistent with that verdict.
+
+Within the model, the reported thermal choices are point for point the ones the bounds reward. That establishes coherence at the level of the reduced-order balance; margin, the engineering interior, and economics are separate categories, taken up next.
+
+\section{Two-branch sensitivity}\label{sec:margins}
+
+A capacity-only sensitivity at fixed radiator temperature is insufficient, because a real system may respond to degraded conditions by increasing temperature, reducing load, or both. Table~\ref{tab:twobranch} therefore reports both branches. The two varied parameters are independent parameters of the lumped model by construction; the physical mechanisms behind them (coating aging and contamination; attitude and view-factor drift) can be correlated in practice, and the specific values are illustrative bounding choices rather than mission-sourced predictions, so the table is an \emph{illustrative combined stress case}, not a forecast.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcc}
+\toprule
+Condition & Capacity at 353.16 K (kW) & Equil.\ $\Tc$, 120 kW \\
+\midrule
+Nominal ($\eps=0.91$, $\Ts=220$ K) & 150.0 & 337.1 K \\
+$\eps = 0.80$ & 131.9 & 346.2 K \\
+$\Ts = 260$ K & 124.7 & 350.8 K \\
+Both & 109.6 & 358.9 K \\
+\bottomrule
+\end{tabular}
+\caption{Illustrative combined stress case, double-sided reading, $f=0$. Left branch: capacity with the radiator held at the exact continuous-peak equilibrium temperature (353.1623 K). Right branch: equilibrium temperature with the sustained load held and temperature free to rise. For a continuous 150 kW load under the combined case the required equilibrium is 374.2 K.}
+\label{tab:twobranch}
+\end{table}
+
+At fixed continuous-peak temperature, the combined stress removes about 40~kW of rejection capacity: it consumes the full 30~kW peak-to-sustained headroom and leaves a further deficit of roughly 10~kW against the 120~kW sustained load. If temperature is instead free to rise, the sustained load is maintained at 358.9~K, about 22~K above nominal, with every series element of the thermal chain running hotter and the lower-bound ammonia saturation pressure at the surface climbing from roughly 41 toward 47~bar; a continuous 150~kW load under the same conditions requires 374~K, where that lower bound approaches 64~bar. Which response a real AI1 exhibits, or what mix, depends on the maximum allowable operating temperature, which is unreported. Non-compute heat sharpens both branches: by Eq.~\eqref{eq:overhead}, a 10\% overhead raises the nominal sustained point from 337.1 to 343.8~K and the stressed equilibrium from 358.9 to 365.2~K; 20\% overhead gives 350.1 and 371.3~K respectively. The quartic law that makes hot rejection efficient is the same law that makes these trades steep.
+
+\section{Scale and heritage under stated conventions}\label{sec:scaleup}
+
+The Shi et al.\ review of thermal management for space data centers concludes that flight practice supports systems of tens of kilowatts and that growth toward hundreds of kilowatts intensifies rejection, mass, and controllability problems faster than subsystem extrapolation suggests \cite{shi2026}; the tens-of-kilowatt characterization is independently anchored by the flown record. The largest pumped-ammonia rejection system flown, the International Space Station's external active thermal control system, is a mechanically pumped liquid-ammonia system with capacity near 70~kW \cite{nasaiss}. On capacity, AI1 must reject 1.7$\times$ that figure sustained and 2.1$\times$ under the continuous-peak hypothetical, from a roughly 2-ton platform. Secondary reporting quotes approximately 422~m$^{2}$ for the ISS radiator area, a figure attributed in coverage to SemiAnalysis whose area convention has not been independently verified; on that provisional basis AI1's per-face net flux would be 3.3$\times$ (sustained) to 4.1$\times$ (continuous-peak) the ISS value, and these ratios should be treated as provisional until the convention is established. The Starlink-heritage claim \cite{dcd2026} divides accordingly: arrays, bus avionics, laser links, and manufacturing scale from V3 on the public record; a mechanically pumped liquid-coolant rejection system at this power class has no flown analogue, which locates the development risk on the same subsystem the bounds identify as binding.
+
+Constellation arithmetic, on both power bases: the announced Gigasat target of one gigawatt of orbital compute per year \cite{tomsgigasat2026} implies approximately 6{,}700 AI1-class satellites annually on the 150~kW nameplate basis, or 8{,}300 on the 120~kW sustained basis, carrying respectively about 1.47 and 1.83 square kilometers of new emitting radiator surface per year, with the drag, debris-exposure, and replacement-cadence consequences of that area. None of this violates a bound. All of it prices one.
+
+\section{What remains unreported}\label{sec:open}
+
+The following quantities, each capable of moving the conclusions, are absent from the public record at this writing: the maximum allowable chip junction temperature and the junction-to-surface thermal resistance chain; coolant identity and phase as primary-source facts, loop pressure limits, and pump power; the overhead fraction $f$ of Eq.~\eqref{eq:overhead}; the effective emitting-area fraction of the ``up to 110~m$^{2}$'' figure; the duration and duty cycle of the 150~kW peak; the complete spacecraft electrical budget; the orbit, eclipse fraction, and energy-storage strategy; and every input to the economics, from launch cost to refresh cadence, which the framework's own mass-trade criteria require before returning verdicts and which public critiques correctly identify as unresolved \cite{techtimes2026}.
+
+\section{Conclusion}
+
+Under the adopted gray-body effective-sink model, the reported AI1 figures are mutually compatible if the quoted 110~m$^{2}$ is treated as double-sided panel planform, the reading the coverage itself describes, and if the reported compute powers are used as the radiative heat load. That interpretation gives an equilibrium radiator temperature of approximately 337~K at the 120~kW sustained load and approximately 353~K under the continuous-peak hypothetical. The total-emitting-area interpretation requires approximately 391~K at sustained load and 412~K at continuous peak, strongly disfavoring a conventional subcritical ammonia loop on temperature headroom and saturation pressure, although the sustained case cannot be ruled out from public information alone. The illustrative combined stress case removes about 40~kW of fixed-temperature capacity (the full reported headroom plus 10~kW) or raises the sustained equilibrium by about 22~K into unreported limits.
+
+The reduced-order radiative model does not rule out the reported AI1 design point. Full thermal margin and engineering feasibility remain unresolved, because coolant identity and phase, loop pressure, internal thermal resistance, effective two-face view factors, non-compute heat load, peak duration, and allowable operating temperatures have not been reported. The unreported engineering limits, and the price per token, will determine whether the architecture is realizable.
+
+\section*{Acknowledgments}
+
+This paper came out of an iterative adversarial workflow I ran across multiple AI systems: analysis and drafting by Claude Fable 5 (Anthropic), the evidence base assembled through Perplexity deep research, and three rounds of formal peer review with independent Wolfram verification by GPT~5.5. The third review's source-audit corrections (exact-quotation sourcing of every reported figure, correct attribution of the both-sides and 1,400~W/m$^{2}$ statements to the primary-quoted reporting, removal of the unsourced array-output composite and design-intent claims, verification of the Shi et al.\ reference against the journal of record, and the narrowed verification-scope claim) are incorporated in this revision and acknowledged with thanks. All radiator-model calculations and displayed derived values, externally sourced thermophysical property data excluded, are machine-verified by the supplementary assertion suite. Remaining errors are mine.
+
+\section*{Data and Code Availability}
+
+The assertion suite verifying all radiator-model calculations and displayed derived values in this paper, externally sourced thermophysical property data excluded (\texttt{verify\_ai1.py}; fourteen blocks covering both area interpretations, both power bases, both sensitivity branches, the overhead parameterization, display-rounding policy, and the provisional ISS conventions) accompanies it as supplementary material. The theory framework is archived at \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893} and mirrored at \url{https://github.com/dan-lee-odinson/orbital-thermal-bounds}.
+
+\begin{thebibliography}{10}
+\bibitem{leeodinson2026} D.~Lee-Odinson, ``Thermodynamic bounds and mass-trade criteria for heat rejection in orbital data centers,'' Zenodo preprint, June 12, 2026. \href{https://doi.org/10.5281/zenodo.20650893}{doi:10.5281/zenodo.20650893}
+\bibitem{shi2026} Shi~J., Zhang~X., Yang~M., et al., ``Thermal management technologies for space data centers: current status and prospects,'' \emph{Journal of Refrigeration} \textbf{47}(1), 1--19 (2026). doi:10.12465/issn.0253-4339.20251030004. \url{https://www.sciopen.com/article/10.12465/issn.0253-4339.20251030004}
+\bibitem{dcd2026} S.~Moss, ``SpaceX details AI1 satellite `data center,' claims 150kW peak compute,'' Data Center Dynamics, June 9, 2026. Contains the quoted Dahl and Musk statements used in Table~1, including the 250~W/m$^{2}$ and 1,400~W/m$^{2}$ assumptions and the both-sides, knife-edge radiator orientation. \url{https://www.datacenterdynamics.com/en/news/spacex-details-ai1-satellite-data-center-claims-150kw-peak-compute/}
+\bibitem{toms2026} Tom's Hardware, ``Elon Musk's first-gen orbital data center craft spans wider than a Boeing 747 and runs an interchangeable chip payload --- AI1 satellite compute payload is 120 kW, peaks at 150 kW,'' June 2026. \url{https://www.tomshardware.com/tech-industry/spacex-details-its-ai1-compute-satellite}
+\bibitem{tomsgigasat2026} Tom's Hardware, ``SpaceX unveils 11-million-square-foot Gigasat factory --- aims for 1 GW/year of space AI compute by late 2027,'' June 2026. \url{https://www.tomshardware.com/tech-industry/big-tech/spacex-unveils-11-million-square-foot-gigasat-factory-a-new-manufacturing-facility-for-space-based-data-centers-aims-for-1-gw-year-of-space-ai-compute-by-late-2027-from-its-satellites}
+\bibitem{gagadget2026} A.~Kratiuk, ``SpaceX's AI1 satellite is a Boeing 747-sized GPU node in orbit,'' Gagadget, June 10, 2026 (110~m$^{2}$ liquid radiator with redundant pumping loops; interchangeable GPU modules with Nvidia Rubin baseline; ammonia described as the likely coolant, an expectation attributed to Hugh Lewis, University of Birmingham; SpaceX has not named the coolant). \url{https://gagadget.com/en/714424-spacexs-orbital-ai-satellites-boeing-747-sized-liquid-cooled-and-already-sold-to-google/}
+\bibitem{techtimes2026} TechTimes, ``SpaceX AI1 orbital data center bets on space power and cooling: economics stay unproven,'' June 10, 2026. \url{https://www.techtimes.com/articles/318103/20260610/spacex-ai1-orbital-data-center-bets-space-power-cooling-economics-stay-unproven.htm}
+\bibitem{nasaiss} NASA, International Space Station Active Thermal Control System documentation (mechanically pumped liquid-ammonia external loops; capacity $\approx$70 kW). The 422 m$^{2}$ radiator area used provisionally in Section 6 is from secondary reporting attributed to SemiAnalysis; its area convention is unverified.
+\bibitem{nist} E.~W. Lemmon, M.~O. McLinden, and D.~G. Friend, ``Thermophysical properties of fluid systems,'' in \emph{NIST Chemistry WebBook, NIST Standard Reference Database 69}. Source of the ammonia critical point (405.5 K, $\approx$113 bar) and saturation-pressure reference values used in Sections 3 and 5.
+\bibitem{nasaguidebook} NASA, \emph{Passive Thermal Control Engineering Guidebook}, v4.0, NTRS 20230013900 (2023).
+\end{thebibliography}
+
+\end{document}
