@@ -4,7 +4,7 @@ Machine-verified thermodynamic bounds for orbital data center thermal architectu
 
 **Author:** Dan Lee-Odinson ([ORCID 0009-0009-9504-0796](https://orcid.org/0009-0009-9504-0796)) | dan.lee.odinson@gmail.com
 
-**Archived version:** Zenodo DOI: *[pending — will be added on publication]*
+**Archived version:** [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20650894.svg)](https://doi.org/10.5281/zenodo.20650894)
 
 ---
 
@@ -53,11 +53,24 @@ This work was produced through an iterative, adversarial workflow across multipl
 
 ## How to cite
 
-Until the Zenodo DOI is minted:
+> Lee-Odinson, D. (2026). *Thermodynamic bounds and mass-trade criteria for heat rejection in orbital data centers* (Version v1) [Preprint]. Zenodo. https://doi.org/10.5281/zenodo.20650894
 
-> Lee-Odinson, D. (2026). *Thermodynamic bounds and mass-trade criteria for heat rejection in orbital data centers* [Preprint].
+BibTeX:
 
-A BibTeX entry with the DOI will be added here on publication.
+```bibtex
+@misc{leeodinson2026orbitalthermal,
+  author       = {Lee-Odinson, Dan},
+  title        = {Thermodynamic Bounds and Mass-Trade Criteria for
+                  Heat Rejection in Orbital Data Centers},
+  year         = {2026},
+  month        = jun,
+  publisher    = {Zenodo},
+  version      = {v1},
+  doi          = {10.5281/zenodo.20650894},
+  url          = {https://doi.org/10.5281/zenodo.20650894},
+  note         = {Preprint}
+}
+```
 
 ## License
 
