@@ -71,6 +71,31 @@ BibTeX:
   note         = {Preprint}
 }
 ```
+## Companion paper: The AI1 Design Point
+
+On June 9–10, 2026, SpaceX announced AI1, its first orbital data-center satellite. The companion paper in `companion/` applies this repository's thermodynamic bounds to the announced design and establishes its coherence within the gray-body radiator model, under one specific reading of the reported figures.
+
+**Archived version:** Zenodo DOI: *[pending — will be added on publication]*
+
+What it shows, briefly: treating the reported 110 m² of radiators as double-sided panel planform (the reading SpaceX itself states — "radiating both sides, orientated knife-edge to the sun"), the implied radiator surface temperature is about 337 K at the 120 kW sustained load and about 353 K if the 150 kW peak runs continuously. The alternative total-emitting-area reading requires 391–412 K, which strongly disfavors the subcritical ammonia loop secondary coverage describes as likely. An illustrative combined stress case (emissivity 0.91 → 0.80, effective sink 220 → 260 K) removes about 40 kW of fixed-temperature capacity — the entire reported peak-to-sustained headroom plus 10 kW — or raises the sustained equilibrium by about 22 K into unreported temperature and pressure limits. The reduced-order model does not rule the design out; margin, the engineering interior, and the economics remain open.
+
+Every reported figure in the paper traces to a quoted source (the key statements are direct Musk and Dahl quotations from announcement coverage), and every radiator-model calculation and displayed value is asserted by the verification suite. The paper passed four rounds of adversarial peer review by GPT 5.5 with independent Wolfram verification; the revision history is recorded in the response letters.
+
+### Companion files
+
+| File | Description |
+|---|---|
+| `companion/ai1-design-point.pdf` | The companion paper (8 pages, Revision 4, review-approved) |
+| `companion/ai1-design-point.tex` | LaTeX source |
+| `companion/verify_ai1.py` | Assertion suite: both area interpretations, both power bases, both sensitivity branches, overhead cases, display-rounding policy. Run: `python3 verify_ai1.py` |
+
+The suite's expected output states its scope precisely: "All radiator-model calculations and manuscript display-rounding assertions pass. External thermophysical property values are not computed by this suite." Ammonia properties are reference values from the NIST Chemistry WebBook (SRD 69), cited in the paper.
+
+### How to cite the companion paper
+
+> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. *[DOI pending]*
+
+A BibTeX entry will be added when the DOI is minted.
 
 ## License
 
