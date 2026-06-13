@@ -43,7 +43,7 @@ def fixed_work_area_per_watt(
 # Theorem 2 -- the 3/4 rule (zero-sink reversible lower envelope)
 # --------------------------------------------------------------------------
 
-def optimal_cold_fraction(a: float = 1.0, tol: float = 1e-12) -> float:
+def optimal_cold_fraction(a: float = 1.0, tol: float = 1e-12, max_iter: int = 1000) -> float:
     """Area-per-work-optimal T_c/T_h for an engine with eta = a*(1 - T_c/T_h).
 
     Minimizes A/W proportional to (1 - eta) / (eta * y^4) over y = T_c/T_h.
@@ -66,18 +66,29 @@ def optimal_cold_fraction(a: float = 1.0, tol: float = 1e-12) -> float:
     """
     if not 0.0 < a <= 1.0:
         raise ValueError(f"irreversibility factor a must be in (0, 1], got {a}")
+    if not (tol > 0.0 and tol < float("inf")):
+        raise ValueError(f"tol must be finite and positive, got {tol}")
+    if max_iter <= 0:
+        raise ValueError(f"max_iter must be positive, got {max_iter}")
 
     def g(y: float) -> float:
         return a / (1.0 - a * (1.0 - y)) + 1.0 / (1.0 - y) - 4.0 / y
 
     lo, hi = 1e-12, 1.0 - 1e-12
-    while hi - lo > tol:
+    for _ in range(max_iter):
+        if hi - lo <= tol:
+            return 0.5 * (lo + hi)
         mid = 0.5 * (lo + hi)
+        if mid <= lo or mid >= hi:        # bracket collapsed to float resolution
+            return mid
         if g(mid) < 0.0:
             lo = mid
         else:
             hi = mid
-    return 0.5 * (lo + hi)
+    raise RuntimeError(
+        f"optimal_cold_fraction bisection did not converge to tol={tol} in "
+        f"{max_iter} steps (bracket width {hi - lo:.3g}); increase max_iter"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -225,8 +236,10 @@ def heat_pump_area_ratio(
     353 -> 520 K, T_sink = 220 K gives exactly 0.348 (zero-sink
     approximation 0.397).
     """
-    if cop_cooling <= 0.0:
-        raise ValueError(f"COP_c must be positive, got {cop_cooling}")
+    if not (cop_cooling > 0.0):          # also rejects NaN
+        raise ValueError(f"COP_c must be a positive number, got {cop_cooling}")
+    if T_sink < 0.0:
+        raise ValueError(f"T_sink must be >= 0 K, got {T_sink}")
     if not (T_sink < T1 and T_sink < T2):
         raise ValueError("both temperatures must exceed the sink")
     if not T2 > T1:

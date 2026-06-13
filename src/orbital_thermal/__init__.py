@@ -3,6 +3,12 @@ orbital-thermal-bounds radiator model.
 
 Theory preprint:  doi:10.5281/zenodo.20650893
 AI1 companion:    doi:10.5281/zenodo.20670772
+
+Note: the top-level ``effective_sink_temperature`` (from :mod:`radiation`) is the
+generic lumped view-factor sink T_s^eff = F^(1/4) T_s. The orbit-resolved,
+attitude-aware sink is :func:`orbital_thermal.sink.orbital_effective_sink_temperature`
+(``sink.effective_sink_temperature`` remains as a deprecated alias). They have
+different signatures and contracts; see audit re-review P2-9.
 """
 
 from .bounds import (

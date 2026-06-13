@@ -72,6 +72,7 @@ def simulate(
     steps_per_orbit: int = 2000,
     t0_guess: float | None = None,
     convergence_tol_K: float = 1e-3,
+    energy_tol_W_m2: float | None = None,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -106,12 +107,25 @@ def simulate(
         raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
     if max_orbits is not None and max_orbits < 1:
         raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
-    if not np.isfinite(q_load):
-        raise ValueError(f"q_load must be finite, got {q_load}")
+    if not (np.isfinite(q_load) and q_load > 0.0):
+        raise ValueError(f"q_load must be finite and > 0, got {q_load}")
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
+        raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
+    if energy_tol_W_m2 is not None and not (np.isfinite(energy_tol_W_m2) and energy_tol_W_m2 > 0.0):
+        raise ValueError(f"energy_tol_W_m2 must be finite and > 0, got {energy_tol_W_m2}")
+    if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
+        raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
     cap = n_orbits if max_orbits is None else max_orbits
+    # Energy-balance convergence tolerance (W/m^2): relative to the load with an
+    # absolute floor. Per-orbit closure alone is insufficient when tau/P >> 1 --
+    # the orbit-to-orbit change vanishes while the panel is still far from periodic
+    # steady state (audit re-review P1-1). The mean net flux must also be ~0.
+    e_tol = energy_tol_W_m2 if energy_tol_W_m2 is not None else max(1e-3 * abs(q_load), 1e-2)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
@@ -161,14 +175,17 @@ def simulate(
             ts[i] = t - t_orbit0
             Ts_panel[i] = T
             Ts_sink[i] = sink_at(t)
-        if not np.isfinite(T):
+        if not np.all(np.isfinite(Ts_panel)) or float(np.min(Ts_panel)) <= 0.0:
             raise RuntimeError(
-                "RK4 diverged to a non-finite temperature; the timestep is too "
-                "large for this heat capacity -- increase steps_per_orbit or "
+                "RK4 produced a non-finite or non-positive temperature "
+                f"(min {float(np.min(Ts_panel)):.1f} K over the orbit); the timestep "
+                "is too large for this heat capacity -- increase steps_per_orbit or "
                 "areal_heat_capacity (see the stability warning)"
             )
         orbits_used = orbit + 1
-        if abs(T - T_start) < convergence_tol_K:
+        orbit_energy_residual = float(abs(np.mean(
+            q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4))))
+        if abs(T - T_start) < convergence_tol_K and orbit_energy_residual < e_tol:
             converged = True
             break
 
@@ -178,9 +195,10 @@ def simulate(
     if not converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
-               f"orbits (closure {closure_error_K:.2e} K > tol "
-               f"{convergence_tol_K:.1e} K; tau/period={tau / period:.2f}); "
-               f"raise max_orbits/n_orbits")
+               f"orbits (closure {closure_error_K:.2e} K vs tol "
+               f"{convergence_tol_K:.1e} K; energy residual "
+               f"{energy_residual_W_m2:.2e} vs tol {e_tol:.1e} W/m^2; "
+               f"tau/period={tau / period:.2f}); raise max_orbits/n_orbits")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
@@ -192,6 +210,7 @@ def simulate(
             "closure_error_K": closure_error_K,
             "tol_K": float(convergence_tol_K),
             "energy_residual_W_m2": energy_residual_W_m2,
+            "energy_tol_W_m2": float(e_tol),
         }
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
@@ -228,7 +247,7 @@ MATERIALS = {
     "silicon": {
         "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
         "state": "crystalline solid, 298 K",
-        "source": "CRC Handbook, crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
         "rel_uncertainty": 0.02,
     },
     "cfrp_substrate": {
@@ -241,15 +260,16 @@ MATERIALS = {
     "ammonia_liquid": {
         "rho_kg_m3": 600.17, "cp_J_kgK": 4796.38,
         "state": "saturated liquid, 300 K (Q=0)",
-        "source": "CoolProp HEOS (Tillner-Roth & Friend EOS) at T=300 K, Q=0; "
-                  "strongly state-dependent (280 K: 629/4649; 320 K: 568/5023). "
-                  "See coolant_rho_cp().",
+        "source": "CoolProp HEOS at T=300 K, Q=0; strongly state-dependent "
+                  "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
+        "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
+        "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
         "rel_uncertainty": 0.01,
     },
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
         "state": "solid, 298 K",
-        "source": "CRC Handbook, Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
         "rel_uncertainty": 0.01,
     },
     "fr4_pcb": {

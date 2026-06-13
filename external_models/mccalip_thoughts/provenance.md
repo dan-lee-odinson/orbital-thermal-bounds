@@ -30,7 +30,7 @@ when comparing McCalip outputs to our Python model (Task 10):
 
 | Parameter | McCalip value | Our value | Relative difference |
 |---|---|---|---|
-| Stefan-Boltzmann sigma | `5.67e-8` (truncated) | `5.670374419e-8` (CODATA 2018) | 6.6e-5 |
+| Stefan-Boltzmann sigma | `5.67e-8` (truncated) | `5.670374419184429e-8` (binary64 SI-derived) | 6.6e-5 |
 | Deep-space sink T | `3 K` (rounded) | `2.7255 K` (CMB) | ~0.10 K |
 
 The sigma truncation alone shifts equilibrium temperatures by ~0.002 K at 340 K
@@ -65,6 +65,8 @@ McCalip implements a bifacial sun-tracking panel model:
 - beta sweep: 0, 30, 60, 90 deg (at altitude 550 km)
 - Altitude sweep: 400, 550, 800 km (at beta = 90 deg)
 - Emissivity sweep: eps_rad in {0.85, 0.90, 0.95} (at altitude 550 km, beta = 90 deg)
+
+**Enforcement scope (audit re-review P2-8).** CI runs `verify_oracle_reproducible.py`, which (1) checks SHA-256 pins of `math.js`, `generate_oracle.js`, and `expected_outputs.json` (PINS.json), (2) regenerates the oracle from the vendored `math.js` and compares it semantically, and (3) attests the vendored `math.js` against the raw blob at the external pinned commit on GitHub. Together these enforce repository consistency, accidental-drift detection, and external-source attestation. They do NOT, by themselves, prove the oracle was historically never edited; that is a process commitment recorded here.
 
 **Oracle-freeze rule**: values in `expected_outputs.json` are never edited to make
 a failing test pass. If McCalip's model is updated and oracle values change, the

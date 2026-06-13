@@ -88,11 +88,15 @@ def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
 
     The physically faithful replacement for :func:`subpoint_albedo_factor`:
     integrate reflected solar radiance over the Earth region that is simultaneously
-    sunlit, above the radiator's horizon, and within its field of view. The
-    Lambertian-sphere phase function Phi(alpha) = (sin a + (pi - a) cos a) / pi
-    vanishes ONLY at exact opposition (alpha = pi, i.e. u = 180 deg), so a sunlit
-    crescent contributes at every other geometry -- including a terminator (beta=90)
-    orbit and off-opposition eclipse points where the subpoint approximation nulls.
+    sunlit, above the radiator's horizon, and within its field of view. For the FULL
+    visible Earth disk (e.g. a nadir-facing plate), the Lambertian-sphere phase
+    function Phi(alpha) = (sin a + (pi - a) cos a) / pi vanishes only at exact
+    opposition (alpha = pi, i.e. u = 180 deg), so a sunlit crescent contributes at
+    every other phase -- including a terminator (beta=90) orbit and off-opposition
+    eclipse points where the subpoint approximation nulls. This full-disk statement
+    does NOT generalize to arbitrary tilt: horizon-clipping of a tilted plate can
+    hide the illuminated region, and a space-facing plate (tilt ~ 180 deg) has ~zero
+    Earth coupling at every phase. The strict-xfail tests use the nadir/full-disk case.
 
     Raises ``NotImplementedError`` until implemented. The strict-xfail tests in
     ``tests/test_sink.py`` target THIS function (not the subpoint helper, whose
@@ -107,9 +111,20 @@ def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
 
 def _require_shielding(assume_sun_shielded: bool) -> None:
     """Guard: the model omits direct solar on the radiator face. The caller must
-    explicitly assert the face is sun-shielded (audit re-review P1-b)."""
-    if not assume_sun_shielded:
-        raise NotImplementedError(
+    explicitly assert the face is sun-shielded (audit re-review P1-b, P1-2).
+
+    The contract is strict: ``assume_sun_shielded`` must be the boolean ``True`` or
+    ``False`` -- truthy non-booleans (e.g. the string ``"false"``, ``1``, ``[1]``)
+    are rejected with ``TypeError`` so a config/CLI value cannot silently assert
+    shielding."""
+    if assume_sun_shielded is True:
+        return
+    if assume_sun_shielded is not False:
+        raise TypeError(
+            "assume_sun_shielded must be the boolean True or False, got "
+            f"{assume_sun_shielded!r} ({type(assume_sun_shielded).__name__})"
+        )
+    raise NotImplementedError(
             "the effective-sink model omits direct solar flux on the radiator "
             "face; it is valid only when that face receives no direct sunlight "
             "(an anti-solar attitude OR an external shade -- the model does not "
@@ -150,6 +165,10 @@ def sink_temperature_series(
         raise ValueError(f"albedo must be in [0, 1], got {albedo}")
     if t_space < 0.0:
         raise ValueError(f"t_space must be >= 0 K, got {t_space}")
+    if not (np.isfinite(earth_ir) and earth_ir >= 0.0):
+        raise ValueError(f"earth_ir must be finite and >= 0, got {earth_ir}")
+    if not (np.isfinite(solar_constant) and solar_constant >= 0.0):
+        raise ValueError(f"solar_constant must be finite and >= 0, got {solar_constant}")
     _require_shielding(assume_sun_shielded)
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
     albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation
@@ -159,7 +178,7 @@ def sink_temperature_series(
     return t4 ** 0.25
 
 
-def effective_sink_temperature(
+def orbital_effective_sink_temperature(
     altitude_km: float,
     beta_deg: float,
     u_deg: float,
@@ -197,6 +216,26 @@ def effective_sink_temperature(
         earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
         t_space=t_space))
 
+
+
+def effective_sink_temperature(*args, **kwargs):
+    """Deprecated alias for :func:`orbital_effective_sink_temperature`
+    (audit re-review P2-9).
+
+    The orbit-resolved sink function was renamed to disambiguate it from the
+    generic view-factor helper exported at package top level
+    (``orbital_thermal.effective_sink_temperature``, from ``radiation.py``), which
+    has a different signature and no shielding contract. This alias forwards and
+    will be removed in a future release.
+    """
+    import warnings
+    warnings.warn(
+        "sink.effective_sink_temperature is deprecated; use "
+        "orbital_effective_sink_temperature (renamed to disambiguate from the "
+        "top-level radiation.effective_sink_temperature). See audit re-review P2-9.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return orbital_effective_sink_temperature(*args, **kwargs)
 
 def in_eclipse(altitude_km: float, beta_deg: float, u_deg: float) -> bool:
     """True if the spacecraft is in Earth's cylindrical shadow at this position."""

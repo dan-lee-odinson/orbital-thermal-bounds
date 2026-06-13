@@ -120,6 +120,18 @@ class TestTheorem1:
 
 
 class TestTheorem2:
+    def test_optimal_cold_fraction_rejects_bad_tol_and_caps_iterations(self):
+        # No hangs on degenerate tol; cap exhaustion raises (audit re-review P2-5).
+        for bad in (0.0, -1.0, float("inf"), float("nan")):
+            with pytest.raises(ValueError):
+                optimal_cold_fraction(1.0, tol=bad)
+        with pytest.raises(ValueError):
+            optimal_cold_fraction(1.0, max_iter=0)
+        with pytest.raises(RuntimeError):
+            optimal_cold_fraction(1.0, tol=1e-12, max_iter=1)
+        # below float resolution: stagnation guard returns a finite value, no hang
+        assert optimal_cold_fraction(1.0, tol=1e-16) == pytest.approx(0.75, abs=1e-6)
+
     def test_reversible_optimum_is_exactly_three_quarters(self):
         assert optimal_cold_fraction(1.0) == pytest.approx(0.75, abs=1e-9)
 
@@ -341,6 +353,12 @@ class TestBoundsPhysicalContracts:
     def test_heat_pump_requires_upward_lift(self):
         with pytest.raises(ValueError):
             heat_pump_area_ratio(1.0, 520.0, 353.0)   # T2 < T1, not a lift
+
+    def test_heat_pump_rejects_nan_cop_and_negative_sink(self):
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(float("nan"), 353.0, 520.0)
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(1.15, 353.0, 520.0, T_sink=-220.0)
 
     def test_heat_pump_allows_carnot_boundary(self):
         cop = carnot_cop_cooling(353.0, 520.0)        # exactly at the ceiling

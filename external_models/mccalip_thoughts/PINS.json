@@ -1,5 +1,7 @@
 {
   "pinned_commit": "d1e4238d3d3f4924e5ca65bafbd4ba5b39af2eb8",
+  "source_repo": "andrewmccalip/thoughts",
+  "source_path": "static/js/math.js",
   "sha256": {
     "math.js": "bcdced986d9c121a626e8ded1b10bd4ab48ce09b65847de0301d2e5f34fcd71f",
     "generate_oracle.js": "367cbda532ecc963e269b68c1106e215a2ac7bad2692c8cf4137ee35c406ac74",

@@ -132,7 +132,7 @@ class TestConvergence:
         t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
                                    return_diagnostics=True, **SIM)
         assert set(d) == {"converged", "orbits_used", "closure_error_K",
-                          "tol_K", "energy_residual_W_m2"}
+                          "tol_K", "energy_residual_W_m2", "energy_tol_W_m2"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -155,6 +155,36 @@ class TestConvergence:
                                      return_diagnostics=True)
         assert d["converged"] is False
         assert d["orbits_used"] == 3
+
+    def test_high_thermal_mass_not_falsely_converged(self):
+        # tau/P >> 1: per-orbit closure -> 0 while the panel is far from steady
+        # state. Closure alone would falsely certify convergence; the energy-balance
+        # gate must reject it (audit re-review P1-1).
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 90, 545.0, 1e9, assume_sun_shielded=True,
+                                     n_orbits=30, steps_per_orbit=200,
+                                     return_diagnostics=True)
+        assert d["closure_error_K"] < d["tol_K"]            # closure alone is satisfied
+        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+        assert d["converged"] is False
+
+    def test_high_thermal_mass_poor_guess_not_converged(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 90, 545.0, 1e10, assume_sun_shielded=True,
+                                     t0_guess=100.0, n_orbits=30, steps_per_orbit=200,
+                                     return_diagnostics=True)
+        assert d["converged"] is False
+        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+
+    def test_averaging_bias_raises_on_false_closure(self):
+        # The high-mass false-closure case must NOT yield a (negative) peak excess.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.averaging_bias(550, 90, 545.0, 1e9, assume_sun_shielded=True,
+                                  n_orbits=30, steps_per_orbit=200)
 
     def test_nonconvergence_can_raise(self):
         with pytest.raises(RuntimeError):
@@ -208,6 +238,16 @@ class TestHeatCapacityProvenance:
         assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
         assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
 
+    def test_ammonia_provenance_matches_backend(self):
+        # The recorded CoolProp version + EOS key must match the installed backend
+        # so the citation cannot drift from the numbers (audit re-review P2-6).
+        pytest.importorskip("CoolProp")
+        from orbital_thermal import fluids
+        prov = fluids.provenance("Ammonia")
+        m = tr.MATERIALS["ammonia_liquid"]
+        assert prov["version"] == m["coolprop_version"]
+        assert prov["eos_bibtex_key"] == m["eos_bibtex_key"]
+
 
 
 class TestShieldingPropagation:
@@ -257,6 +297,30 @@ class TestInputDomainAndStability:
                 warnings.simplefilter("ignore")  # ignore the stability RuntimeWarning
                 tr.simulate(550, 0.0, Q_LOAD, 1.0, tilt_deg=0, assume_sun_shielded=True,
                             n_orbits=2, steps_per_orbit=100)
+
+    def test_simulate_rejects_invalid_physical_inputs(self):
+        # Early validation: degenerate/non-physical inputs raise before integrating
+        # (audit re-review P2-7), not ZeroDivisionError or a silent profile.
+        bad = dict(tilt_deg=0, assume_sun_shielded=True, n_orbits=2, steps_per_orbit=100)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, emissivity=0.0, **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, -100.0, 8000.0, **bad)              # negative load
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, convergence_tol_K=float("nan"), **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, convergence_tol_K=-1.0, **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, t0_guess=-5.0, **bad)
+
+    def test_rk4_negative_temperature_raises(self):
+        # An unstable-but-finite run dipped to ~-332 K and was returned before;
+        # any non-positive accepted state must now raise (audit re-review P1-3).
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.simulate(550, 0, 5000.0, 1000.0, assume_sun_shielded=True,
+                            n_orbits=3, steps_per_orbit=50)
 
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):

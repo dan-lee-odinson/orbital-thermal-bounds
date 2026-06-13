@@ -21,9 +21,11 @@ absent the reproducibility check is skipped with a warning (the SHA pin still ru
 import hashlib
 import json
 import math
+import os
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -83,15 +85,47 @@ def check_reproducible() -> list[str]:
     return _diff_numbers(regen, committed, "oracle")
 
 
+def check_external() -> list[str]:
+    """Attest that the vendored math.js equals the file at the recorded EXTERNAL
+    pinned commit, so oracle-freeze is not purely self-referential (audit re-review
+    P2-8). Fetches the raw blob from GitHub at PINS['pinned_commit']. Network-lenient:
+    on a fetch error it warns and skips (set ORACLE_REQUIRE_EXTERNAL=1 to make an
+    unreachable external source a hard failure, e.g. for a release gate)."""
+    repo = PINS.get("source_repo")
+    path = PINS.get("source_path")
+    if not (repo and path):
+        return ["PINS.json missing source_repo/source_path for external attestation"]
+    url = f"https://raw.githubusercontent.com/{repo}/{PINS['pinned_commit']}/{path}"
+    try:
+        data = urllib.request.urlopen(url, timeout=30).read()
+    except Exception as exc:  # network/proxy/offline
+        msg = f"could not fetch external blob ({type(exc).__name__}: {exc}); {url}"
+        if os.environ.get("ORACLE_REQUIRE_EXTERNAL") == "1":
+            return [f"external attestation required but {msg}"]
+        print(f"WARNING: skipping external attestation -- {msg}")
+        return []
+    ext_sha = hashlib.sha256(data).hexdigest()
+    want = PINS["sha256"].get("math.js")
+    if ext_sha != want:
+        return [f"vendored math.js SHA {want} != external blob SHA {ext_sha} at "
+                f"{PINS['pinned_commit']}"]
+    print(f"external attestation OK: vendored math.js matches {repo}@"
+          f"{PINS['pinned_commit'][:12]}:{path}")
+    return []
+
+
 def main() -> int:
-    errs = check_sha256() + check_reproducible()
+    errs = check_sha256() + check_reproducible() + check_external()
     if errs:
         print("ORACLE-FREEZE VIOLATION:")
         for e in errs:
             print("  -", e)
         return 1
     print("oracle-freeze OK: SHA-256 pins match; regeneration reproduces the oracle "
-          "(semantic, version-independent).")
+          "(semantic, version-independent); vendored source matches the external "
+          "pinned commit. This enforces repository consistency, accidental-drift "
+          "detection, and external-blob attestation -- it is not, by itself, proof "
+          "that the oracle was historically never edited.")
     return 0
 
 
