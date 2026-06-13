@@ -1,0 +1,6 @@
+# Keep the oracle-frozen artifacts byte-exact (audit re-review P1-4): never apply
+# end-of-line or other text normalization, so their SHA-256 pins in
+# external_models/mccalip_thoughts/PINS.json stay valid across platforms/checkouts.
+external_models/mccalip_thoughts/math.js               -text
+external_models/mccalip_thoughts/generate_oracle.js    -text
+external_models/mccalip_thoughts/expected_outputs.json -text
