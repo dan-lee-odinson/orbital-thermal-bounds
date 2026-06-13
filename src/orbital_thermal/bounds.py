@@ -86,10 +86,12 @@ def nonzero_sink_optimum(
 ) -> float:
     """Optimal cold-side temperature T_c* for sink temperature T_sink > 0.
 
-    Solves the quintic 4*T_c^5 - 3*T_h*T_c^4 - T_h*T_sink^4 = 0 by the
-    contractive fixed-point map Phi(T) = (T_h/4) * (3 + (T_sink/T)^4),
-    |Phi'| = 4q^4/(3 + q^4) < 1, iterated to ``tol`` kelvin (the published
-    suites enforce 1e-10 K).
+    Solves the quintic 4*T_c^5 - 3*T_h*T_c^4 - T_h*T_sink^4 = 0 by bisection on
+    its dimensionless form f(y) = 4y^5 - 3y^4 - r^4 (y = T_c/T_h, r = T_sink/T_h),
+    bracketed on (max(3/4, r), 1) and iterated to ``tol`` kelvin (the published
+    suites enforce 1e-10 K). Bisection is globally convergent; the earlier
+    fixed-point map Phi(T) = (T_h/4)(3 + (T_sink/T)^4) has |Phi'| = 4q^4/(3 + q^4)
+    -> 1 as T_sink -> T_h and fails to converge for r >~ 0.97 (audit item 6).
 
     Equivalent exact form: T_c*/T_h = (3 + q^4)/4 with q = T_sink/T_c*;
     the fractional shift above (3/4)T_h is exactly q^4/3. Worked anchor:
@@ -100,13 +102,30 @@ def nonzero_sink_optimum(
         raise ValueError(f"T_h must be positive, got {T_h}")
     if not 0.0 <= T_sink < T_h:
         raise ValueError(f"need 0 <= T_sink < T_h, got {T_sink}")
-    T_c = 0.75 * T_h
+    if T_sink == 0.0:
+        return 0.75 * T_h
+    # Bisection on the dimensionless quintic f(y) = 4y^5 - 3y^4 - r^4, y = T_c/T_h,
+    # r = T_sink/T_h. The optimum satisfies y* >= 3/4 (Theorem 2) and y* > r, and
+    # f is strictly increasing on (max(3/4, r), 1) with f(max(3/4, r)) < 0 and
+    # f(1) = 1 - r^4 > 0, so a unique root is bracketed there. Bisection is
+    # globally convergent, unlike the fixed-point map Phi(T) whose contraction
+    # |Phi'| = 4q^4/(3 + q^4) -> 1 as T_sink -> T_h (it fails to converge for
+    # r >~ 0.97). This is the same quintic the Theorem-2 optimizer brackets.
+    r = T_sink / T_h
+
+    def f(y: float) -> float:
+        return 4.0 * y**5 - 3.0 * y**4 - r**4
+
+    lo, hi = max(0.75, r), 1.0
     for _ in range(max_iter):
-        nxt = T_h * (3.0 + (T_sink / T_c) ** 4) / 4.0
-        if abs(nxt - T_c) < tol:
-            return nxt
-        T_c = nxt
-    raise RuntimeError("fixed-point iteration did not converge")
+        mid = 0.5 * (lo + hi)
+        if f(mid) < 0.0:
+            lo = mid
+        else:
+            hi = mid
+        if (hi - lo) * T_h < tol:
+            return 0.5 * (lo + hi) * T_h
+    return 0.5 * (lo + hi) * T_h
 
 
 def quintic_residual(T_c: float, T_h: float, T_sink: float) -> float:
