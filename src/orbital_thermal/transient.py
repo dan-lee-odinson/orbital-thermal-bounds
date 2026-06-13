@@ -26,6 +26,8 @@ Integration is fixed-step RK4 (numpy only). The panel is marched for several
 orbits until it reaches a periodic steady state; the final orbit is returned.
 """
 
+import warnings
+
 import numpy as np
 
 from .constants import SIGMA_SB
@@ -75,17 +77,34 @@ def simulate(
     n_orbits: int = 30,
     steps_per_orbit: int = 2000,
     t0_guess: float | None = None,
+    convergence_tol_K: float = 1e-3,
+    max_orbits: int | None = None,
+    return_diagnostics: bool = False,
+    raise_on_nonconvergence: bool = False,
 ):
-    """Integrate to a periodic steady state; return (t, T, T_sink) for the LAST orbit.
+    """Integrate to a periodic steady state; return (t, T, T_sink) for the final orbit.
+
+    The panel is marched orbit by orbit until the start-to-end temperature change
+    over an orbit falls below ``convergence_tol_K`` (periodic closure), capped at
+    ``max_orbits`` (default ``n_orbits``). High-thermal-mass panels (tau/period
+    >> 1) can need many more orbits than a fixed count would allow, so a fixed
+    march can silently return a not-yet-periodic profile; this loop detects that.
 
     ``t`` is seconds from the start of the final orbit; ``T`` and ``T_sink`` are
     the panel and effective-sink temperatures, K.
+
+    If ``return_diagnostics`` is True, returns ``(t, T, T_sink, diagnostics)``
+    where diagnostics is a dict: ``converged`` (bool), ``orbits_used`` (int),
+    ``closure_error_K`` (|T_end - T_start| of the final orbit), ``tol_K``, and
+    ``energy_residual_W_m2`` (orbit-mean net flux, ~0 at periodic steady state).
+    On non-convergence it warns (or raises if ``raise_on_nonconvergence``).
     """
     C = areal_heat_capacity
     eps = emissivity
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
+    cap = n_orbits if max_orbits is None else max_orbits
 
     def sink_at(t):
         return _sink_series(altitude_km, beta_deg, tilt_deg, deg_per_s * t, eps,
@@ -99,35 +118,56 @@ def simulate(
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
     T = float(t0_guess)
 
-    settle_steps = (n_orbits - 1) * steps_per_orbit
-    t = 0.0
-    for _ in range(settle_steps):
-        k1 = deriv(t, T)
-        k2 = deriv(t + dt / 2, T + dt / 2 * k1)
-        k3 = deriv(t + dt / 2, T + dt / 2 * k2)
-        k4 = deriv(t + dt, T + dt * k3)
-        T += dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        t += dt
-
     ts = np.zeros(steps_per_orbit + 1)
     Ts_panel = np.zeros(steps_per_orbit + 1)
     Ts_sink = np.zeros(steps_per_orbit + 1)
-    t_orbit0 = t
-    ts[0] = 0.0
-    Ts_panel[0] = T
-    Ts_sink[0] = sink_at(t)
-    for i in range(1, steps_per_orbit + 1):
-        k1 = deriv(t, T)
-        k2 = deriv(t + dt / 2, T + dt / 2 * k1)
-        k3 = deriv(t + dt / 2, T + dt / 2 * k2)
-        k4 = deriv(t + dt, T + dt * k3)
-        T += dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-        t += dt
-        ts[i] = t - t_orbit0
-        Ts_panel[i] = T
-        Ts_sink[i] = sink_at(t)
-    return ts, Ts_panel, Ts_sink
+    t = 0.0
+    converged = False
+    orbits_used = 0
+    for orbit in range(cap):
+        t_orbit0 = t
+        T_start = T
+        ts[0] = 0.0
+        Ts_panel[0] = T
+        Ts_sink[0] = sink_at(t)
+        for i in range(1, steps_per_orbit + 1):
+            k1 = deriv(t, T)
+            k2 = deriv(t + dt / 2, T + dt / 2 * k1)
+            k3 = deriv(t + dt / 2, T + dt / 2 * k2)
+            k4 = deriv(t + dt, T + dt * k3)
+            T += dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            t += dt
+            ts[i] = t - t_orbit0
+            Ts_panel[i] = T
+            Ts_sink[i] = sink_at(t)
+        orbits_used = orbit + 1
+        if abs(T - T_start) < convergence_tol_K:
+            converged = True
+            break
 
+    closure_error_K = float(abs(Ts_panel[-1] - Ts_panel[0]))
+    net = q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4)
+    energy_residual_W_m2 = float(abs(np.mean(net)))
+    if not converged:
+        tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
+        msg = (f"transient did not reach periodic steady state in {orbits_used} "
+               f"orbits (closure {closure_error_K:.2e} K > tol "
+               f"{convergence_tol_K:.1e} K; tau/period={tau / period:.2f}); "
+               f"raise max_orbits/n_orbits")
+        if raise_on_nonconvergence:
+            raise RuntimeError(msg)
+        warnings.warn(msg, RuntimeWarning)
+
+    if return_diagnostics:
+        diagnostics = {
+            "converged": converged,
+            "orbits_used": orbits_used,
+            "closure_error_K": closure_error_K,
+            "tol_K": float(convergence_tol_K),
+            "energy_residual_W_m2": energy_residual_W_m2,
+        }
+        return ts, Ts_panel, Ts_sink, diagnostics
+    return ts, Ts_panel, Ts_sink
 
 def averaging_bias(
     altitude_km: float,

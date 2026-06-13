@@ -97,3 +97,45 @@ class TestAveragingBias:
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
         ref = sink_mod.orbit_averaged_sink(550, 0.0, tilt_deg=0)
         assert b["sink_avg_K"] == pytest.approx(ref, abs=0.2)
+
+
+
+class TestConvergence:
+    def test_returns_three_tuple_by_default(self):
+        # Backward compatibility: the default return is still (t, T, T_sink).
+        out = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        assert len(out) == 3
+
+    def test_diagnostics_reported_and_converged(self):
+        t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                                   return_diagnostics=True, **SIM)
+        assert set(d) == {"converged", "orbits_used", "closure_error_K",
+                          "tol_K", "energy_residual_W_m2"}
+        assert d["converged"] is True
+        assert d["closure_error_K"] < d["tol_K"]
+        assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
+
+    def test_high_mass_needs_more_orbits(self):
+        # Motivation for the change: heavier panels take more orbits to settle.
+        _, _, _, lo = tr.simulate(550, 0.0, Q_LOAD, 2000.0, tilt_deg=0,
+                                  return_diagnostics=True, **SIM)
+        _, _, _, hi = tr.simulate(550, 0.0, Q_LOAD, 40000.0, tilt_deg=0,
+                                  return_diagnostics=True, **SIM)
+        assert hi["orbits_used"] > lo["orbits_used"]
+        assert lo["converged"] and hi["converged"]
+
+    def test_nonconvergence_warns_and_flags(self):
+        # A very high thermal mass under a tight orbit cap cannot reach periodic
+        # steady state: simulate must warn and report converged=False.
+        with pytest.warns(RuntimeWarning):
+            _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                                     n_orbits=3, steps_per_orbit=360,
+                                     return_diagnostics=True)
+        assert d["converged"] is False
+        assert d["orbits_used"] == 3
+
+    def test_nonconvergence_can_raise(self):
+        with pytest.raises(RuntimeError):
+            tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                        n_orbits=3, steps_per_orbit=360,
+                        raise_on_nonconvergence=True)
