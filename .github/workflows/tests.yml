@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -47,7 +47,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Enforce oracle-freeze (SHA-256 pins + semantic regeneration)
+      - name: Enforce oracle-freeze (SHA pins + semantic regen + external attestation)
+        env:
+          ORACLE_REQUIRE_EXTERNAL: "1"
         run: python external_models/mccalip_thoughts/verify_oracle_reproducible.py
 
   wheel-license:

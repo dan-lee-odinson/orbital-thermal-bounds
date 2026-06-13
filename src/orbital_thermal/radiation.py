@@ -11,11 +11,16 @@ square meters. Areas are *emitting* areas; a two-sided planform panel has
 emitting area equal to twice its planform area.
 """
 
+import math
+
 from .constants import SIGMA_SB
 
 
 def _check(emissivity: float, T: float, T_sink: float) -> None:
     """Reject non-physical inputs early, with messages that say why."""
+    if not (math.isfinite(emissivity) and math.isfinite(T) and math.isfinite(T_sink)):
+        raise ValueError(
+            f"emissivity/T/T_sink must be finite, got {emissivity}, {T}, {T_sink}")
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     if T_sink < 0.0:
@@ -47,8 +52,8 @@ def required_area(
     zero sink requires 2,630 m^2 of emitting area (1,315 m^2 of two-sided
     planform).
     """
-    if Q <= 0.0:
-        raise ValueError(f"heat load Q must be positive, got {Q}")
+    if not (math.isfinite(Q) and Q > 0.0):
+        raise ValueError(f"heat load Q must be finite and > 0, got {Q}")
     return Q / net_flux(T, emissivity, T_sink)
 
 
@@ -77,8 +82,8 @@ def effective_sink_temperature(view_factor: float, T_sink: float) -> float:
     This is the one-number environment summary whose validity domain the
     simulation program exists to quantify.
     """
-    if not 0.0 <= view_factor <= 1.0:
-        raise ValueError(f"view factor must be in [0, 1], got {view_factor}")
-    if T_sink < 0.0:
-        raise ValueError(f"sink temperature must be >= 0 K, got {T_sink}")
+    if not (math.isfinite(view_factor) and 0.0 <= view_factor <= 1.0):
+        raise ValueError(f"view factor must be finite in [0, 1], got {view_factor}")
+    if not (math.isfinite(T_sink) and T_sink >= 0.0):
+        raise ValueError(f"sink temperature must be finite and >= 0 K, got {T_sink}")
     return view_factor**0.25 * T_sink

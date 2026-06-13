@@ -131,8 +131,10 @@ class TestConvergence:
     def test_diagnostics_reported_and_converged(self):
         t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
                                    return_diagnostics=True, **SIM)
-        assert set(d) == {"converged", "orbits_used", "closure_error_K",
-                          "tol_K", "energy_residual_W_m2", "energy_tol_W_m2"}
+        assert set(d) == {"converged", "orbits_used", "closure_error_K", "tol_K",
+                          "energy_residual_W_m2", "energy_residual_K", "energy_tol_K",
+                          "periodic_converged", "time_discretization_converged",
+                          "time_residual_K", "time_tol_K"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -166,7 +168,7 @@ class TestConvergence:
                                      n_orbits=30, steps_per_orbit=200,
                                      return_diagnostics=True)
         assert d["closure_error_K"] < d["tol_K"]            # closure alone is satisfied
-        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+        assert d["energy_residual_K"] > d["energy_tol_K"]   # but energy dT_eq is not
         assert d["converged"] is False
 
     def test_high_thermal_mass_poor_guess_not_converged(self):
@@ -176,7 +178,22 @@ class TestConvergence:
                                      t0_guess=100.0, n_orbits=30, steps_per_orbit=200,
                                      return_diagnostics=True)
         assert d["converged"] is False
-        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+        assert d["energy_residual_K"] > d["energy_tol_K"]
+
+    def test_low_load_deep_space_not_falsely_converged(self):
+        # Audit P1-1: at low q_load / low T the flux->temperature slope 4*eps*sigma*T^3
+        # is tiny, so a fixed W/m^2 floor hid many-kelvin errors. The temperature-
+        # equivalent criterion (dT_eq) must reject this deep-space case.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(altitude_km=550, beta_deg=90, q_load=1e-3,
+                                     areal_heat_capacity=1e9, tilt_deg=180,
+                                     assume_sun_shielded=True, t0_guess=10.0,
+                                     n_orbits=1, steps_per_orbit=100,
+                                     return_diagnostics=True)
+        assert d["closure_error_K"] < d["tol_K"]            # closure trivially small
+        assert d["energy_residual_K"] > d["energy_tol_K"]   # ~2.4 K equivalent error
+        assert d["converged"] is False
 
     def test_averaging_bias_raises_on_false_closure(self):
         # The high-mass false-closure case must NOT yield a (negative) peak excess.
@@ -232,9 +249,15 @@ class TestHeatCapacityProvenance:
             assert 0.0 < m["rel_uncertainty"] < 1.0
 
     def test_ammonia_entry_matches_coolprop_reference_state(self):
+        # CODE-regression: the stored (2-decimal) values must reproduce the pinned
+        # backend to a TIGHT tolerance (regression_rtol), not the loose 1% physical
+        # uncertainty -- a 1% test would mask large accidental edits (audit P3-6).
         pytest.importorskip("CoolProp")
         rho, cp = tr.coolant_rho_cp("Ammonia", 300.0)
         m = tr.MATERIALS["ammonia_liquid"]
+        assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["regression_rtol"])
+        assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["regression_rtol"])
+        # ...and (looser) they agree with the backend within the physical uncertainty
         assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
         assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
 
@@ -325,3 +348,32 @@ class TestInputDomainAndStability:
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([])
+
+
+
+class TestTemporalResolution:
+    """Step-doubling temporal-accuracy gate (audit re-review P1-2)."""
+
+    def test_coarse_steps_periodic_but_not_time_resolved(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                     n_orbits=200, steps_per_orbit=3,
+                                     return_diagnostics=True, check_time_resolution=True)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False
+        assert d["time_residual_K"] > d["time_tol_K"]
+
+    def test_averaging_bias_requires_time_resolution(self):
+        # Coarse stepping underpredicts peak/swing badly; averaging_bias must refuse.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.averaging_bias(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                  n_orbits=200, steps_per_orbit=3)
+
+    def test_refined_steps_are_time_resolved(self):
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                              assume_sun_shielded=True, **SIM)
+        assert b["time_discretization_converged"] is True
+        assert b["time_residual_K"] < b["time_tol_K"]

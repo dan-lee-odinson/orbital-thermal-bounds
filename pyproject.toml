@@ -1,20 +1,23 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbital-thermal"
-version = "0.8.1"
+version = "0.8.2"
 description = "Executable reference implementation of the orbital-thermal-bounds radiator model (Lee-Odinson, 2026)"
 authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 # The analytical modules (radiation, equilibrium, bounds) are dependency-light,
 # but the full package requires numpy (environment, sink, transient). Optional
 # extras add CoolProp (the [fluids] ammonia checks) and matplotlib (figure
 # scripts); both are also pulled in by [dev].
 dependencies = ["numpy>=1.24"]
+# PEP 639: SPDX license expression above; ship only the software license. The
+# CC BY 4.0 docs license is a separate component (see LICENSING.md).
+license-files = ["LICENSE-MIT"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "CoolProp==7.2.0", "matplotlib>=3.7"]
@@ -24,11 +27,6 @@ fluids = ["CoolProp==7.2.0"]
 Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 "Theory preprint" = "https://doi.org/10.5281/zenodo.20650893"
 "AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670772"
-
-[tool.setuptools]
-# Ship only the software license in the wheel; the CC BY 4.0 docs license is a
-# separate component (see LICENSING.md), not the distribution license.
-license-files = ["LICENSE-MIT"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

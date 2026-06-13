@@ -8,6 +8,8 @@ smoke tests assert that round trip explicitly.
 Units: SI throughout. ``area`` is emitting area in m^2.
 """
 
+import math
+
 from .constants import SIGMA_SB
 from .radiation import _check
 
@@ -22,14 +24,14 @@ def equilibrium_temperature(
     Worked anchor (AI1 primary operating point): 120 kW through 220 m^2 at
     emissivity 0.91 with T_s^eff = 220 K gives 337.1 K.
     """
-    if Q <= 0.0:
-        raise ValueError(f"heat load Q must be positive, got {Q}")
-    if area <= 0.0:
-        raise ValueError(f"area must be positive, got {area}")
+    if not (math.isfinite(Q) and Q > 0.0):
+        raise ValueError(f"heat load Q must be finite and > 0, got {Q}")
+    if not (math.isfinite(area) and area > 0.0):
+        raise ValueError(f"area must be finite and > 0, got {area}")
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
-    if T_sink < 0.0:
-        raise ValueError(f"sink temperature must be >= 0 K, got {T_sink}")
+    if not (math.isfinite(T_sink) and T_sink >= 0.0):
+        raise ValueError(f"sink temperature must be finite and >= 0 K, got {T_sink}")
     return (Q / (emissivity * SIGMA_SB * area) + T_sink**4) ** 0.25
 
 

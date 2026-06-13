@@ -72,7 +72,9 @@ def simulate(
     steps_per_orbit: int = 2000,
     t0_guess: float | None = None,
     convergence_tol_K: float = 1e-3,
-    energy_tol_W_m2: float | None = None,
+    energy_tol_K: float = 1e-2,
+    check_time_resolution: bool = False,
+    time_tol_K: float = 1e-2,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -101,20 +103,26 @@ def simulate(
     eps = emissivity
     if not (np.isfinite(C) and C > 0.0):
         raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
-    if steps_per_orbit < 1:
-        raise ValueError(f"steps_per_orbit must be >= 1, got {steps_per_orbit}")
-    if n_orbits < 1:
-        raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
-    if max_orbits is not None and max_orbits < 1:
-        raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
+    for _name, _val in (("steps_per_orbit", steps_per_orbit), ("n_orbits", n_orbits)):
+        if isinstance(_val, bool) or not isinstance(_val, int):
+            raise TypeError(f"{_name} must be an int, got {type(_val).__name__}")
+        if _val < 1:
+            raise ValueError(f"{_name} must be >= 1, got {_val}")
+    if max_orbits is not None:
+        if isinstance(max_orbits, bool) or not isinstance(max_orbits, int):
+            raise TypeError(f"max_orbits must be an int, got {type(max_orbits).__name__}")
+        if max_orbits < 1:
+            raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
     if not (np.isfinite(q_load) and q_load > 0.0):
         raise ValueError(f"q_load must be finite and > 0, got {q_load}")
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
         raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
-    if energy_tol_W_m2 is not None and not (np.isfinite(energy_tol_W_m2) and energy_tol_W_m2 > 0.0):
-        raise ValueError(f"energy_tol_W_m2 must be finite and > 0, got {energy_tol_W_m2}")
+    if not (np.isfinite(energy_tol_K) and energy_tol_K > 0.0):
+        raise ValueError(f"energy_tol_K must be finite and > 0, got {energy_tol_K}")
+    if not (np.isfinite(time_tol_K) and time_tol_K > 0.0):
+        raise ValueError(f"time_tol_K must be finite and > 0, got {time_tol_K}")
     if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
         raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
     period = env.orbital_period(altitude_km)
@@ -125,7 +133,6 @@ def simulate(
     # absolute floor. Per-orbit closure alone is insufficient when tau/P >> 1 --
     # the orbit-to-orbit change vanishes while the panel is still far from periodic
     # steady state (audit re-review P1-1). The mean net flux must also be ~0.
-    e_tol = energy_tol_W_m2 if energy_tol_W_m2 is not None else max(1e-3 * abs(q_load), 1e-2)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
@@ -137,6 +144,25 @@ def simulate(
     def deriv(t, T):
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
+
+    def _one_orbit(T0, nsteps, t_begin):
+        """RK4-march one orbital period from ``T0`` at ``t_begin`` with ``nsteps``
+        steps; return the (nsteps+1) panel-temperature samples. Used for the
+        step-doubling temporal-accuracy check (audit re-review P1-2)."""
+        dtl = period / nsteps
+        Tloc = float(T0)
+        arr = np.empty(nsteps + 1)
+        arr[0] = Tloc
+        tt = t_begin
+        for i in range(1, nsteps + 1):
+            k1 = deriv(tt, Tloc)
+            k2 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k1)
+            k3 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k2)
+            k4 = deriv(tt + dtl, Tloc + dtl * k3)
+            Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            tt += dtl
+            arr[i] = Tloc
+        return arr
 
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
@@ -185,23 +211,52 @@ def simulate(
         orbits_used = orbit + 1
         orbit_energy_residual = float(abs(np.mean(
             q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4))))
-        if abs(T - T_start) < convergence_tol_K and orbit_energy_residual < e_tol:
+        # Scale-aware: convert the flux residual to an equivalent temperature error
+        # dT_eq = |<q_net>| / (4 eps sigma T_ref^3). A fixed W/m^2 floor cannot bound
+        # temperature error uniformly (4 eps sigma T^3 -> 0 at low T); audit P1-1.
+        T_ref = float(np.mean(Ts_panel[:-1]))
+        dT_eq = orbit_energy_residual / (4.0 * eps * SIGMA_SB * T_ref ** 3)
+        if abs(T - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
             converged = True
             break
 
     closure_error_K = float(abs(Ts_panel[-1] - Ts_panel[0]))
     net = q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4)
     energy_residual_W_m2 = float(abs(np.mean(net)))
+    energy_residual_K = energy_residual_W_m2 / (
+        4.0 * eps * SIGMA_SB * float(np.mean(Ts_panel[:-1])) ** 3)
     if not converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
                f"orbits (closure {closure_error_K:.2e} K vs tol "
-               f"{convergence_tol_K:.1e} K; energy residual "
-               f"{energy_residual_W_m2:.2e} vs tol {e_tol:.1e} W/m^2; "
-               f"tau/period={tau / period:.2f}); raise max_orbits/n_orbits")
+               f"{convergence_tol_K:.1e} K; energy dT_eq {energy_residual_K:.2e} K vs "
+               f"tol {energy_tol_K:.1e} K; tau/period={tau / period:.2f}); "
+               f"raise max_orbits/n_orbits")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
+
+    # Temporal-accuracy gate (audit re-review P1-2): periodic closure + energy
+    # balance do not certify that the timestep resolves the intra-orbit forcing/peak.
+    # Re-integrate the final orbit at 2x resolution and require peak/mean/swing to agree.
+    if check_time_resolution:
+        peak_n = float(Ts_panel.max())
+        mean_n = float(np.mean(Ts_panel[:-1]))
+        swing_n = float(Ts_panel.max() - Ts_panel.min())
+        refined = _one_orbit(Ts_panel[0], 2 * steps_per_orbit, t_orbit0)
+        if not np.all(np.isfinite(refined)) or float(np.min(refined)) <= 0.0:
+            time_residual_K = float("inf")
+            time_discretization_converged = False
+        else:
+            time_residual_K = max(
+                abs(peak_n - float(refined.max())),
+                abs(mean_n - float(np.mean(refined[:-1]))),
+                abs(swing_n - float(refined.max() - refined.min())),
+            )
+            time_discretization_converged = bool(time_residual_K < time_tol_K)
+    else:
+        time_residual_K = None
+        time_discretization_converged = None
 
     if return_diagnostics:
         diagnostics = {
@@ -210,7 +265,12 @@ def simulate(
             "closure_error_K": closure_error_K,
             "tol_K": float(convergence_tol_K),
             "energy_residual_W_m2": energy_residual_W_m2,
-            "energy_tol_W_m2": float(e_tol),
+            "energy_residual_K": energy_residual_K,
+            "energy_tol_K": float(energy_tol_K),
+            "periodic_converged": converged,
+            "time_discretization_converged": time_discretization_converged,
+            "time_residual_K": time_residual_K,
+            "time_tol_K": float(time_tol_K),
         }
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
@@ -264,7 +324,9 @@ MATERIALS = {
                   "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
         "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
         "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
-        "rel_uncertainty": 0.01,
+        "rel_uncertainty": 0.01,                # PHYSICAL property uncertainty (cross-check)
+        "stored_decimals": 2,                   # values rounded to 2 decimals
+        "regression_rtol": 1e-4,                # CODE-regression tol vs the pinned backend
     },
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
@@ -310,8 +372,8 @@ def areal_heat_capacity(layers) -> float:
     for material, thickness in layers:
         if material not in MATERIALS:
             raise KeyError(f"unknown material {material!r}; see MATERIALS")
-        if thickness <= 0.0:
-            raise ValueError(f"thickness must be positive, got {thickness}")
+        if not (np.isfinite(thickness) and thickness > 0.0):
+            raise ValueError(f"thickness must be finite and > 0, got {thickness}")
         entry = MATERIALS[material]
         total += entry["rho_kg_m3"] * entry["cp_J_kgK"] * thickness
     return total
@@ -368,17 +430,23 @@ def averaging_bias(
     ``closure_error_K``, and ``energy_residual_W_m2``.
     """
     kwargs.pop("return_diagnostics", None)
+    kwargs.pop("check_time_resolution", None)
     t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
                                  tilt_deg=tilt_deg, assume_sun_shielded=assume_sun_shielded,
-                                 emissivity=emissivity, return_diagnostics=True, **kwargs)
-    if require_convergence and not diag["converged"]:
+                                 emissivity=emissivity, return_diagnostics=True,
+                                 check_time_resolution=True, **kwargs)
+    if require_convergence and not (diag["periodic_converged"]
+                                    and diag["time_discretization_converged"]):
         raise RuntimeError(
-            "averaging_bias: transient did not reach periodic steady state "
-            f"({diag['orbits_used']} orbits, closure {diag['closure_error_K']:.2e} K "
-            f"> tol {diag['tol_K']:.1e} K). The Jensen/peak metrics would be an "
-            "initialization artifact (the bias/peak-excess sign can flip). Increase "
-            "n_orbits/max_orbits, or pass require_convergence=False to inspect the "
-            "unconverged diagnostics."
+            "averaging_bias: result not certified -- "
+            f"periodic_converged={diag['periodic_converged']} "
+            f"(closure {diag['closure_error_K']:.2e} K vs tol {diag['tol_K']:.1e} K; "
+            f"energy dT_eq {diag['energy_residual_K']:.2e} K vs tol "
+            f"{diag['energy_tol_K']:.1e} K), time_discretization_converged="
+            f"{diag['time_discretization_converged']} (step-doubling residual "
+            f"{diag['time_residual_K']} K vs tol {diag['time_tol_K']:.1e} K). The "
+            "Jensen/peak metrics would be invalid. Increase n_orbits/max_orbits and/or "
+            "steps_per_orbit, or pass require_convergence=False to inspect diagnostics."
         )
     transient_mean = float(np.mean(T[:-1]))
     sink_avg = float(np.mean(Tsink[:-1] ** 4) ** 0.25)
@@ -401,4 +469,10 @@ def averaging_bias(
         "orbits_used": diag["orbits_used"],
         "closure_error_K": diag["closure_error_K"],
         "energy_residual_W_m2": diag["energy_residual_W_m2"],
+        "energy_residual_K": diag["energy_residual_K"],
+        "energy_tol_K": diag["energy_tol_K"],
+        "periodic_converged": diag["periodic_converged"],
+        "time_discretization_converged": diag["time_discretization_converged"],
+        "time_residual_K": diag["time_residual_K"],
+        "time_tol_K": diag["time_tol_K"],
     }
