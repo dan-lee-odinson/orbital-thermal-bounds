@@ -94,6 +94,7 @@ def effective_sink_temperature(
     albedo: float = EARTH_ALBEDO,
     solar_constant: float = SOLAR_CONSTANT,
     t_space: float = T_SPACE_K,
+    assume_sun_shielded: bool = True,
 ) -> float:
     """Effective radiative sink temperature, K, at one orbit position.
 
@@ -101,9 +102,26 @@ def effective_sink_temperature(
     the point closest to the Sun, 180 deg the anti-solar (deep night) point.
     ``tilt_deg`` is the radiator normal's angle from nadir (0 = Earth-facing,
     180 = space-facing).
+
+    Attitude assumption (audit item 8): this models only the *cold-side*
+    environment and OMITS direct solar flux on the radiator face -- valid only for
+    an anti-solar / sun-shielded attitude, where direct sunlight falls on the back
+    face. ``tilt_deg`` is accepted for arbitrary Earth coupling, but the result is
+    NOT a general all-attitude sink. ``assume_sun_shielded`` makes this explicit:
+    it must be True (the default). Setting it False raises ``NotImplementedError``,
+    since direct-solar loading from the surface normal and Sun vector is not yet
+    modeled -- a guard so the omission cannot be silently misread as general.
     """
     if emissivity <= 0:
         raise ValueError("emissivity must be positive")
+    if not assume_sun_shielded:
+        raise NotImplementedError(
+            "effective_sink_temperature models only the sun-shielded (anti-solar) "
+            "cold side; direct solar flux on the radiator face is not modeled. "
+            "Pass assume_sun_shielded=True (the default) to acknowledge this, or "
+            "extend the model with a direct-solar term from the normal and Sun "
+            "vector before treating arbitrary tilt as a general sink."
+        )
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
     # Reflected-solar drive uses the SUBPOINT albedo approximation (see
     # subpoint_albedo_factor): a stand-in, not disk-integrated albedo.

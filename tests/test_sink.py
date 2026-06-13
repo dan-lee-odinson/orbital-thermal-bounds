@@ -72,6 +72,21 @@ class TestEffectiveSink:
         with pytest.raises(ValueError):
             sink.effective_sink_temperature(550, 0, 0, emissivity=0.0)
 
+    def test_sun_shielded_default_unchanged(self):
+        # The default (sun-shielded) result is unchanged by the new flag.
+        a = sink.effective_sink_temperature(550, 0, 0, tilt_deg=0)
+        b = sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=True)
+        assert a == b
+
+    def test_unshielded_raises(self):
+        # Asking for a general (non-sun-shielded) sink is refused, not faked.
+        with pytest.raises(NotImplementedError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=False)
+
+    def test_flag_flows_through_profile(self):
+        with pytest.raises(NotImplementedError):
+            sink.sink_profile(550, 0.0, tilt_deg=0, assume_sun_shielded=False)
+
 
 class TestEclipse:
     def test_night_anti_solar_point_in_eclipse_at_beta0(self):
