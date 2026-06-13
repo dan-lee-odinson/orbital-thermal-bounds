@@ -90,6 +90,16 @@ class TestOrbitAverage:
         avg = sink.orbit_averaged_sink(550, 0.0, tilt_deg=0)
         assert T.min() <= avg <= T.max()
 
+    def test_average_excludes_duplicated_endpoint(self):
+        # orbit_averaged_sink must drop the duplicated 360deg point; it should
+        # equal the endpoint-excluded T^4 mean, not the all-points mean.
+        _, T = sink.sink_profile(550, 0.0, tilt_deg=0, n=720)
+        excl = float(np.mean(T[:-1] ** 4) ** 0.25)
+        incl = float(np.mean(T ** 4) ** 0.25)
+        avg = sink.orbit_averaged_sink(550, 0.0, tilt_deg=0, n=720)
+        assert avg == pytest.approx(excl, rel=1e-12)
+        assert abs(avg - incl) > 1e-3      # the duplicate really did bias it
+
     def test_subpoint_approx_average_equals_floor_at_terminator(self):
         # APPROXIMATION BEHAVIOR, not physics: because the subpoint albedo
         # approximation nulls all albedo at beta = 90, the orbit-averaged sink

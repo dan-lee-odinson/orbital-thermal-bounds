@@ -129,7 +129,12 @@ def sink_profile(
     n: int = 361,
     **kwargs,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (u_deg, T_s_eff) arrays over one full orbit (0..360 deg)."""
+    """Return (u_deg, T_s_eff) arrays over one full orbit (0..360 deg).
+
+    The grid includes both endpoints (0 and 360 deg are the same orbit point), so
+    it closes the loop for plotting. Any radiative averaging must drop the
+    duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
+    """
     u = np.linspace(0.0, 360.0, n)
     T = np.array(
         [effective_sink_temperature(altitude_km, beta_deg, ui, tilt_deg, **kwargs)
@@ -151,4 +156,6 @@ def orbit_averaged_sink(
     rejection scales with T^4.
     """
     _, T = sink_profile(altitude_km, beta_deg, tilt_deg, n=n, **kwargs)
-    return float(np.mean(T**4) ** 0.25)
+    # Drop the duplicated 360deg endpoint so it is not double-counted (consistent
+    # with transient.averaging_bias, which also slices [:-1]). Audit item 7.
+    return float(np.mean(T[:-1] ** 4) ** 0.25)
