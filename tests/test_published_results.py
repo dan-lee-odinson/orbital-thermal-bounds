@@ -354,6 +354,12 @@ class TestBoundsPhysicalContracts:
         with pytest.raises(ValueError):
             heat_pump_area_ratio(1.0, 520.0, 353.0)   # T2 < T1, not a lift
 
+    def test_heat_pump_rejects_nan_cop_and_negative_sink(self):
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(float("nan"), 353.0, 520.0)
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(1.15, 353.0, 520.0, T_sink=-220.0)
+
     def test_heat_pump_allows_carnot_boundary(self):
         cop = carnot_cop_cooling(353.0, 520.0)        # exactly at the ceiling
         assert heat_pump_area_ratio(cop, 353.0, 520.0) > 0.0

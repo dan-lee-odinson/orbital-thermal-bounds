@@ -236,8 +236,10 @@ def heat_pump_area_ratio(
     353 -> 520 K, T_sink = 220 K gives exactly 0.348 (zero-sink
     approximation 0.397).
     """
-    if cop_cooling <= 0.0:
-        raise ValueError(f"COP_c must be positive, got {cop_cooling}")
+    if not (cop_cooling > 0.0):          # also rejects NaN
+        raise ValueError(f"COP_c must be a positive number, got {cop_cooling}")
+    if T_sink < 0.0:
+        raise ValueError(f"T_sink must be >= 0 K, got {T_sink}")
     if not (T_sink < T1 and T_sink < T2):
         raise ValueError("both temperatures must exceed the sink")
     if not T2 > T1:

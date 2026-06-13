@@ -161,6 +161,10 @@ def sink_temperature_series(
         raise ValueError(f"albedo must be in [0, 1], got {albedo}")
     if t_space < 0.0:
         raise ValueError(f"t_space must be >= 0 K, got {t_space}")
+    if not (np.isfinite(earth_ir) and earth_ir >= 0.0):
+        raise ValueError(f"earth_ir must be finite and >= 0, got {earth_ir}")
+    if not (np.isfinite(solar_constant) and solar_constant >= 0.0):
+        raise ValueError(f"solar_constant must be finite and >= 0, got {solar_constant}")
     _require_shielding(assume_sun_shielded)
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
     albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation

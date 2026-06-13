@@ -298,6 +298,21 @@ class TestInputDomainAndStability:
                 tr.simulate(550, 0.0, Q_LOAD, 1.0, tilt_deg=0, assume_sun_shielded=True,
                             n_orbits=2, steps_per_orbit=100)
 
+    def test_simulate_rejects_invalid_physical_inputs(self):
+        # Early validation: degenerate/non-physical inputs raise before integrating
+        # (audit re-review P2-7), not ZeroDivisionError or a silent profile.
+        bad = dict(tilt_deg=0, assume_sun_shielded=True, n_orbits=2, steps_per_orbit=100)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, emissivity=0.0, **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, -100.0, 8000.0, **bad)              # negative load
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, convergence_tol_K=float("nan"), **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, convergence_tol_K=-1.0, **bad)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0, Q_LOAD, 8000.0, t0_guess=-5.0, **bad)
+
     def test_rk4_negative_temperature_raises(self):
         # An unstable-but-finite run dipped to ~-332 K and was returned before;
         # any non-positive accepted state must now raise (audit re-review P1-3).

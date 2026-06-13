@@ -107,8 +107,16 @@ def simulate(
         raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
     if max_orbits is not None and max_orbits < 1:
         raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
-    if not np.isfinite(q_load):
-        raise ValueError(f"q_load must be finite, got {q_load}")
+    if not (np.isfinite(q_load) and q_load > 0.0):
+        raise ValueError(f"q_load must be finite and > 0, got {q_load}")
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
+        raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
+    if energy_tol_W_m2 is not None and not (np.isfinite(energy_tol_W_m2) and energy_tol_W_m2 > 0.0):
+        raise ValueError(f"energy_tol_W_m2 must be finite and > 0, got {energy_tol_W_m2}")
+    if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
+        raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period

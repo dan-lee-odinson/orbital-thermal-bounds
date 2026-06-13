@@ -213,3 +213,9 @@ class TestInputDomain:
     def test_sink_profile_requires_two_points(self):
         with pytest.raises(ValueError):
             sink.sink_profile(550, 0.0, tilt_deg=0, n=1, assume_sun_shielded=True)
+
+    def test_negative_or_nonfinite_fluxes_rejected(self):
+        with pytest.raises(ValueError):
+            sink.effective_sink_temperature(550, 0, 0, assume_sun_shielded=True, earth_ir=-1000.0)
+        with pytest.raises(ValueError):
+            sink.effective_sink_temperature(550, 0, 0, assume_sun_shielded=True, solar_constant=-1.0)
