@@ -5,6 +5,8 @@ the constant-sink limit, against energy-conserving periodicity, and for the
 physically required monotonic damping with thermal mass.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -229,3 +231,33 @@ class TestShieldingPropagation:
         with pytest.raises(NotImplementedError):
             tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
                               assume_sun_shielded=False, **SIM)
+
+
+class TestInputDomainAndStability:
+    """Input-domain validation and explicit-RK4 stability guards (P3-a)."""
+
+    def test_rejects_nonpositive_heat_capacity(self):
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 0.0, tilt_deg=0, assume_sun_shielded=True, **SIM)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, -5.0, tilt_deg=0, assume_sun_shielded=True, **SIM)
+
+    def test_rejects_bad_step_and_orbit_counts(self):
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
+                        n_orbits=0, steps_per_orbit=720)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
+                        n_orbits=5, steps_per_orbit=0)
+
+    def test_rk4_divergence_raises(self):
+        # Tiny heat capacity + coarse steps -> dt >> tau -> explicit RK4 blows up.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # ignore the stability RuntimeWarning
+                tr.simulate(550, 0.0, Q_LOAD, 1.0, tilt_deg=0, assume_sun_shielded=True,
+                            n_orbits=2, steps_per_orbit=100)
+
+    def test_empty_layers_rejected(self):
+        with pytest.raises(ValueError):
+            tr.areal_heat_capacity([])

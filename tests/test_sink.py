@@ -181,3 +181,24 @@ class TestSubpointAlbedoApproximation:
         for beta, u in [(0, 0), (30, 45), (60, 80), (0, 95)]:
             expect = max(0.0, np.cos(np.radians(beta)) * np.cos(np.radians(u)))
             assert sink.subpoint_albedo_factor(beta, u) == pytest.approx(expect, abs=1e-12)
+
+
+class TestInputDomain:
+    """Centralized physical-domain validation (audit re-review P3-a)."""
+
+    def test_emissivity_must_be_in_unit_interval(self):
+        with pytest.raises(ValueError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0,
+                                            assume_sun_shielded=True, emissivity=1.5)
+
+    def test_absorptivity_must_be_in_unit_interval(self):
+        with pytest.raises(ValueError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0,
+                                            assume_sun_shielded=True, solar_absorptivity=1.5)
+        with pytest.raises(ValueError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0,
+                                            assume_sun_shielded=True, solar_absorptivity=-0.1)
+
+    def test_sink_profile_requires_two_points(self):
+        with pytest.raises(ValueError):
+            sink.sink_profile(550, 0.0, tilt_deg=0, n=1, assume_sun_shielded=True)

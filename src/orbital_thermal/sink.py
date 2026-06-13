@@ -142,8 +142,14 @@ def sink_temperature_series(
     be True; it is the single point where the direct-solar omission is asserted, so
     every caller (scalar, profile, transient) goes through this guard.
     """
-    if emissivity <= 0:
-        raise ValueError("emissivity must be positive")
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    if not 0.0 <= solar_absorptivity <= 1.0:
+        raise ValueError(f"solar_absorptivity must be in [0, 1], got {solar_absorptivity}")
+    if not 0.0 <= albedo <= 1.0:
+        raise ValueError(f"albedo must be in [0, 1], got {albedo}")
+    if t_space < 0.0:
+        raise ValueError(f"t_space must be >= 0 K, got {t_space}")
     _require_shielding(assume_sun_shielded)
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
     albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation
@@ -215,6 +221,8 @@ def sink_profile(
     it closes the loop for plotting. Any radiative averaging must drop the
     duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
     """
+    if n < 2:
+        raise ValueError(f"n must be >= 2 to resolve an orbit, got {n}")
     u = np.linspace(0.0, 360.0, n)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
     T = sink_temperature_series(

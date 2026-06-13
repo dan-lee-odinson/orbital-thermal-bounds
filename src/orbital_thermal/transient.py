@@ -98,6 +98,16 @@ def simulate(
     """
     C = areal_heat_capacity
     eps = emissivity
+    if not (np.isfinite(C) and C > 0.0):
+        raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
+    if steps_per_orbit < 1:
+        raise ValueError(f"steps_per_orbit must be >= 1, got {steps_per_orbit}")
+    if n_orbits < 1:
+        raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
+    if max_orbits is not None and max_orbits < 1:
+        raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
+    if not np.isfinite(q_load):
+        raise ValueError(f"q_load must be finite, got {q_load}")
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
@@ -117,6 +127,17 @@ def simulate(
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
     T = float(t0_guess)
+
+    # Explicit fixed-step RK4 is conditionally stable: warn if the step exceeds the
+    # radiative time constant tau = C / (4 eps sigma T^3) (audit re-review P3-a).
+    tau0 = thermal_time_constant(C, T, eps)
+    if dt > tau0:
+        warnings.warn(
+            f"RK4 timestep dt={dt:.3g} s exceeds the radiative time constant "
+            f"tau={tau0:.3g} s; explicit integration may be unstable -- increase "
+            f"steps_per_orbit or areal_heat_capacity",
+            RuntimeWarning,
+        )
 
     ts = np.zeros(steps_per_orbit + 1)
     Ts_panel = np.zeros(steps_per_orbit + 1)
@@ -140,6 +161,12 @@ def simulate(
             ts[i] = t - t_orbit0
             Ts_panel[i] = T
             Ts_sink[i] = sink_at(t)
+        if not np.isfinite(T):
+            raise RuntimeError(
+                "RK4 diverged to a non-finite temperature; the timestep is too "
+                "large for this heat capacity -- increase steps_per_orbit or "
+                "areal_heat_capacity (see the stability warning)"
+            )
         orbits_used = orbit + 1
         if abs(T - T_start) < convergence_tol_K:
             converged = True
@@ -256,6 +283,9 @@ def areal_heat_capacity(layers) -> float:
     names key into :data:`MATERIALS`. This is the quantity ``C`` in the one-node
     model, derived from a physical stack rather than assumed.
     """
+    layers = list(layers)
+    if not layers:
+        raise ValueError("layers must be a non-empty list of (material, thickness) pairs")
     total = 0.0
     for material, thickness in layers:
         if material not in MATERIALS:
