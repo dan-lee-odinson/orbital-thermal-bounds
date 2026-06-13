@@ -25,6 +25,11 @@ Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 "Theory preprint" = "https://doi.org/10.5281/zenodo.20650893"
 "AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670772"
 
+[tool.setuptools]
+# Ship only the software license in the wheel; the CC BY 4.0 docs license is a
+# separate component (see LICENSING.md), not the distribution license.
+license-files = ["LICENSE-MIT"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
