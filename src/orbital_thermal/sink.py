@@ -107,9 +107,20 @@ def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
 
 def _require_shielding(assume_sun_shielded: bool) -> None:
     """Guard: the model omits direct solar on the radiator face. The caller must
-    explicitly assert the face is sun-shielded (audit re-review P1-b)."""
-    if not assume_sun_shielded:
-        raise NotImplementedError(
+    explicitly assert the face is sun-shielded (audit re-review P1-b, P1-2).
+
+    The contract is strict: ``assume_sun_shielded`` must be the boolean ``True`` or
+    ``False`` -- truthy non-booleans (e.g. the string ``"false"``, ``1``, ``[1]``)
+    are rejected with ``TypeError`` so a config/CLI value cannot silently assert
+    shielding."""
+    if assume_sun_shielded is True:
+        return
+    if assume_sun_shielded is not False:
+        raise TypeError(
+            "assume_sun_shielded must be the boolean True or False, got "
+            f"{assume_sun_shielded!r} ({type(assume_sun_shielded).__name__})"
+        )
+    raise NotImplementedError(
             "the effective-sink model omits direct solar flux on the radiator "
             "face; it is valid only when that face receives no direct sunlight "
             "(an anti-solar attitude OR an external shade -- the model does not "

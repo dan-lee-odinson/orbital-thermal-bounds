@@ -85,6 +85,17 @@ class TestEffectiveSink:
         with pytest.raises(NotImplementedError):
             sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=False)
 
+    def test_shielding_flag_must_be_strict_boolean(self):
+        # Truthy non-booleans must NOT assert shielding (audit re-review P1-2).
+        for bad in ("false", "true", "no", 1, 0, [1], None):
+            with pytest.raises(TypeError):
+                sink.effective_sink_temperature(550, 0, 0, tilt_deg=0,
+                                                assume_sun_shielded=bad)
+        # the genuine booleans behave as specified
+        sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=True)
+        with pytest.raises(NotImplementedError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=False)
+
     def test_flag_flows_through_profile(self):
         with pytest.raises(NotImplementedError):
             sink.sink_profile(550, 0.0, tilt_deg=0, assume_sun_shielded=False)
