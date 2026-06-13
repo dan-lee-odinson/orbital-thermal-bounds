@@ -1,4 +1,5 @@
 # Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers
+[![tests](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml/badge.svg?branch=feature/simulation-framework)](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml)
 *Machine-verified thermodynamic bounds for orbital data center thermal architecture: the preprint, its LaTeX source, the audited proof document, and two independent verification suites (Python and Wolfram Language).*
 
 **Archived version:** DOI: [https://doi.org/10.5281/zenodo.20650893](https://doi.org/10.5281/zenodo.20650893)

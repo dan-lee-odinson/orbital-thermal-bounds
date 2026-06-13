@@ -1,0 +1,14 @@
+# package=CoolProp,version=7.2.0,backend=HEOS,fluid=Ammonia,eos_bibtex_key=Gao-JPCRD-2020
+T_K,case,P_sat_bar,rho_liq_kg_m3,rho_vap_kg_m3,T_crit_margin_K
+337.10,"sustained, two-sided (primary)",28.76,538.0,22.66,68.46
+343.80,"f=0.10 overhead, nominal",33.62,525.1,26.84,61.76
+346.21,"sustained, eps=0.80",35.52,520.2,28.51,59.35
+348.67,85% effective area,37.53,515.2,30.31,56.89
+350.12,"f=0.20 overhead, nominal",38.75,512.2,31.43,55.44
+350.78,"sustained, T_s=260",39.32,510.8,31.95,54.78
+353.16,continuous-peak hypothetical,41.42,505.7,33.90,52.40
+358.91,"sustained, combined stress",46.84,492.9,39.12,46.65
+365.24,"f=0.10 overhead, stressed",53.40,477.7,45.84,40.32
+371.26,"f=0.20 overhead, stressed",60.26,462.0,53.43,34.30
+374.17,"continuous-peak, combined stress",63.81,453.9,57.62,31.39
+391.47,"sustained, one-sided",88.36,393.0,94.42,14.09
