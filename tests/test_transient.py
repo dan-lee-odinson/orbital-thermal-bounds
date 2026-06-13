@@ -249,9 +249,15 @@ class TestHeatCapacityProvenance:
             assert 0.0 < m["rel_uncertainty"] < 1.0
 
     def test_ammonia_entry_matches_coolprop_reference_state(self):
+        # CODE-regression: the stored (2-decimal) values must reproduce the pinned
+        # backend to a TIGHT tolerance (regression_rtol), not the loose 1% physical
+        # uncertainty -- a 1% test would mask large accidental edits (audit P3-6).
         pytest.importorskip("CoolProp")
         rho, cp = tr.coolant_rho_cp("Ammonia", 300.0)
         m = tr.MATERIALS["ammonia_liquid"]
+        assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["regression_rtol"])
+        assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["regression_rtol"])
+        # ...and (looser) they agree with the backend within the physical uncertainty
         assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
         assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
 

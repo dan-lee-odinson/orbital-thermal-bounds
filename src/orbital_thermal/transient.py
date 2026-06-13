@@ -324,7 +324,9 @@ MATERIALS = {
                   "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
         "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
         "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
-        "rel_uncertainty": 0.01,
+        "rel_uncertainty": 0.01,                # PHYSICAL property uncertainty (cross-check)
+        "stored_decimals": 2,                   # values rounded to 2 decimals
+        "regression_rtol": 1e-4,                # CODE-regression tol vs the pinned backend
     },
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
