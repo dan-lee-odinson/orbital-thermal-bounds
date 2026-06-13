@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbital-thermal"
-version = "0.3.0"
+version = "0.4.0"
 description = "Executable reference implementation of the orbital-thermal-bounds radiator model (Lee-Odinson, 2026)"
 authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
 readme = "README.md"
@@ -14,7 +14,7 @@ license = { text = "CC-BY-4.0" }
 # closed-form algebra from the published papers. Heavier dependencies
 # (CoolProp, scipy, skyfield) arrive with later modules and are added here
 # when those modules land.
-dependencies = []
+dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "CoolProp>=6.6"]
