@@ -131,8 +131,8 @@ class TestConvergence:
     def test_diagnostics_reported_and_converged(self):
         t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
                                    return_diagnostics=True, **SIM)
-        assert set(d) == {"converged", "orbits_used", "closure_error_K",
-                          "tol_K", "energy_residual_W_m2", "energy_tol_W_m2"}
+        assert set(d) == {"converged", "orbits_used", "closure_error_K", "tol_K",
+                          "energy_residual_W_m2", "energy_residual_K", "energy_tol_K"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -166,7 +166,7 @@ class TestConvergence:
                                      n_orbits=30, steps_per_orbit=200,
                                      return_diagnostics=True)
         assert d["closure_error_K"] < d["tol_K"]            # closure alone is satisfied
-        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+        assert d["energy_residual_K"] > d["energy_tol_K"]   # but energy dT_eq is not
         assert d["converged"] is False
 
     def test_high_thermal_mass_poor_guess_not_converged(self):
@@ -176,7 +176,22 @@ class TestConvergence:
                                      t0_guess=100.0, n_orbits=30, steps_per_orbit=200,
                                      return_diagnostics=True)
         assert d["converged"] is False
-        assert d["energy_residual_W_m2"] > d["energy_tol_W_m2"]
+        assert d["energy_residual_K"] > d["energy_tol_K"]
+
+    def test_low_load_deep_space_not_falsely_converged(self):
+        # Audit P1-1: at low q_load / low T the flux->temperature slope 4*eps*sigma*T^3
+        # is tiny, so a fixed W/m^2 floor hid many-kelvin errors. The temperature-
+        # equivalent criterion (dT_eq) must reject this deep-space case.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(altitude_km=550, beta_deg=90, q_load=1e-3,
+                                     areal_heat_capacity=1e9, tilt_deg=180,
+                                     assume_sun_shielded=True, t0_guess=10.0,
+                                     n_orbits=1, steps_per_orbit=100,
+                                     return_diagnostics=True)
+        assert d["closure_error_K"] < d["tol_K"]            # closure trivially small
+        assert d["energy_residual_K"] > d["energy_tol_K"]   # ~2.4 K equivalent error
+        assert d["converged"] is False
 
     def test_averaging_bias_raises_on_false_closure(self):
         # The high-mass false-closure case must NOT yield a (negative) peak excess.

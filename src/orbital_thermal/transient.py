@@ -72,7 +72,7 @@ def simulate(
     steps_per_orbit: int = 2000,
     t0_guess: float | None = None,
     convergence_tol_K: float = 1e-3,
-    energy_tol_W_m2: float | None = None,
+    energy_tol_K: float = 1e-2,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -113,8 +113,8 @@ def simulate(
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
         raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
-    if energy_tol_W_m2 is not None and not (np.isfinite(energy_tol_W_m2) and energy_tol_W_m2 > 0.0):
-        raise ValueError(f"energy_tol_W_m2 must be finite and > 0, got {energy_tol_W_m2}")
+    if not (np.isfinite(energy_tol_K) and energy_tol_K > 0.0):
+        raise ValueError(f"energy_tol_K must be finite and > 0, got {energy_tol_K}")
     if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
         raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
     period = env.orbital_period(altitude_km)
@@ -125,7 +125,6 @@ def simulate(
     # absolute floor. Per-orbit closure alone is insufficient when tau/P >> 1 --
     # the orbit-to-orbit change vanishes while the panel is still far from periodic
     # steady state (audit re-review P1-1). The mean net flux must also be ~0.
-    e_tol = energy_tol_W_m2 if energy_tol_W_m2 is not None else max(1e-3 * abs(q_load), 1e-2)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
@@ -185,20 +184,27 @@ def simulate(
         orbits_used = orbit + 1
         orbit_energy_residual = float(abs(np.mean(
             q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4))))
-        if abs(T - T_start) < convergence_tol_K and orbit_energy_residual < e_tol:
+        # Scale-aware: convert the flux residual to an equivalent temperature error
+        # dT_eq = |<q_net>| / (4 eps sigma T_ref^3). A fixed W/m^2 floor cannot bound
+        # temperature error uniformly (4 eps sigma T^3 -> 0 at low T); audit P1-1.
+        T_ref = float(np.mean(Ts_panel[:-1]))
+        dT_eq = orbit_energy_residual / (4.0 * eps * SIGMA_SB * T_ref ** 3)
+        if abs(T - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
             converged = True
             break
 
     closure_error_K = float(abs(Ts_panel[-1] - Ts_panel[0]))
     net = q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4)
     energy_residual_W_m2 = float(abs(np.mean(net)))
+    energy_residual_K = energy_residual_W_m2 / (
+        4.0 * eps * SIGMA_SB * float(np.mean(Ts_panel[:-1])) ** 3)
     if not converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
                f"orbits (closure {closure_error_K:.2e} K vs tol "
-               f"{convergence_tol_K:.1e} K; energy residual "
-               f"{energy_residual_W_m2:.2e} vs tol {e_tol:.1e} W/m^2; "
-               f"tau/period={tau / period:.2f}); raise max_orbits/n_orbits")
+               f"{convergence_tol_K:.1e} K; energy dT_eq {energy_residual_K:.2e} K vs "
+               f"tol {energy_tol_K:.1e} K; tau/period={tau / period:.2f}); "
+               f"raise max_orbits/n_orbits")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
@@ -210,7 +216,8 @@ def simulate(
             "closure_error_K": closure_error_K,
             "tol_K": float(convergence_tol_K),
             "energy_residual_W_m2": energy_residual_W_m2,
-            "energy_tol_W_m2": float(e_tol),
+            "energy_residual_K": energy_residual_K,
+            "energy_tol_K": float(energy_tol_K),
         }
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
@@ -401,4 +408,6 @@ def averaging_bias(
         "orbits_used": diag["orbits_used"],
         "closure_error_K": diag["closure_error_K"],
         "energy_residual_W_m2": diag["energy_residual_W_m2"],
+        "energy_residual_K": diag["energy_residual_K"],
+        "energy_tol_K": diag["energy_tol_K"],
     }
