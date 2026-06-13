@@ -1,0 +1,445 @@
+{
+  "_meta": {
+    "generated_by": "generate_oracle.js",
+    "source_repo": "https://github.com/andrewmccalip/thoughts",
+    "pinned_commit": "d1e4238d3d3f4924e5ca65bafbd4ba5b39af2eb8",
+    "commit_date": "2025-12-29T17:42:13Z",
+    "generated_on": "2026-06-12",
+    "source_file": "static/js/math.js",
+    "node_version": "v24.14.0",
+    "conventions": {
+      "sigma_sb": "5.67e-8  (McCalip truncated; CODATA exact: 5.670374419e-8)",
+      "T_space_K": "3 K  (McCalip rounded; CMB: 2.7255 K)",
+      "replication_tolerance_K": 0.05
+    }
+  },
+  "cases": [
+    {
+      "label": "defaults",
+      "state_overrides": {},
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 335.74953802826,
+        "eqTempC": 62.59953802826004,
+        "totalHeatInW": 5811259714.823002,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 40494067.30300033,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5811259714.823001,
+        "areaSufficient": true,
+        "tempMarginC": 12.400461971739958,
+        "areaRequiredM2": 3986424.855208563,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "beta_0",
+      "state_overrides": {
+        "betaAngle": 0
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.2907422668751958,
+        "vfSideB": 0.29074226687519594,
+        "vfTotal": 0.5814845337503917
+      },
+      "thermal": {
+        "eqTempK": 349.5834082774132,
+        "eqTempC": 76.4334082774132,
+        "totalHeatInW": 6829860595.951706,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 555753302.6420627,
+        "qAlbedoW": 503341645.78964156,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 6829860595.951704,
+        "areaSufficient": false,
+        "tempMarginC": -1.433408277413207,
+        "areaRequiredM2": 4685167.652697263,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "beta_30",
+      "state_overrides": {
+        "betaAngle": 30
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.25462836934099475,
+        "vfSideB": 0.25462836934099475,
+        "vfTotal": 0.5092567386819895
+      },
+      "thermal": {
+        "eqTempK": 347.1183623089799,
+        "eqTempC": 73.96836230897992,
+        "totalHeatInW": 6639248788.669054,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 486721654.6411728,
+        "qAlbedoW": 381761486.50788164,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 6639248788.669056,
+        "areaSufficient": true,
+        "tempMarginC": 1.0316376910200802,
+        "areaRequiredM2": 4554411.210284341,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "beta_60",
+      "state_overrides": {
+        "betaAngle": 60
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.1559633664182211,
+        "vfSideB": 0.15596336641822117,
+        "vfTotal": 0.3119267328364423
+      },
+      "thermal": {
+        "eqTempK": 341.2824348509414,
+        "eqTempC": 68.13243485094142,
+        "totalHeatInW": 6203893538.072208,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 298123684.9725315,
+        "qAlbedoW": 135004205.57967675,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 6203893538.072208,
+        "areaSufficient": true,
+        "tempMarginC": 6.867565149058578,
+        "areaRequiredM2": 4255764.948201443,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "beta_90",
+      "state_overrides": {
+        "betaAngle": 90
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 335.74953802826,
+        "eqTempC": 62.59953802826004,
+        "totalHeatInW": 5811259714.823002,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 40494067.30300033,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5811259714.823001,
+        "areaSufficient": true,
+        "tempMarginC": 12.400461971739958,
+        "areaRequiredM2": 3986424.855208563,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "alt_400km",
+      "state_overrides": {
+        "orbitalAltitudeKm": 400
+      },
+      "geometry": {
+        "vfNadirMax": 0.8853389732040488,
+        "earthAngularRadiusDeg": 70.20740346885583,
+        "vfSideA": 0.02213347433010124,
+        "vfSideB": 0.02213347433010123,
+        "vfTotal": 0.04426694866020247
+      },
+      "thermal": {
+        "eqTempK": 335.77573663735734,
+        "eqTempC": 62.62573663735736,
+        "totalHeatInW": 5813073742.5558605,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 42308095.035859734,
+        "qAlbedoW": 2.346308640062083e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5813073742.5558605,
+        "areaSufficient": true,
+        "tempMarginC": 12.374263362642637,
+        "areaRequiredM2": 3987669.247233215,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "alt_550km",
+      "state_overrides": {
+        "orbitalAltitudeKm": 550
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 335.74953802826,
+        "eqTempC": 62.59953802826004,
+        "totalHeatInW": 5811259714.823002,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 40494067.30300033,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5811259714.823001,
+        "areaSufficient": true,
+        "tempMarginC": 12.400461971739958,
+        "areaRequiredM2": 3986424.855208563,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "alt_800km",
+      "state_overrides": {
+        "orbitalAltitudeKm": 800
+      },
+      "geometry": {
+        "vfNadirMax": 0.7893248307705848,
+        "earthAngularRadiusDeg": 62.67781148417797,
+        "vfSideA": 0.019733120769264628,
+        "vfSideB": 0.01973312076926462,
+        "vfTotal": 0.03946624153852925
+      },
+      "thermal": {
+        "eqTempK": 335.70945989307745,
+        "eqTempC": 62.559459893077474,
+        "totalHeatInW": 5808485471.186579,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 37719823.666577816,
+        "qAlbedoW": 2.0918537716126535e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5808485471.186579,
+        "areaSufficient": true,
+        "tempMarginC": 12.440540106922526,
+        "areaRequiredM2": 3984521.771483286,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "eRad_0.85",
+      "state_overrides": {
+        "emissivityRad": 0.85
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 338.17467967736945,
+        "eqTempC": 65.02467967736948,
+        "totalHeatInW": 5810102741.471487,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 39337093.95148603,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5810102741.471485,
+        "areaSufficient": true,
+        "tempMarginC": 9.975320322630523,
+        "areaRequiredM2": 4102855.6380628454,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "eRad_0.9",
+      "state_overrides": {
+        "emissivityRad": 0.9
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 335.74953802826,
+        "eqTempC": 62.59953802826004,
+        "totalHeatInW": 5811259714.823002,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 40494067.30300033,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5811259714.823001,
+        "areaSufficient": true,
+        "tempMarginC": 12.400461971739958,
+        "areaRequiredM2": 3986424.855208563,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    },
+    {
+      "label": "eRad_0.95",
+      "state_overrides": {
+        "emissivityRad": 0.95
+      },
+      "geometry": {
+        "vfNadirMax": 0.8473786384498566,
+        "earthAngularRadiusDeg": 67.00393923560704,
+        "vfSideA": 0.021184465961246433,
+        "vfSideB": 0.021184465961246422,
+        "vfTotal": 0.04236893192249285
+      },
+      "thermal": {
+        "eqTempK": 333.4098480849402,
+        "eqTempC": 60.259848084940245,
+        "totalHeatInW": 5812416688.174515,
+        "qSolarW": 4390799949.200001,
+        "qEarthIRW": 41651040.65451462,
+        "qAlbedoW": 2.2457068772241984e-9,
+        "qHeatLoopW": 1379965698.3200002,
+        "radiativeCapacityW": 5812416688.174517,
+        "areaSufficient": true,
+        "tempMarginC": 14.740151915059755,
+        "areaRequiredM2": 3876462.449179518,
+        "availableAreaM2": 4608796
+      },
+      "orbital": {
+        "satelliteCount": 39731,
+        "totalMassKg": 29390054.79452055,
+        "starshipLaunches": 294,
+        "totalCost": 51095348397.26028,
+        "costPerW": 51.095348397260274,
+        "lcoe": 1166.5604656908738,
+        "energyMWh": 43800000,
+        "avgCapacityFactor": 0.9512344531249999,
+        "arrayAreaKm2": 4.608796
+      },
+      "breakeven_launch_cost_per_kg": -263.65720555455283
+    }
+  ]
+}
