@@ -33,3 +33,19 @@ jobs:
 
       - name: Run regression and smoke tests
         run: pytest -v
+
+  oracle-freeze:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node (pinned to the oracle's recorded version)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.14.0"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Enforce oracle-freeze (SHA-256 pins + semantic regeneration)
+        run: python external_models/mccalip_thoughts/verify_oracle_reproducible.py

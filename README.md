@@ -122,4 +122,15 @@ BibTeX:
 
 ## License
 
-[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). You may share and adapt this material for any purpose, including commercially, provided you give appropriate credit.
+This repository is licensed by component (see [`LICENSING.md`](LICENSING.md)):
+
+- **Software** -- `src/`, `tests/`, `scripts/`, the root `verify_suite.py` /
+  `verify_suite.wl`, `companion/verify_ai1.py`, and packaging -- is MIT-licensed
+  (see [`LICENSE-MIT`](LICENSE-MIT)). The packaged distribution declares MIT.
+- **Papers, documentation, and figures** -- the manuscripts, `docs/`, and
+  `results/figures/` -- are licensed under Creative Commons Attribution 4.0
+  International (CC BY 4.0; see [`LICENSE-DOCS-CC-BY-4.0`](LICENSE-DOCS-CC-BY-4.0)),
+  consistent with the published preprints.
+- **Vendored McCalip model** -- `external_models/` -- retains its upstream MIT
+  license (see
+  [`external_models/mccalip_thoughts/UPSTREAM-LICENSE.md`](external_models/mccalip_thoughts/UPSTREAM-LICENSE.md)).

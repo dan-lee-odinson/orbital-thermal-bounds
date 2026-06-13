@@ -5,6 +5,8 @@ the constant-sink limit, against energy-conserving periodicity, and for the
 physically required monotonic damping with thermal mass.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -37,25 +39,25 @@ class TestTimeConstant:
 
 class TestTransient:
     def test_flat_sink_converges_to_analytic_steady(self):
-        t, T, Ts = tr.simulate(550, 90.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        t, T, Ts = tr.simulate(550, 90.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         steady = tr.steady_state_temperature(Q_LOAD, float(Ts.mean()), EPS)
         assert np.ptp(Ts) == pytest.approx(0.0, abs=1e-9)
         assert T.mean() == pytest.approx(steady, abs=1e-3)
         assert (T.max() - T.min()) == pytest.approx(0.0, abs=1e-3)
 
     def test_periodic_closure(self):
-        t, T, Ts = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        t, T, Ts = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert T[0] == pytest.approx(T[-1], abs=1e-3)
 
     def test_swing_decreases_with_thermal_mass(self):
         swings = []
         for C in (2000.0, 8000.0, 40000.0):
-            _, T, _ = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM)
+            _, T, _ = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM, assume_sun_shielded=True)
             swings.append(T.max() - T.min())
         assert swings[0] > swings[1] > swings[2]
 
     def test_panel_hotter_than_sink(self):
-        _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert np.all(T > Ts)
 
 
@@ -65,7 +67,7 @@ class TestAveragingBias:
         # the arithmetic mean is <= T_steady, so the averaged-sink steady solution
         # does NOT under-predict the mean. bias_K must be <= 0 up to numerical
         # slack (and only marginally below, since the ripple is small).
-        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert b["bias_K"] <= 1e-3
         assert b["bias_K"] > -0.5
 
@@ -74,7 +76,7 @@ class TestAveragingBias:
         # equivalently <T^4> = T_steady^4. Holds across thermal masses.
         import numpy as np
         for C in (2000.0, 8000.0, 40000.0):
-            _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM)
+            _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM, assume_sun_shielded=True)
             lhs = float(np.mean(T[:-1] ** 4))
             rhs = Q_LOAD / (EPS * SIGMA_SB) + float(np.mean(Ts[:-1] ** 4))
             assert lhs == pytest.approx(rhs, rel=1e-5)
@@ -83,19 +85,39 @@ class TestAveragingBias:
             assert lhs ** 0.25 == pytest.approx(steady, abs=1e-3)
 
     def test_peak_exceeds_steady(self):
-        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert b["peak_excess_over_steady_K"] > 1.0
         assert b["transient_peak_K"] > b["steady_avg_sink_K"]
 
     def test_no_bias_or_swing_at_terminator(self):
-        b = tr.averaging_bias(550, 90.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        b = tr.averaging_bias(550, 90.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert b["swing_K"] == pytest.approx(0.0, abs=1e-3)
         assert b["bias_K"] == pytest.approx(0.0, abs=1e-3)
         assert b["peak_excess_over_steady_K"] == pytest.approx(0.0, abs=1e-3)
 
+    def test_raises_on_nonconvergence(self):
+        # A non-converged transient must NOT be reported as a valid Jensen/peak
+        # result (the sign can flip); averaging_bias raises by default.
+        with pytest.raises(RuntimeError):
+            tr.averaging_bias(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0, assume_sun_shielded=True,
+                              n_orbits=3, steps_per_orbit=360)
+
+    def test_unconverged_inspectable_with_flag(self):
+        with pytest.warns(RuntimeWarning):
+            b = tr.averaging_bias(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0, assume_sun_shielded=True,
+                                  n_orbits=3, steps_per_orbit=360,
+                                  require_convergence=False)
+        assert b["converged"] is False
+
+    def test_reports_convergence_diagnostics(self):
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
+        assert b["converged"] is True
+        assert b["closure_error_K"] < 1e-3
+        assert {"orbits_used", "energy_residual_W_m2"} <= set(b)
+
     def test_sink_avg_matches_sink_module(self):
-        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
-        ref = sink_mod.orbit_averaged_sink(550, 0.0, tilt_deg=0)
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
+        ref = sink_mod.orbit_averaged_sink(550, 0.0, tilt_deg=0, assume_sun_shielded=True)
         assert b["sink_avg_K"] == pytest.approx(ref, abs=0.2)
 
 
@@ -103,11 +125,11 @@ class TestAveragingBias:
 class TestConvergence:
     def test_returns_three_tuple_by_default(self):
         # Backward compatibility: the default return is still (t, T, T_sink).
-        out = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        out = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM, assume_sun_shielded=True)
         assert len(out) == 3
 
     def test_diagnostics_reported_and_converged(self):
-        t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+        t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
                                    return_diagnostics=True, **SIM)
         assert set(d) == {"converged", "orbits_used", "closure_error_K",
                           "tol_K", "energy_residual_W_m2"}
@@ -117,9 +139,9 @@ class TestConvergence:
 
     def test_high_mass_needs_more_orbits(self):
         # Motivation for the change: heavier panels take more orbits to settle.
-        _, _, _, lo = tr.simulate(550, 0.0, Q_LOAD, 2000.0, tilt_deg=0,
+        _, _, _, lo = tr.simulate(550, 0.0, Q_LOAD, 2000.0, tilt_deg=0, assume_sun_shielded=True,
                                   return_diagnostics=True, **SIM)
-        _, _, _, hi = tr.simulate(550, 0.0, Q_LOAD, 40000.0, tilt_deg=0,
+        _, _, _, hi = tr.simulate(550, 0.0, Q_LOAD, 40000.0, tilt_deg=0, assume_sun_shielded=True,
                                   return_diagnostics=True, **SIM)
         assert hi["orbits_used"] > lo["orbits_used"]
         assert lo["converged"] and hi["converged"]
@@ -128,7 +150,7 @@ class TestConvergence:
         # A very high thermal mass under a tight orbit cap cannot reach periodic
         # steady state: simulate must warn and report converged=False.
         with pytest.warns(RuntimeWarning):
-            _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+            _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0, assume_sun_shielded=True,
                                      n_orbits=3, steps_per_orbit=360,
                                      return_diagnostics=True)
         assert d["converged"] is False
@@ -136,7 +158,7 @@ class TestConvergence:
 
     def test_nonconvergence_can_raise(self):
         with pytest.raises(RuntimeError):
-            tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+            tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0, assume_sun_shielded=True,
                         n_orbits=3, steps_per_orbit=360,
                         raise_on_nonconvergence=True)
 
@@ -168,6 +190,74 @@ class TestHeatCapacityProvenance:
     def test_derived_capacity_drives_the_transient(self):
         # A build-derived C_A runs the solver and reaches periodic steady state.
         C = tr.build_areal_heat_capacity("radiator_with_coolant")
-        _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0,
+        _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, assume_sun_shielded=True,
                                  return_diagnostics=True, **SIM)
         assert d["converged"] is True
+
+    def test_materials_carry_provenance(self):
+        keys = {"rho_kg_m3", "cp_J_kgK", "state", "source", "rel_uncertainty"}
+        for name, m in tr.MATERIALS.items():
+            assert keys <= set(m), name
+            assert m["rho_kg_m3"] > 0 and m["cp_J_kgK"] > 0
+            assert 0.0 < m["rel_uncertainty"] < 1.0
+
+    def test_ammonia_entry_matches_coolprop_reference_state(self):
+        pytest.importorskip("CoolProp")
+        rho, cp = tr.coolant_rho_cp("Ammonia", 300.0)
+        m = tr.MATERIALS["ammonia_liquid"]
+        assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
+        assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
+
+
+
+class TestShieldingPropagation:
+    """The sun-shield policy must be explicit and reach the transient path
+    (audit re-review P1-b): simulate/averaging_bias no longer silently assume it."""
+
+    def test_simulate_requires_flag(self):
+        with pytest.raises(TypeError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+
+    def test_simulate_unshielded_raises(self):
+        with pytest.raises(NotImplementedError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                        assume_sun_shielded=False, **SIM)
+
+    def test_averaging_bias_requires_flag(self):
+        with pytest.raises(TypeError):
+            tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+
+    def test_averaging_bias_unshielded_raises(self):
+        with pytest.raises(NotImplementedError):
+            tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                              assume_sun_shielded=False, **SIM)
+
+
+class TestInputDomainAndStability:
+    """Input-domain validation and explicit-RK4 stability guards (P3-a)."""
+
+    def test_rejects_nonpositive_heat_capacity(self):
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 0.0, tilt_deg=0, assume_sun_shielded=True, **SIM)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, -5.0, tilt_deg=0, assume_sun_shielded=True, **SIM)
+
+    def test_rejects_bad_step_and_orbit_counts(self):
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
+                        n_orbits=0, steps_per_orbit=720)
+        with pytest.raises(ValueError):
+            tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
+                        n_orbits=5, steps_per_orbit=0)
+
+    def test_rk4_divergence_raises(self):
+        # Tiny heat capacity + coarse steps -> dt >> tau -> explicit RK4 blows up.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")  # ignore the stability RuntimeWarning
+                tr.simulate(550, 0.0, Q_LOAD, 1.0, tilt_deg=0, assume_sun_shielded=True,
+                            n_orbits=2, steps_per_orbit=100)
+
+    def test_empty_layers_rejected(self):
+        with pytest.raises(ValueError):
+            tr.areal_heat_capacity([])

@@ -83,18 +83,95 @@ def subpoint_albedo_factor(beta_deg: float, u_deg: float) -> float:
     return float(max(0.0, np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))))
 
 
-def effective_sink_temperature(
-    altitude_km: float,
-    beta_deg: float,
-    u_deg: float,
-    tilt_deg: float = 0.0,
+def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
+    """Disk-integrated reflected-solar (albedo) factor -- NOT YET IMPLEMENTED.
+
+    The physically faithful replacement for :func:`subpoint_albedo_factor`:
+    integrate reflected solar radiance over the Earth region that is simultaneously
+    sunlit, above the radiator's horizon, and within its field of view. The
+    Lambertian-sphere phase function Phi(alpha) = (sin a + (pi - a) cos a) / pi
+    vanishes ONLY at exact opposition (alpha = pi, i.e. u = 180 deg), so a sunlit
+    crescent contributes at every other geometry -- including a terminator (beta=90)
+    orbit and off-opposition eclipse points where the subpoint approximation nulls.
+
+    Raises ``NotImplementedError`` until implemented. The strict-xfail tests in
+    ``tests/test_sink.py`` target THIS function (not the subpoint helper, whose
+    documented semantics will not change), so they xpass and flag the day a correct
+    disk-integrated model lands (audit re-review P2-a).
+    """
+    raise NotImplementedError(
+        "disk-integrated albedo is not yet modeled; the package currently uses the "
+        "subpoint approximation (subpoint_albedo_factor). See audit re-review P2-a."
+    )
+
+
+def _require_shielding(assume_sun_shielded: bool) -> None:
+    """Guard: the model omits direct solar on the radiator face. The caller must
+    explicitly assert the face is sun-shielded (audit re-review P1-b)."""
+    if not assume_sun_shielded:
+        raise NotImplementedError(
+            "the effective-sink model omits direct solar flux on the radiator "
+            "face; it is valid only when that face receives no direct sunlight "
+            "(an anti-solar attitude OR an external shade -- the model does not "
+            "verify attitude). Pass assume_sun_shielded=True to assert this, or "
+            "extend the model with a direct-solar term (surface normal . Sun "
+            "vector) before treating arbitrary geometry as a general sink."
+        )
+
+
+def sink_temperature_series(
+    view_factor,
+    beta_deg,
+    u_deg,
+    *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
     solar_absorptivity: float = 0.20,
     earth_ir: float = EARTH_IR_FLUX,
     albedo: float = EARTH_ALBEDO,
     solar_constant: float = SOLAR_CONSTANT,
     t_space: float = T_SPACE_K,
-    assume_sun_shielded: bool = True,
+):
+    """Centralized effective-sink equation (scalar or vectorized over ``u_deg``).
+
+    ``view_factor`` is the precomputed tilted-plate-to-sphere Earth view factor
+    (constant for fixed tilt), so callers compute it once. Returns T_s^eff with the
+    same shape as ``u_deg``. The reflected-solar drive uses the SUBPOINT albedo
+    approximation (np.clip(cos(beta)cos(u), 0, None); see
+    :func:`subpoint_albedo_factor`). ``assume_sun_shielded`` is REQUIRED and must
+    be True; it is the single point where the direct-solar omission is asserted, so
+    every caller (scalar, profile, transient) goes through this guard.
+    """
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    if not 0.0 <= solar_absorptivity <= 1.0:
+        raise ValueError(f"solar_absorptivity must be in [0, 1], got {solar_absorptivity}")
+    if not 0.0 <= albedo <= 1.0:
+        raise ValueError(f"albedo must be in [0, 1], got {albedo}")
+    if t_space < 0.0:
+        raise ValueError(f"t_space must be >= 0 K, got {t_space}")
+    _require_shielding(assume_sun_shielded)
+    cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
+    albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation
+    q_ir = earth_ir * view_factor
+    q_alb = albedo * solar_constant * view_factor * albedo_factor
+    t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
+    return t4 ** 0.25
+
+
+def effective_sink_temperature(
+    altitude_km: float,
+    beta_deg: float,
+    u_deg: float,
+    tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
+    emissivity: float = 0.91,
+    solar_absorptivity: float = 0.20,
+    earth_ir: float = EARTH_IR_FLUX,
+    albedo: float = EARTH_ALBEDO,
+    solar_constant: float = SOLAR_CONSTANT,
+    t_space: float = T_SPACE_K,
 ) -> float:
     """Effective radiative sink temperature, K, at one orbit position.
 
@@ -103,33 +180,22 @@ def effective_sink_temperature(
     ``tilt_deg`` is the radiator normal's angle from nadir (0 = Earth-facing,
     180 = space-facing).
 
-    Attitude assumption (audit item 8): this models only the *cold-side*
-    environment and OMITS direct solar flux on the radiator face -- valid only for
-    an anti-solar / sun-shielded attitude, where direct sunlight falls on the back
-    face. ``tilt_deg`` is accepted for arbitrary Earth coupling, but the result is
-    NOT a general all-attitude sink. ``assume_sun_shielded`` makes this explicit:
-    it must be True (the default). Setting it False raises ``NotImplementedError``,
-    since direct-solar loading from the surface normal and Sun vector is not yet
-    modeled -- a guard so the omission cannot be silently misread as general.
+    Attitude assumption (audit re-review P1-b): this models only the *cold-side*
+    environment and OMITS direct solar flux on the radiator face. It is valid only
+    when that face receives no direct sunlight -- either an anti-solar attitude or
+    an external shade; the model does NOT verify attitude. ``tilt_deg`` is accepted
+    for arbitrary Earth coupling, but the result is NOT a general all-attitude sink.
+    ``assume_sun_shielded`` is therefore REQUIRED (no default): pass True to assert
+    shielding, or False to get a ``NotImplementedError`` (direct-solar loading from
+    the surface normal and Sun vector is not yet modeled). The same guard backs the
+    profile and transient paths via :func:`sink_temperature_series`.
     """
-    if emissivity <= 0:
-        raise ValueError("emissivity must be positive")
-    if not assume_sun_shielded:
-        raise NotImplementedError(
-            "effective_sink_temperature models only the sun-shielded (anti-solar) "
-            "cold side; direct solar flux on the radiator face is not modeled. "
-            "Pass assume_sun_shielded=True (the default) to acknowledge this, or "
-            "extend the model with a direct-solar term from the normal and Sun "
-            "vector before treating arbitrary tilt as a general sink."
-        )
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    # Reflected-solar drive uses the SUBPOINT albedo approximation (see
-    # subpoint_albedo_factor): a stand-in, not disk-integrated albedo.
-    albedo_factor = subpoint_albedo_factor(beta_deg, u_deg)
-    q_ir = earth_ir * vf
-    q_alb = albedo * solar_constant * vf * albedo_factor
-    t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
-    return float(t4**0.25)
+    return float(sink_temperature_series(
+        vf, beta_deg, u_deg, assume_sun_shielded=assume_sun_shielded,
+        emissivity=emissivity, solar_absorptivity=solar_absorptivity,
+        earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
+        t_space=t_space))
 
 
 def in_eclipse(altitude_km: float, beta_deg: float, u_deg: float) -> bool:
@@ -145,6 +211,8 @@ def sink_profile(
     beta_deg: float,
     tilt_deg: float = 0.0,
     n: int = 361,
+    *,
+    assume_sun_shielded: bool,
     **kwargs,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return (u_deg, T_s_eff) arrays over one full orbit (0..360 deg).
@@ -153,11 +221,12 @@ def sink_profile(
     it closes the loop for plotting. Any radiative averaging must drop the
     duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
     """
+    if n < 2:
+        raise ValueError(f"n must be >= 2 to resolve an orbit, got {n}")
     u = np.linspace(0.0, 360.0, n)
-    T = np.array(
-        [effective_sink_temperature(altitude_km, beta_deg, ui, tilt_deg, **kwargs)
-         for ui in u]
-    )
+    vf = env.sphere_view_factor(altitude_km, tilt_deg)
+    T = sink_temperature_series(
+        vf, beta_deg, u, assume_sun_shielded=assume_sun_shielded, **kwargs)
     return u, T
 
 
@@ -166,6 +235,8 @@ def orbit_averaged_sink(
     beta_deg: float,
     tilt_deg: float = 0.0,
     n: int = 720,
+    *,
+    assume_sun_shielded: bool,
     **kwargs,
 ) -> float:
     """Radiatively-weighted orbit-average sink, K: ( <T_s_eff^4> )^(1/4).
@@ -173,7 +244,8 @@ def orbit_averaged_sink(
     The fourth-power mean is the average relevant to radiator sizing, since heat
     rejection scales with T^4.
     """
-    _, T = sink_profile(altitude_km, beta_deg, tilt_deg, n=n, **kwargs)
+    _, T = sink_profile(altitude_km, beta_deg, tilt_deg, n=n,
+                        assume_sun_shielded=assume_sun_shielded, **kwargs)
     # Drop the duplicated 360deg endpoint so it is not double-counted (consistent
     # with transient.averaging_bias, which also slices [:-1]). Audit item 7.
     return float(np.mean(T[:-1] ** 4) ** 0.25)

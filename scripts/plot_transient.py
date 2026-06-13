@@ -26,9 +26,9 @@ def main() -> None:
 
     steady = None
     for C, c in zip(CAPACITIES, colors):
-        t, T, Ts = tr.simulate(ALT, BETA, Q_LOAD, C, tilt_deg=0.0,
+        t, T, Ts = tr.simulate(ALT, BETA, Q_LOAD, C, tilt_deg=0.0, assume_sun_shielded=True,
                                n_orbits=40, steps_per_orbit=1440)
-        b = tr.averaging_bias(ALT, BETA, Q_LOAD, C, tilt_deg=0.0,
+        b = tr.averaging_bias(ALT, BETA, Q_LOAD, C, tilt_deg=0.0, assume_sun_shielded=True,
                               n_orbits=40, steps_per_orbit=1440)
         steady = b["steady_avg_sink_K"]
         tau_min = b["tau_s"] / 60.0

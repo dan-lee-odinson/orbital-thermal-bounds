@@ -67,3 +67,16 @@ def test_version_is_single_sourced():
     import orbital_thermal
     from importlib.metadata import version
     assert orbital_thermal.__version__ == version("orbital-thermal")
+
+
+def test_sigma_sb_is_binary64_si_derived():
+    # SIGMA_SB is the binary64 of sigma = 2 pi^5 k_B^4 / (15 h^3 c^2) using the
+    # exact 2019-SI defining constants -- not the truncated CODATA-printed value
+    # (audit re-review P2-c).
+    import math
+    from orbital_thermal.constants import SIGMA_SB
+    kB, h, c = 1.380649e-23, 6.62607015e-34, 299792458.0
+    sigma_si = 2 * math.pi**5 * kB**4 / (15 * h**3 * c**2)
+    assert SIGMA_SB == pytest.approx(sigma_si, rel=1e-12)
+    assert SIGMA_SB != 5.670374419e-8
+    assert abs(SIGMA_SB - 5.670374419e-8) / SIGMA_SB == pytest.approx(3.25e-11, rel=0.1)

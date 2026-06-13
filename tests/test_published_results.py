@@ -135,6 +135,20 @@ class TestTheorem2:
         # Handoff/preprint values to four decimals.
         assert optimal_cold_fraction(a) == pytest.approx(expected, abs=5e-5)
 
+    def test_stationarity_function_is_strictly_increasing(self):
+        # Uniqueness of the optimum: the stationarity function g(y) (d/dy log A/W)
+        # is strictly increasing on (0,1) -- its decreasing first term is dominated
+        # by 4/y^2 (audit re-review P3-b). One sign change => one root.
+        import numpy as np
+
+        def g(y, a):
+            return a / (1.0 - a * (1.0 - y)) + 1.0 / (1.0 - y) - 4.0 / y
+
+        for a in (0.5, 0.8, 1.0):
+            gv = g(np.linspace(0.01, 0.99, 500), a)
+            assert np.all(np.diff(gv) > 0)
+            assert np.sum(np.diff(np.sign(gv)) != 0) == 1
+
     def test_second_order_condition(self):
         # The optimum is a strict minimum of the area-per-work objective.
         y = optimal_cold_fraction(1.0)
@@ -259,6 +273,17 @@ class TestTheorem3NearSinkLimit:
         q = T_sink / t
         assert (t - 450.0) / 450.0 == pytest.approx(q**4 / 3.0, abs=1e-9)
 
+    def test_raises_on_iteration_exhaustion(self):
+        # Cap exhaustion must raise, not silently return an unconverged midpoint.
+        with pytest.raises(RuntimeError):
+            nonzero_sink_optimum(600.0, 220.0, max_iter=1)
+
+    def test_rejects_nonpositive_tol_and_max_iter(self):
+        with pytest.raises(ValueError):
+            nonzero_sink_optimum(600.0, 220.0, tol=0.0)
+        with pytest.raises(ValueError):
+            nonzero_sink_optimum(600.0, 220.0, max_iter=0)
+
     def test_monotone_through_high_sink(self):
         vals = [nonzero_sink_optimum(600.0, ts) for ts in (300, 540, 594, 599.4)]
         assert vals == sorted(vals)
@@ -292,6 +317,34 @@ class TestTheorem4:
         assert heat_pump_area_ratio(1.15, 353.0, 520.0) == pytest.approx(
             0.397, abs=0.001
         )
+
+
+class TestBoundsPhysicalContracts:
+    """Public bound APIs must reject thermodynamically impossible inputs
+    (audit re-review P1-c)."""
+
+    def test_conversion_penalty_rejects_super_carnot_eta(self):
+        # Carnot ceiling for 600->450 K is 1 - 450/600 = 0.25; 0.9 is impossible.
+        with pytest.raises(ValueError):
+            conversion_area_penalty(600.0, 450.0, eta=0.9)
+
+    def test_conversion_penalty_allows_reversible_boundary(self):
+        # eta == 1 - T_c/T_h (reversible limit) is allowed and gives (4/3)^3.
+        assert conversion_area_penalty(600.0, 450.0, eta=0.25) == pytest.approx(
+            (4.0 / 3.0) ** 3, rel=1e-12)
+
+    def test_heat_pump_rejects_super_carnot_cop(self):
+        # Carnot cooling ceiling for 353->520 K is 353/167 ~ 2.114; COP=100 is impossible.
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(100.0, 353.0, 520.0)
+
+    def test_heat_pump_requires_upward_lift(self):
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(1.0, 520.0, 353.0)   # T2 < T1, not a lift
+
+    def test_heat_pump_allows_carnot_boundary(self):
+        cop = carnot_cop_cooling(353.0, 520.0)        # exactly at the ceiling
+        assert heat_pump_area_ratio(cop, 353.0, 520.0) > 0.0
 
 
 class TestTheorem5:

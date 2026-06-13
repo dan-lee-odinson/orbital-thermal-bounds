@@ -50,16 +50,8 @@ def thermal_time_constant(
     return float(areal_heat_capacity / (4.0 * emissivity * SIGMA_SB * temperature**3))
 
 
-def _sink_series(altitude_km, beta_deg, tilt_deg, u_deg, emissivity,
-                 solar_absorptivity, earth_ir, albedo, solar_constant, t_space):
-    """Vectorized T_s_eff at orbit angles ``u_deg``; VF computed once (constant
-    for fixed tilt), only the cheap albedo term varies with u."""
-    vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
-    q_ir = earth_ir * vf
-    q_alb = albedo * solar_constant * vf * np.clip(cos_zeta, 0.0, None)
-    t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
-    return t4 ** 0.25
+# (the duplicated _sink_series was removed in audit re-review P1-b;
+# the one effective-sink equation now lives in sink.sink_temperature_series.)
 
 
 def simulate(
@@ -68,6 +60,8 @@ def simulate(
     q_load: float,
     areal_heat_capacity: float,
     tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
     solar_absorptivity: float = 0.20,
     earth_ir: float = sink_mod.EARTH_IR_FLUX,
@@ -90,6 +84,9 @@ def simulate(
     >> 1) can need many more orbits than a fixed count would allow, so a fixed
     march can silently return a not-yet-periodic profile; this loop detects that.
 
+    ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
+    effective-sink equation (sink.sink_temperature_series); see that function.
+
     ``t`` is seconds from the start of the final orbit; ``T`` and ``T_sink`` are
     the panel and effective-sink temperatures, K.
 
@@ -101,14 +98,27 @@ def simulate(
     """
     C = areal_heat_capacity
     eps = emissivity
+    if not (np.isfinite(C) and C > 0.0):
+        raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
+    if steps_per_orbit < 1:
+        raise ValueError(f"steps_per_orbit must be >= 1, got {steps_per_orbit}")
+    if n_orbits < 1:
+        raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
+    if max_orbits is not None and max_orbits < 1:
+        raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
+    if not np.isfinite(q_load):
+        raise ValueError(f"q_load must be finite, got {q_load}")
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
     cap = n_orbits if max_orbits is None else max_orbits
+    vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
-        return _sink_series(altitude_km, beta_deg, tilt_deg, deg_per_s * t, eps,
-                            solar_absorptivity, earth_ir, albedo, solar_constant, t_space)
+        return sink_mod.sink_temperature_series(
+            vf, beta_deg, deg_per_s * t, assume_sun_shielded=assume_sun_shielded,
+            emissivity=eps, solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
+            albedo=albedo, solar_constant=solar_constant, t_space=t_space)
 
     def deriv(t, T):
         Ts = sink_at(t)
@@ -117,6 +127,17 @@ def simulate(
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
     T = float(t0_guess)
+
+    # Explicit fixed-step RK4 is conditionally stable: warn if the step exceeds the
+    # radiative time constant tau = C / (4 eps sigma T^3) (audit re-review P3-a).
+    tau0 = thermal_time_constant(C, T, eps)
+    if dt > tau0:
+        warnings.warn(
+            f"RK4 timestep dt={dt:.3g} s exceeds the radiative time constant "
+            f"tau={tau0:.3g} s; explicit integration may be unstable -- increase "
+            f"steps_per_orbit or areal_heat_capacity",
+            RuntimeWarning,
+        )
 
     ts = np.zeros(steps_per_orbit + 1)
     Ts_panel = np.zeros(steps_per_orbit + 1)
@@ -140,6 +161,12 @@ def simulate(
             ts[i] = t - t_orbit0
             Ts_panel[i] = T
             Ts_sink[i] = sink_at(t)
+        if not np.isfinite(T):
+            raise RuntimeError(
+                "RK4 diverged to a non-finite temperature; the timestep is too "
+                "large for this heat capacity -- increase steps_per_orbit or "
+                "areal_heat_capacity (see the stability warning)"
+            )
         orbits_used = orbit + 1
         if abs(T - T_start) < convergence_tol_K:
             converged = True
@@ -179,15 +206,58 @@ def simulate(
 # handbook room-temperature properties so transient swings can be tied to a
 # concrete stack rather than a bare number.
 
-#: Handbook material properties: name -> (density kg/m^3, specific heat J/kg/K).
+#: Material properties with provenance (audit re-review P2-d). Each entry records
+#: density and specific heat at a stated reference state, a source, and a relative
+#: uncertainty. Values are representative grades, not a specific lot; the builds
+#: below remain illustrative. The liquid-coolant entry is a single documented
+#: reference state (ammonia is strongly state-dependent near these temperatures);
+#: :func:`coolant_rho_cp` recomputes it from the pinned CoolProp backend.
 MATERIALS = {
-    "aluminum_6061": (2700.0, 896.0),
-    "cover_glass": (2500.0, 800.0),
-    "silicon": (2330.0, 700.0),
-    "cfrp_substrate": (1600.0, 800.0),
-    "ammonia_liquid": (600.0, 4700.0),
-    "copper": (8960.0, 385.0),
-    "fr4_pcb": (1850.0, 1100.0),
+    "aluminum_6061": {
+        "rho_kg_m3": 2700.0, "cp_J_kgK": 896.0,
+        "state": "solid, 298 K, 1 atm",
+        "source": "ASM aluminum 6061-T6 nominal (rho 2700 kg/m^3; c_p 896 J/kg/K at 25 C)",
+        "rel_uncertainty": 0.02,
+    },
+    "cover_glass": {
+        "rho_kg_m3": 2500.0, "cp_J_kgK": 800.0,
+        "state": "solid, 298 K",
+        "source": "borosilicate solar cover glass, typical (rho ~2500; c_p ~800 J/kg/K)",
+        "rel_uncertainty": 0.05,
+    },
+    "silicon": {
+        "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
+        "state": "crystalline solid, 298 K",
+        "source": "CRC Handbook, crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "rel_uncertainty": 0.02,
+    },
+    "cfrp_substrate": {
+        "rho_kg_m3": 1600.0, "cp_J_kgK": 800.0,
+        "state": "solid, 298 K",
+        "source": "carbon-fiber/epoxy laminate, quasi-isotropic typical (rho ~1550-1600; "
+                  "c_p ~800-1000 J/kg/K; strongly layup-dependent)",
+        "rel_uncertainty": 0.15,
+    },
+    "ammonia_liquid": {
+        "rho_kg_m3": 600.17, "cp_J_kgK": 4796.38,
+        "state": "saturated liquid, 300 K (Q=0)",
+        "source": "CoolProp HEOS (Tillner-Roth & Friend EOS) at T=300 K, Q=0; "
+                  "strongly state-dependent (280 K: 629/4649; 320 K: 568/5023). "
+                  "See coolant_rho_cp().",
+        "rel_uncertainty": 0.01,
+    },
+    "copper": {
+        "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
+        "state": "solid, 298 K",
+        "source": "CRC Handbook, Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "rel_uncertainty": 0.01,
+    },
+    "fr4_pcb": {
+        "rho_kg_m3": 1850.0, "cp_J_kgK": 1100.0,
+        "state": "solid, 298 K",
+        "source": "FR-4 glass-epoxy laminate, typical (rho ~1850; c_p ~1100-1200 J/kg/K)",
+        "rel_uncertainty": 0.15,
+    },
 }
 
 #: Representative panel builds: name -> list of (material, thickness_m) layers.
@@ -213,14 +283,17 @@ def areal_heat_capacity(layers) -> float:
     names key into :data:`MATERIALS`. This is the quantity ``C`` in the one-node
     model, derived from a physical stack rather than assumed.
     """
+    layers = list(layers)
+    if not layers:
+        raise ValueError("layers must be a non-empty list of (material, thickness) pairs")
     total = 0.0
     for material, thickness in layers:
         if material not in MATERIALS:
             raise KeyError(f"unknown material {material!r}; see MATERIALS")
         if thickness <= 0.0:
             raise ValueError(f"thickness must be positive, got {thickness}")
-        rho, cp = MATERIALS[material]
-        total += rho * cp * thickness
+        entry = MATERIALS[material]
+        total += entry["rho_kg_m3"] * entry["cp_J_kgK"] * thickness
     return total
 
 
@@ -230,13 +303,29 @@ def build_areal_heat_capacity(build_name: str) -> float:
         raise KeyError(f"unknown build {build_name!r}; see REPRESENTATIVE_BUILDS")
     return areal_heat_capacity(REPRESENTATIVE_BUILDS[build_name])
 
+
+def coolant_rho_cp(fluid: str = "Ammonia", T: float = 300.0):
+    """(density, specific heat) of the saturated liquid at temperature ``T`` from
+    the pinned CoolProp backend, kg/m^3 and J/kg/K (audit re-review P2-d).
+
+    This is the source/validator for the strongly state-dependent liquid-coolant
+    entry in :data:`MATERIALS`, which is pinned to one documented reference state
+    (300 K saturated liquid). Requires CoolProp (the [fluids] extra)."""
+    from CoolProp.CoolProp import PropsSI
+    rho = PropsSI("D", "T", T, "Q", 0, fluid)
+    cp = PropsSI("C", "T", T, "Q", 0, fluid)
+    return float(rho), float(cp)
+
 def averaging_bias(
     altitude_km: float,
     beta_deg: float,
     q_load: float,
     areal_heat_capacity: float,
     tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
+    require_convergence: bool = True,
     **kwargs,
 ) -> dict:
     """Compare the transient time-mean temperature to the steady, averaged-sink
@@ -248,9 +337,29 @@ def averaging_bias(
     steady solution does NOT under-predict the mean. The operationally important
     quantity is ``peak_excess_over_steady_K`` (> 0), the peak the steady,
     averaged-load assumption misses.
+
+    The Jensen/peak metrics are only meaningful at periodic steady state, so this
+    helper requests convergence diagnostics from :func:`simulate`. By default
+    (``require_convergence=True``) it RAISES ``RuntimeError`` if the transient did
+    not converge -- a non-converged final orbit can flip the sign of the reported
+    bias and peak excess (an initialization artifact, not physics). Set
+    ``require_convergence=False`` to inspect the unconverged result instead; the
+    returned dict always carries ``converged``, ``orbits_used``,
+    ``closure_error_K``, and ``energy_residual_W_m2``.
     """
-    t, T, Tsink = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
-                           tilt_deg=tilt_deg, emissivity=emissivity, **kwargs)
+    kwargs.pop("return_diagnostics", None)
+    t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
+                                 tilt_deg=tilt_deg, assume_sun_shielded=assume_sun_shielded,
+                                 emissivity=emissivity, return_diagnostics=True, **kwargs)
+    if require_convergence and not diag["converged"]:
+        raise RuntimeError(
+            "averaging_bias: transient did not reach periodic steady state "
+            f"({diag['orbits_used']} orbits, closure {diag['closure_error_K']:.2e} K "
+            f"> tol {diag['tol_K']:.1e} K). The Jensen/peak metrics would be an "
+            "initialization artifact (the bias/peak-excess sign can flip). Increase "
+            "n_orbits/max_orbits, or pass require_convergence=False to inspect the "
+            "unconverged diagnostics."
+        )
     transient_mean = float(np.mean(T[:-1]))
     sink_avg = float(np.mean(Tsink[:-1] ** 4) ** 0.25)
     steady = steady_state_temperature(q_load, sink_avg, emissivity)
@@ -268,4 +377,8 @@ def averaging_bias(
         "tau_s": tau,
         "period_s": period,
         "tau_over_period": tau / period,
+        "converged": diag["converged"],
+        "orbits_used": diag["orbits_used"],
+        "closure_error_K": diag["closure_error_K"],
+        "energy_residual_W_m2": diag["energy_residual_W_m2"],
     }

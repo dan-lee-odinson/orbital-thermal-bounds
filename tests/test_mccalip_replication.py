@@ -10,6 +10,7 @@ These tests assert three separable things:
     the exact core package, the divergence is bounded and explained (not hidden).
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def oracle():
 
 class TestReplication:
     def test_oracle_present_and_pinned(self, oracle):
-        assert oracle["_meta"]["pinned_commit"].startswith("d1e4238")
+        assert oracle["_meta"]["pinned_commit"] == "d1e4238d3d3f4924e5ca65bafbd4ba5b39af2eb8"
         assert len(oracle["cases"]) == 11
 
     def test_every_field_matches_oracle(self, oracle):
@@ -83,3 +84,25 @@ class TestVerificationGap:
         approx = mc._tilted_vf_from_cos(alt, 0.0)
         exact = env.sphere_view_factor(alt, 90.0)
         assert abs(approx - exact) > 0.10
+
+
+
+class TestOracleFreeze:
+    """Enforce oracle-freeze (audit re-review P2-e): the vendored source and frozen
+    oracle must match pinned SHA-256 values, and the recorded commit must be the
+    full 40-char SHA. The CI job additionally regenerates the oracle from math.js
+    and compares it semantically (see verify_oracle_reproducible.py)."""
+
+    def _pins(self):
+        return json.loads((ORACLE_PATH.parent / "PINS.json").read_text())
+
+    def test_pinned_sha256_unchanged(self):
+        pins = self._pins()
+        for name, want in pins["sha256"].items():
+            got = hashlib.sha256((ORACLE_PATH.parent / name).read_bytes()).hexdigest()
+            assert got == want, f"{name} SHA-256 changed -- oracle-freeze violation"
+
+    def test_meta_records_full_commit_sha(self, oracle):
+        pins = self._pins()
+        assert len(pins["pinned_commit"]) == 40
+        assert oracle["_meta"]["pinned_commit"] == pins["pinned_commit"]

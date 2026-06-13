@@ -52,10 +52,13 @@ def optimal_cold_fraction(a: float = 1.0, tol: float = 1e-12) -> float:
 
         g(y) = a/(1 - a*(1 - y)) + 1/(1 - y) - 4/y = 0
 
-    (the derivative of log A/W). Every term of g is strictly increasing on
-    (0, 1), so g has exactly one root and bisection converges to full
-    precision -- a direct search on the objective itself stalls near the
-    minimum, where objective differences fall below float resolution.
+    (the derivative of log A/W). g is strictly increasing on (0, 1): although its
+    first term a/(1 - a(1 - y)) is *decreasing*, the full derivative
+    g'(y) = -a^2/(1 - a(1 - y))^2 + 1/(1 - y)^2 + 4/y^2 is positive there, because
+    1 - a(1 - y) >= y (their difference is (1 - y)(1 - a) >= 0 for a <= 1) gives
+    a^2/(1 - a(1 - y))^2 <= 1/y^2 < 4/y^2. So g has exactly one root and bisection
+    converges to full precision -- a direct search on the objective itself stalls
+    near the minimum, where objective differences fall below float resolution.
 
     Theorem 2: a = 1 (reversible) gives exactly 3/4 (g reduces to
     1/(1 - y) - 3/y), with a 25% efficiency ceiling. Irreversibility
@@ -102,6 +105,10 @@ def nonzero_sink_optimum(
         raise ValueError(f"T_h must be positive, got {T_h}")
     if not 0.0 <= T_sink < T_h:
         raise ValueError(f"need 0 <= T_sink < T_h, got {T_sink}")
+    if tol <= 0.0:
+        raise ValueError(f"tol must be positive, got {tol}")
+    if max_iter <= 0:
+        raise ValueError(f"max_iter must be positive, got {max_iter}")
     if T_sink == 0.0:
         return 0.75 * T_h
     # Bisection on the dimensionless quintic f(y) = 4y^5 - 3y^4 - r^4, y = T_c/T_h,
@@ -125,7 +132,11 @@ def nonzero_sink_optimum(
             hi = mid
         if (hi - lo) * T_h < tol:
             return 0.5 * (lo + hi) * T_h
-    return 0.5 * (lo + hi) * T_h
+    raise RuntimeError(
+        f"nonzero_sink_optimum did not converge to tol={tol} K in {max_iter} "
+        f"bisection steps (bracket width {(hi - lo) * T_h:.3g} K for T_h={T_h}, "
+        f"T_sink={T_sink}); increase max_iter"
+    )
 
 
 def quintic_residual(T_c: float, T_h: float, T_sink: float) -> float:
@@ -159,6 +170,13 @@ def conversion_area_penalty(
         raise ValueError(
             f"need 0 <= T_sink < T_c < T_h, got T_sink={T_sink}, "
             f"T_c={T_c}, T_h={T_h}"
+        )
+    eta_carnot = 1.0 - T_c / T_h
+    if eta > eta_carnot + 1e-9:
+        raise ValueError(
+            f"eta={eta} exceeds the Carnot ceiling 1 - T_c/T_h = {eta_carnot:.6g} "
+            f"for an engine between T_h={T_h} K and T_c={T_c} K; the area-penalty "
+            "bound assumes a realizable (sub-Carnot) engine"
         )
     return (1.0 - eta) * (T_h**4 - T_sink**4) / (T_c**4 - T_sink**4)
 
@@ -211,6 +229,16 @@ def heat_pump_area_ratio(
         raise ValueError(f"COP_c must be positive, got {cop_cooling}")
     if not (T_sink < T1 and T_sink < T2):
         raise ValueError("both temperatures must exceed the sink")
+    if not T2 > T1:
+        raise ValueError(
+            f"need a genuine upward lift T2 > T1, got T1={T1} K, T2={T2} K"
+        )
+    cop_carnot = T1 / (T2 - T1)
+    if cop_cooling > cop_carnot * (1.0 + 1e-9):
+        raise ValueError(
+            f"cop_cooling={cop_cooling} exceeds the Carnot cooling ceiling "
+            f"T1/(T2 - T1) = {cop_carnot:.6g} for the {T1} -> {T2} K lift"
+        )
     return (1.0 + 1.0 / cop_cooling) * (T1**4 - T_sink**4) / (
         T2**4 - T_sink**4
     )
