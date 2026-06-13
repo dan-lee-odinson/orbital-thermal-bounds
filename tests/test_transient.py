@@ -132,7 +132,9 @@ class TestConvergence:
         t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, assume_sun_shielded=True,
                                    return_diagnostics=True, **SIM)
         assert set(d) == {"converged", "orbits_used", "closure_error_K", "tol_K",
-                          "energy_residual_W_m2", "energy_residual_K", "energy_tol_K"}
+                          "energy_residual_W_m2", "energy_residual_K", "energy_tol_K",
+                          "periodic_converged", "time_discretization_converged",
+                          "time_residual_K", "time_tol_K"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -340,3 +342,32 @@ class TestInputDomainAndStability:
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([])
+
+
+
+class TestTemporalResolution:
+    """Step-doubling temporal-accuracy gate (audit re-review P1-2)."""
+
+    def test_coarse_steps_periodic_but_not_time_resolved(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                     n_orbits=200, steps_per_orbit=3,
+                                     return_diagnostics=True, check_time_resolution=True)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False
+        assert d["time_residual_K"] > d["time_tol_K"]
+
+    def test_averaging_bias_requires_time_resolution(self):
+        # Coarse stepping underpredicts peak/swing badly; averaging_bias must refuse.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.averaging_bias(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                  n_orbits=200, steps_per_orbit=3)
+
+    def test_refined_steps_are_time_resolved(self):
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                              assume_sun_shielded=True, **SIM)
+        assert b["time_discretization_converged"] is True
+        assert b["time_residual_K"] < b["time_tol_K"]

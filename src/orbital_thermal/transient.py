@@ -73,6 +73,8 @@ def simulate(
     t0_guess: float | None = None,
     convergence_tol_K: float = 1e-3,
     energy_tol_K: float = 1e-2,
+    check_time_resolution: bool = False,
+    time_tol_K: float = 1e-2,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -115,6 +117,8 @@ def simulate(
         raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
     if not (np.isfinite(energy_tol_K) and energy_tol_K > 0.0):
         raise ValueError(f"energy_tol_K must be finite and > 0, got {energy_tol_K}")
+    if not (np.isfinite(time_tol_K) and time_tol_K > 0.0):
+        raise ValueError(f"time_tol_K must be finite and > 0, got {time_tol_K}")
     if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
         raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
     period = env.orbital_period(altitude_km)
@@ -136,6 +140,25 @@ def simulate(
     def deriv(t, T):
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
+
+    def _one_orbit(T0, nsteps, t_begin):
+        """RK4-march one orbital period from ``T0`` at ``t_begin`` with ``nsteps``
+        steps; return the (nsteps+1) panel-temperature samples. Used for the
+        step-doubling temporal-accuracy check (audit re-review P1-2)."""
+        dtl = period / nsteps
+        Tloc = float(T0)
+        arr = np.empty(nsteps + 1)
+        arr[0] = Tloc
+        tt = t_begin
+        for i in range(1, nsteps + 1):
+            k1 = deriv(tt, Tloc)
+            k2 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k1)
+            k3 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k2)
+            k4 = deriv(tt + dtl, Tloc + dtl * k3)
+            Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+            tt += dtl
+            arr[i] = Tloc
+        return arr
 
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
@@ -209,6 +232,28 @@ def simulate(
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
 
+    # Temporal-accuracy gate (audit re-review P1-2): periodic closure + energy
+    # balance do not certify that the timestep resolves the intra-orbit forcing/peak.
+    # Re-integrate the final orbit at 2x resolution and require peak/mean/swing to agree.
+    if check_time_resolution:
+        peak_n = float(Ts_panel.max())
+        mean_n = float(np.mean(Ts_panel[:-1]))
+        swing_n = float(Ts_panel.max() - Ts_panel.min())
+        refined = _one_orbit(Ts_panel[0], 2 * steps_per_orbit, t_orbit0)
+        if not np.all(np.isfinite(refined)) or float(np.min(refined)) <= 0.0:
+            time_residual_K = float("inf")
+            time_discretization_converged = False
+        else:
+            time_residual_K = max(
+                abs(peak_n - float(refined.max())),
+                abs(mean_n - float(np.mean(refined[:-1]))),
+                abs(swing_n - float(refined.max() - refined.min())),
+            )
+            time_discretization_converged = bool(time_residual_K < time_tol_K)
+    else:
+        time_residual_K = None
+        time_discretization_converged = None
+
     if return_diagnostics:
         diagnostics = {
             "converged": converged,
@@ -218,6 +263,10 @@ def simulate(
             "energy_residual_W_m2": energy_residual_W_m2,
             "energy_residual_K": energy_residual_K,
             "energy_tol_K": float(energy_tol_K),
+            "periodic_converged": converged,
+            "time_discretization_converged": time_discretization_converged,
+            "time_residual_K": time_residual_K,
+            "time_tol_K": float(time_tol_K),
         }
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
@@ -375,17 +424,23 @@ def averaging_bias(
     ``closure_error_K``, and ``energy_residual_W_m2``.
     """
     kwargs.pop("return_diagnostics", None)
+    kwargs.pop("check_time_resolution", None)
     t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
                                  tilt_deg=tilt_deg, assume_sun_shielded=assume_sun_shielded,
-                                 emissivity=emissivity, return_diagnostics=True, **kwargs)
-    if require_convergence and not diag["converged"]:
+                                 emissivity=emissivity, return_diagnostics=True,
+                                 check_time_resolution=True, **kwargs)
+    if require_convergence and not (diag["periodic_converged"]
+                                    and diag["time_discretization_converged"]):
         raise RuntimeError(
-            "averaging_bias: transient did not reach periodic steady state "
-            f"({diag['orbits_used']} orbits, closure {diag['closure_error_K']:.2e} K "
-            f"> tol {diag['tol_K']:.1e} K). The Jensen/peak metrics would be an "
-            "initialization artifact (the bias/peak-excess sign can flip). Increase "
-            "n_orbits/max_orbits, or pass require_convergence=False to inspect the "
-            "unconverged diagnostics."
+            "averaging_bias: result not certified -- "
+            f"periodic_converged={diag['periodic_converged']} "
+            f"(closure {diag['closure_error_K']:.2e} K vs tol {diag['tol_K']:.1e} K; "
+            f"energy dT_eq {diag['energy_residual_K']:.2e} K vs tol "
+            f"{diag['energy_tol_K']:.1e} K), time_discretization_converged="
+            f"{diag['time_discretization_converged']} (step-doubling residual "
+            f"{diag['time_residual_K']} K vs tol {diag['time_tol_K']:.1e} K). The "
+            "Jensen/peak metrics would be invalid. Increase n_orbits/max_orbits and/or "
+            "steps_per_orbit, or pass require_convergence=False to inspect diagnostics."
         )
     transient_mean = float(np.mean(T[:-1]))
     sink_avg = float(np.mean(Tsink[:-1] ** 4) ** 0.25)
@@ -410,4 +465,8 @@ def averaging_bias(
         "energy_residual_W_m2": diag["energy_residual_W_m2"],
         "energy_residual_K": diag["energy_residual_K"],
         "energy_tol_K": diag["energy_tol_K"],
+        "periodic_converged": diag["periodic_converged"],
+        "time_discretization_converged": diag["time_discretization_converged"],
+        "time_residual_K": diag["time_residual_K"],
+        "time_tol_K": diag["time_tol_K"],
     }
