@@ -93,6 +93,26 @@ class TestAveragingBias:
         assert b["bias_K"] == pytest.approx(0.0, abs=1e-3)
         assert b["peak_excess_over_steady_K"] == pytest.approx(0.0, abs=1e-3)
 
+    def test_raises_on_nonconvergence(self):
+        # A non-converged transient must NOT be reported as a valid Jensen/peak
+        # result (the sign can flip); averaging_bias raises by default.
+        with pytest.raises(RuntimeError):
+            tr.averaging_bias(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                              n_orbits=3, steps_per_orbit=360)
+
+    def test_unconverged_inspectable_with_flag(self):
+        with pytest.warns(RuntimeWarning):
+            b = tr.averaging_bias(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                                  n_orbits=3, steps_per_orbit=360,
+                                  require_convergence=False)
+        assert b["converged"] is False
+
+    def test_reports_convergence_diagnostics(self):
+        b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        assert b["converged"] is True
+        assert b["closure_error_K"] < 1e-3
+        assert {"orbits_used", "energy_residual_W_m2"} <= set(b)
+
     def test_sink_avg_matches_sink_module(self):
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
         ref = sink_mod.orbit_averaged_sink(550, 0.0, tilt_deg=0)

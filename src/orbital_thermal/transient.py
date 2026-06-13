@@ -237,6 +237,7 @@ def averaging_bias(
     areal_heat_capacity: float,
     tilt_deg: float = 0.0,
     emissivity: float = 0.91,
+    require_convergence: bool = True,
     **kwargs,
 ) -> dict:
     """Compare the transient time-mean temperature to the steady, averaged-sink
@@ -248,9 +249,29 @@ def averaging_bias(
     steady solution does NOT under-predict the mean. The operationally important
     quantity is ``peak_excess_over_steady_K`` (> 0), the peak the steady,
     averaged-load assumption misses.
+
+    The Jensen/peak metrics are only meaningful at periodic steady state, so this
+    helper requests convergence diagnostics from :func:`simulate`. By default
+    (``require_convergence=True``) it RAISES ``RuntimeError`` if the transient did
+    not converge -- a non-converged final orbit can flip the sign of the reported
+    bias and peak excess (an initialization artifact, not physics). Set
+    ``require_convergence=False`` to inspect the unconverged result instead; the
+    returned dict always carries ``converged``, ``orbits_used``,
+    ``closure_error_K``, and ``energy_residual_W_m2``.
     """
-    t, T, Tsink = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
-                           tilt_deg=tilt_deg, emissivity=emissivity, **kwargs)
+    kwargs.pop("return_diagnostics", None)
+    t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
+                                 tilt_deg=tilt_deg, emissivity=emissivity,
+                                 return_diagnostics=True, **kwargs)
+    if require_convergence and not diag["converged"]:
+        raise RuntimeError(
+            "averaging_bias: transient did not reach periodic steady state "
+            f"({diag['orbits_used']} orbits, closure {diag['closure_error_K']:.2e} K "
+            f"> tol {diag['tol_K']:.1e} K). The Jensen/peak metrics would be an "
+            "initialization artifact (the bias/peak-excess sign can flip). Increase "
+            "n_orbits/max_orbits, or pass require_convergence=False to inspect the "
+            "unconverged diagnostics."
+        )
     transient_mean = float(np.mean(T[:-1]))
     sink_avg = float(np.mean(Tsink[:-1] ** 4) ** 0.25)
     steady = steady_state_temperature(q_load, sink_avg, emissivity)
@@ -268,4 +289,8 @@ def averaging_bias(
         "tau_s": tau,
         "period_s": period,
         "tau_over_period": tau / period,
+        "converged": diag["converged"],
+        "orbits_used": diag["orbits_used"],
+        "closure_error_K": diag["closure_error_K"],
+        "energy_residual_W_m2": diag["energy_residual_W_m2"],
     }
