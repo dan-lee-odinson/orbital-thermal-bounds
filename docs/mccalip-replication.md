@@ -95,6 +95,34 @@ orbital datacenter radiator, which does not exist publicly. The third paper's
 contribution is to frame that open question precisely (orientation-dependent
 effective sink, transient peak excess) rather than to assert a validated answer.
 
+## Verification and validation, more precisely
+
+The three-way replication/verification/validation split above is a useful first
+cut, but "verification" and "validation" each resolve into finer levels, and the
+package sits at specific ones. Stated precisely:
+
+1. **Mathematical verification** -- the equations follow from the stated
+   assumptions. Encoded by the published-results suite (`tests/test_published_results.py`),
+   which checks the analytic identities and bounds of the theory paper.
+2. **Software verification** -- the code computes those equations correctly.
+   Covered by the same suite plus the smoke and module tests.
+3. **Cross-model verification** -- independent implementations of the *same* model
+   agree. Covered by the McCalip replication against the frozen Node oracle
+   (`tests/test_mccalip_replication.py`), and by the exact view factor checked
+   against an independent integrator (`tests/test_environment.py`).
+4. **Model-form validation** -- the modelling assumptions match physical
+   benchmarks (e.g. measured Earth IR/albedo, real view factors, attitude). NOT
+   established here; the subpoint-albedo and sun-shielded limitations (items 3, 8)
+   are exactly model-form gaps.
+5. **System validation** -- predictions match hardware or flight data. NOT
+   established here; no public orbital-datacenter radiator data exists.
+
+So the package delivers levels 1-3 -- mathematical, software, and cross-model
+verification -- and explicitly does NOT claim model-form or system validation.
+"We replicated McCalip and corrected his edge-on view factor" is a cross-model
+verification result; it is not a claim that either model matches a real radiator.
+
+
 ## What was replicated
 
 The port covers `calculateOrbital`, `calculateThermal`, `calculateBreakeven`, and
