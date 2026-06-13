@@ -60,9 +60,27 @@ class TestTransient:
 
 
 class TestAveragingBias:
-    def test_mean_bias_is_small(self):
+    def test_mean_bias_is_nonpositive(self):
+        # At periodic steady state <T^4> = T_steady^4; since x^(1/4) is concave
+        # the arithmetic mean is <= T_steady, so the averaged-sink steady solution
+        # does NOT under-predict the mean. bias_K must be <= 0 up to numerical
+        # slack (and only marginally below, since the ripple is small).
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
-        assert abs(b["bias_K"]) < 0.5
+        assert b["bias_K"] <= 1e-3
+        assert b["bias_K"] > -0.5
+
+    def test_periodic_steady_state_energy_balance(self):
+        # Exact identity at periodic SS: <T^4> = q_load/(eps*sigma) + <Tsink^4>,
+        # equivalently <T^4> = T_steady^4. Holds across thermal masses.
+        import numpy as np
+        for C in (2000.0, 8000.0, 40000.0):
+            _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM)
+            lhs = float(np.mean(T[:-1] ** 4))
+            rhs = Q_LOAD / (EPS * SIGMA_SB) + float(np.mean(Ts[:-1] ** 4))
+            assert lhs == pytest.approx(rhs, rel=1e-5)
+            steady = tr.steady_state_temperature(
+                Q_LOAD, float(np.mean(Ts[:-1] ** 4)) ** 0.25, EPS)
+            assert lhs ** 0.25 == pytest.approx(steady, abs=1e-3)
 
     def test_peak_exceeds_steady(self):
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
