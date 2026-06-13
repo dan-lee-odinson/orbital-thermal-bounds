@@ -46,3 +46,25 @@ class TestEdgeOnDefault:
         assert mcc == pytest.approx(335.75, abs=0.05)
         assert exact == pytest.approx(342.10, abs=0.10)
         assert (exact - mcc) == pytest.approx(6.35, abs=0.10)
+
+
+class TestCorrectionTable:
+    def test_table_shape_and_grid(self):
+        rows = ev.correction_table_vs_beta()
+        assert [r["beta_deg"] for r in rows] == [0, 15, 30, 45, 60, 75, 90]
+        for r in rows:
+            assert set(r) == {"beta_deg", "eqtemp_mccalip_K", "eqtemp_exact_K", "delta_K"}
+
+    def test_correction_positive_and_monotonic_in_beta(self):
+        rows = ev.correction_table_vs_beta()
+        deltas = [r["delta_K"] for r in rows]
+        assert all(d > 0 for d in deltas)                      # always an underestimate
+        assert deltas == sorted(deltas)                        # worst at the edge-on default
+        assert deltas[0] == pytest.approx(1.94, abs=0.05)      # beta = 0
+        assert deltas[-1] == pytest.approx(6.35, abs=0.05)     # beta = 90 (default)
+
+    def test_beta90_row_matches_default_recomputation(self):
+        rows = ev.correction_table_vs_beta()
+        beta90 = next(r for r in rows if r["beta_deg"] == 90)
+        assert beta90["eqtemp_exact_K"] == pytest.approx(ev.eqtemp_exact_vf({}), rel=1e-12)
+        assert beta90["eqtemp_mccalip_K"] == pytest.approx(335.75, abs=0.05)

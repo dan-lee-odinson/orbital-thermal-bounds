@@ -65,6 +65,30 @@ factors back through the same heat balance reproduces his number exactly, so the
 +6.35 K is attributable to geometry alone. The correction across the full range of
 beta angles is tabulated in the next section.
 
+## Correction across beta
+
+McCalip's default is beta = 90 deg -- the worst case -- but the correction is
+present at every beta, because the sun-tracking panel's faces are never near
+nadir. Recomputing his own heat balance with the exact per-face view factor
+(`mccalip_exact_vf.correction_table_vs_beta`) across the oracle's beta grid gives:
+
+| beta (deg) | McCalip eqTemp (K) | exact-VF eqTemp (K) | correction (K) |
+|---:|---:|---:|---:|
+| 0  | 349.58 | 351.53 | +1.94 |
+| 15 | 348.94 | 350.98 | +2.04 |
+| 30 | 347.12 | 349.53 | +2.41 |
+| 45 | 344.42 | 347.63 | +3.22 |
+| 60 | 341.28 | 345.66 | +4.38 |
+| 75 | 338.24 | 343.79 | +5.55 |
+| 90 | 335.75 | 342.10 | +6.35 |
+
+The correction is positive and grows monotonically toward the edge-on default,
+since his cos-tilt floor underestimates the exact view factor more severely as the
+panel tilts away from nadir. The figure
+`results/figures/mccalip_beta_correction.png`
+(`scripts/plot_mccalip_correction.py`) plots this; it is the section paper three
+leads with.
+
 **Validation** -- *does the model match reality?* Neither the replication nor the
 core package claims this. Validation would require flight or test data for an
 orbital datacenter radiator, which does not exist publicly. The third paper's

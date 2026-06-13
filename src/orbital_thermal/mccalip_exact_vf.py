@@ -76,3 +76,32 @@ def eqtemp_exact_vf(overrides=None, n=72):
     s = mc._state(overrides)
     vf_a, vf_b = exact_per_face_view_factors(s["orbitalAltitudeKm"], s["betaAngle"], n=n)
     return equilibrium_temperature_with_view_factors(overrides, vf_a, vf_b)
+
+
+# Default beta grid for the correction table (the oracle grid plus midpoints).
+DEFAULT_BETAS = (0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0)
+
+
+def correction_table_vs_beta(betas=DEFAULT_BETAS, overrides=None, n=72):
+    """Tabulate the equilibrium-temperature correction vs orbit beta angle.
+
+    For each beta this compares McCalip's own replicated equilibrium temperature
+    (his cos-tilt view-factor heuristic) with the same heat balance evaluated
+    using the exact per-face Earth view factor. Returns a list of dicts with keys
+    ``beta_deg``, ``eqtemp_mccalip_K``, ``eqtemp_exact_K``, ``delta_K``
+    (= exact - McCalip). The correction is positive at every beta and grows
+    monotonically toward the edge-on default (beta = 90 deg), where it is +6.35 K.
+    """
+    base = dict(overrides or {})
+    rows = []
+    for beta in betas:
+        ov = dict(base, betaAngle=beta)
+        mccalip = mc.calculate_thermal(mc._state(ov))["eqTempK"]
+        exact = eqtemp_exact_vf(ov, n=n)
+        rows.append({
+            "beta_deg": float(beta),
+            "eqtemp_mccalip_K": float(mccalip),
+            "eqtemp_exact_K": float(exact),
+            "delta_K": float(exact - mccalip),
+        })
+    return rows
