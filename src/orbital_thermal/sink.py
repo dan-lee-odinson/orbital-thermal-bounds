@@ -174,7 +174,7 @@ def sink_temperature_series(
     return t4 ** 0.25
 
 
-def effective_sink_temperature(
+def orbital_effective_sink_temperature(
     altitude_km: float,
     beta_deg: float,
     u_deg: float,
@@ -212,6 +212,26 @@ def effective_sink_temperature(
         earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
         t_space=t_space))
 
+
+
+def effective_sink_temperature(*args, **kwargs):
+    """Deprecated alias for :func:`orbital_effective_sink_temperature`
+    (audit re-review P2-9).
+
+    The orbit-resolved sink function was renamed to disambiguate it from the
+    generic view-factor helper exported at package top level
+    (``orbital_thermal.effective_sink_temperature``, from ``radiation.py``), which
+    has a different signature and no shielding contract. This alias forwards and
+    will be removed in a future release.
+    """
+    import warnings
+    warnings.warn(
+        "sink.effective_sink_temperature is deprecated; use "
+        "orbital_effective_sink_temperature (renamed to disambiguate from the "
+        "top-level radiation.effective_sink_temperature). See audit re-review P2-9.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return orbital_effective_sink_temperature(*args, **kwargs)
 
 def in_eclipse(altitude_km: float, beta_deg: float, u_deg: float) -> bool:
     """True if the spacecraft is in Earth's cylindrical shadow at this position."""
