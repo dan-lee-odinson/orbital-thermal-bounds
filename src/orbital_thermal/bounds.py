@@ -160,6 +160,13 @@ def conversion_area_penalty(
             f"need 0 <= T_sink < T_c < T_h, got T_sink={T_sink}, "
             f"T_c={T_c}, T_h={T_h}"
         )
+    eta_carnot = 1.0 - T_c / T_h
+    if eta > eta_carnot + 1e-9:
+        raise ValueError(
+            f"eta={eta} exceeds the Carnot ceiling 1 - T_c/T_h = {eta_carnot:.6g} "
+            f"for an engine between T_h={T_h} K and T_c={T_c} K; the area-penalty "
+            "bound assumes a realizable (sub-Carnot) engine"
+        )
     return (1.0 - eta) * (T_h**4 - T_sink**4) / (T_c**4 - T_sink**4)
 
 
@@ -211,6 +218,16 @@ def heat_pump_area_ratio(
         raise ValueError(f"COP_c must be positive, got {cop_cooling}")
     if not (T_sink < T1 and T_sink < T2):
         raise ValueError("both temperatures must exceed the sink")
+    if not T2 > T1:
+        raise ValueError(
+            f"need a genuine upward lift T2 > T1, got T1={T1} K, T2={T2} K"
+        )
+    cop_carnot = T1 / (T2 - T1)
+    if cop_cooling > cop_carnot * (1.0 + 1e-9):
+        raise ValueError(
+            f"cop_cooling={cop_cooling} exceeds the Carnot cooling ceiling "
+            f"T1/(T2 - T1) = {cop_carnot:.6g} for the {T1} -> {T2} K lift"
+        )
     return (1.0 + 1.0 / cop_cooling) * (T1**4 - T_sink**4) / (
         T2**4 - T_sink**4
     )

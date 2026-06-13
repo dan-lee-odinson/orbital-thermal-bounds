@@ -294,6 +294,34 @@ class TestTheorem4:
         )
 
 
+class TestBoundsPhysicalContracts:
+    """Public bound APIs must reject thermodynamically impossible inputs
+    (audit re-review P1-c)."""
+
+    def test_conversion_penalty_rejects_super_carnot_eta(self):
+        # Carnot ceiling for 600->450 K is 1 - 450/600 = 0.25; 0.9 is impossible.
+        with pytest.raises(ValueError):
+            conversion_area_penalty(600.0, 450.0, eta=0.9)
+
+    def test_conversion_penalty_allows_reversible_boundary(self):
+        # eta == 1 - T_c/T_h (reversible limit) is allowed and gives (4/3)^3.
+        assert conversion_area_penalty(600.0, 450.0, eta=0.25) == pytest.approx(
+            (4.0 / 3.0) ** 3, rel=1e-12)
+
+    def test_heat_pump_rejects_super_carnot_cop(self):
+        # Carnot cooling ceiling for 353->520 K is 353/167 ~ 2.114; COP=100 is impossible.
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(100.0, 353.0, 520.0)
+
+    def test_heat_pump_requires_upward_lift(self):
+        with pytest.raises(ValueError):
+            heat_pump_area_ratio(1.0, 520.0, 353.0)   # T2 < T1, not a lift
+
+    def test_heat_pump_allows_carnot_boundary(self):
+        cop = carnot_cop_cooling(353.0, 520.0)        # exactly at the ceiling
+        assert heat_pump_area_ratio(cop, 353.0, 520.0) > 0.0
+
+
 class TestTheorem5:
     def test_amplification_at_25_percent(self):
         assert recirculation_amplification(0.25) == pytest.approx(
