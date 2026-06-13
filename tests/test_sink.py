@@ -149,7 +149,7 @@ class TestPhysicalAlbedoFacts:
 
     @pytest.mark.xfail(reason="disk_integrated_albedo_factor not yet implemented; "
                               "terminator orbit still sees sunlit Earth (P2-a)",
-                       strict=True)
+                       raises=NotImplementedError, strict=True)
     def test_beta90_orbit_has_nonzero_disk_integrated_albedo(self):
         # A terminator (beta=90) orbit at noon flies over sunlit Earth off-nadir,
         # so the disk-integrated reflected-solar drive is nonzero.
@@ -157,7 +157,7 @@ class TestPhysicalAlbedoFacts:
 
     @pytest.mark.xfail(reason="disk_integrated_albedo_factor not yet implemented; "
                               "a dark subpoint still leaves a sunlit disk (P2-a)",
-                       strict=True)
+                       raises=NotImplementedError, strict=True)
     def test_subpoint_darkness_does_not_imply_dark_disk(self):
         # Subpoint dark at (beta=0, u=100): the approximation nulls albedo, yet a
         # sunlit crescent of Earth remains visible to the radiator.
@@ -166,7 +166,7 @@ class TestPhysicalAlbedoFacts:
 
     @pytest.mark.xfail(reason="disk_integrated_albedo_factor not yet implemented; "
                               "off-opposition eclipse keeps a sunlit crescent (P2-a)",
-                       strict=True)
+                       raises=NotImplementedError, strict=True)
     def test_eclipse_off_opposition_has_nonzero_albedo(self):
         # In eclipse but NOT at exact opposition (beta=0, u=120): the Lambertian
         # phase function is nonzero (it vanishes only at exact opposition u=180),
