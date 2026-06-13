@@ -233,6 +233,37 @@ class TestTheorem3:
         assert values == sorted(values)
 
 
+class TestTheorem3NearSinkLimit:
+    """Robustness near T_sink -> T_h (audit item 6).
+
+    The fixed-point solver failed to converge for r = T_sink/T_h >~ 0.97; the
+    bisection solver handles the whole open domain. These are not published
+    anchors -- they assert solver validity, the exact shift identity, and basic
+    physical bounds at high sink fractions.
+    """
+
+    @pytest.mark.parametrize("r", [0.9, 0.99, 0.999])
+    def test_converges_and_residual_below_tolerance(self, r):
+        T_h = 600.0
+        T_sink = r * T_h
+        t = nonzero_sink_optimum(T_h, T_sink)
+        assert T_sink < t < T_h                       # physical bracket
+        assert abs(quintic_residual(t, T_h, T_sink)) < 1e-12
+
+    @pytest.mark.parametrize("r", [0.9, 0.99, 0.999])
+    def test_shift_identity_holds_near_limit(self, r):
+        # (T_c* - 3/4 T_h)/(3/4 T_h) == q^4/3 exactly, q = T_sink/T_c*.
+        T_h = 600.0
+        T_sink = r * T_h
+        t = nonzero_sink_optimum(T_h, T_sink)
+        q = T_sink / t
+        assert (t - 450.0) / 450.0 == pytest.approx(q**4 / 3.0, abs=1e-9)
+
+    def test_monotone_through_high_sink(self):
+        vals = [nonzero_sink_optimum(600.0, ts) for ts in (300, 540, 594, 599.4)]
+        assert vals == sorted(vals)
+
+
 # ==========================================================================
 # Theory paper -- Theorem 4 (heat pump) and Theorem 5 (no self-powering)
 # ==========================================================================

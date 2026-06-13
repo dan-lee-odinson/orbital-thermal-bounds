@@ -36,12 +36,58 @@ explained, not reconciled away:
 | Tilted view factor | cos-tilt heuristic + 5% edge-on floor | exact integral (machine precision) | >0.10 in VF near the horizon |
 | Orbit-averaged VF | 72-point Riemann sum | exact / analytic | small, but uncontrolled |
 
-The view-factor heuristic is the substantive modelling difference: at a radiator
-tilted 90 deg from nadir, McCalip's floor gives ~0.04 while the exact view factor
-is ~0.26 (`test_tilted_vf_approximation_departs_from_exact`). This does not make
-his headline number wrong -- his bifacial panel is near nadir/anti-nadir where the
-heuristic is reasonable -- but it is why the core package carries its own exact
-geometry rather than inheriting his.
+The view-factor heuristic is the substantive modelling difference, and at the
+default geometry it is not a small one. At beta = 90 deg the sun-tracking panel is
+EDGE-ON to Earth: its normal tracks the Sun, which at beta = 90 deg is normal to
+the orbit plane, while nadir lies in the plane 90 deg away. Around the orbit
+McCalip's per-face floor averages ~0.021 there; the exact tilted-plate-to-sphere
+view factor is ~0.258 -- a ~12x underestimate
+(`test_floor_underestimates_exact_by_about_12x`). This is not a region where his
+heuristic is reasonable; it is the region where it is worst, and it is his
+default. The core package therefore carries its own exact geometry rather than
+inheriting his -- and, as the next subsection quantifies, that correction moves his
+headline temperature.
+
+## The edge-on correction (headline result)
+
+Substituting the exact per-face view factor into McCalip's own heat balance --
+changing nothing else, not his truncated sigma, rounded deep-space temperature, or
+constants -- raises his default equilibrium temperature
+
+    335.75 K  (McCalip, replicated)  ->  342.10 K  (exact edge-on VF)   +6.35 K
+
+The replication in `mccalip_replication.py` stays faithful; this is a quantified
+new result, not a defect papered over. It is implemented in
+`orbital_thermal.mccalip_exact_vf` and locked by
+`tests/test_mccalip_exact_vf.py::TestEdgeOnDefault::test_exact_vf_raises_default_eqtemp_by_about_6_3K`.
+The self-consistency test in that file confirms that feeding McCalip's own view
+factors back through the same heat balance reproduces his number exactly, so the
++6.35 K is attributable to geometry alone. The correction across the full range of
+beta angles is tabulated in the next section.
+
+## Correction across beta
+
+McCalip's default is beta = 90 deg -- the worst case -- but the correction is
+present at every beta, because the sun-tracking panel's faces are never near
+nadir. Recomputing his own heat balance with the exact per-face view factor
+(`mccalip_exact_vf.correction_table_vs_beta`) across the oracle's beta grid gives:
+
+| beta (deg) | McCalip eqTemp (K) | exact-VF eqTemp (K) | correction (K) |
+|---:|---:|---:|---:|
+| 0  | 349.58 | 351.53 | +1.94 |
+| 15 | 348.94 | 350.98 | +2.04 |
+| 30 | 347.12 | 349.53 | +2.41 |
+| 45 | 344.42 | 347.63 | +3.22 |
+| 60 | 341.28 | 345.66 | +4.38 |
+| 75 | 338.24 | 343.79 | +5.55 |
+| 90 | 335.75 | 342.10 | +6.35 |
+
+The correction is positive and grows monotonically toward the edge-on default,
+since his cos-tilt floor underestimates the exact view factor more severely as the
+panel tilts away from nadir. The figure
+`results/figures/mccalip_beta_correction.png`
+(`scripts/plot_mccalip_correction.py`) plots this; it is the section paper three
+leads with.
 
 **Validation** -- *does the model match reality?* Neither the replication nor the
 core package claims this. Validation would require flight or test data for an
@@ -49,13 +95,43 @@ orbital datacenter radiator, which does not exist publicly. The third paper's
 contribution is to frame that open question precisely (orientation-dependent
 effective sink, transient peak excess) rather than to assert a validated answer.
 
+## Verification and validation, more precisely
+
+The three-way replication/verification/validation split above is a useful first
+cut, but "verification" and "validation" each resolve into finer levels, and the
+package sits at specific ones. Stated precisely:
+
+1. **Mathematical verification** -- the equations follow from the stated
+   assumptions. Encoded by the published-results suite (`tests/test_published_results.py`),
+   which checks the analytic identities and bounds of the theory paper.
+2. **Software verification** -- the code computes those equations correctly.
+   Covered by the same suite plus the smoke and module tests.
+3. **Cross-model verification** -- independent implementations of the *same* model
+   agree. Covered by the McCalip replication against the frozen Node oracle
+   (`tests/test_mccalip_replication.py`), and by the exact view factor checked
+   against an independent integrator (`tests/test_environment.py`).
+4. **Model-form validation** -- the modelling assumptions match physical
+   benchmarks (e.g. measured Earth IR/albedo, real view factors, attitude). NOT
+   established here; the subpoint-albedo and sun-shielded limitations (items 3, 8)
+   are exactly model-form gaps.
+5. **System validation** -- predictions match hardware or flight data. NOT
+   established here; no public orbital-datacenter radiator data exists.
+
+So the package delivers levels 1-3 -- mathematical, software, and cross-model
+verification -- and explicitly does NOT claim model-form or system validation.
+"We replicated McCalip and corrected his edge-on view factor" is a cross-model
+verification result; it is not a claim that either model matches a real radiator.
+
+
 ## What was replicated
 
 The port covers `calculateOrbital`, `calculateThermal`, `calculateBreakeven`, and
 the view-factor functions (`earthAngularRadius`, `nadirViewFactor`,
 `sunTrackingPanelViewFactors`). The oracle grid is: defaults; beta in
 {0, 30, 60, 90} deg; altitude in {400, 550, 800} km; radiator emissivity in
-{0.85, 0.90, 0.95}. The replicated default equilibrium temperature is 335.75 K.
+{0.85, 0.90, 0.95}. The replicated default equilibrium temperature is 335.75 K
+(342.10 K once the edge-on view factor is corrected; see "The edge-on
+correction" above).
 
 ## Reproducing this result
 

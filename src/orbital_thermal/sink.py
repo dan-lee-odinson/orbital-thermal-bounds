@@ -34,6 +34,11 @@ Geometry (standard first-order spacecraft-thermal model)
   and ``u`` is the in-orbit angle from orbit noon. Albedo is zero on the night
   side (cos(zeta) <= 0), which automatically includes eclipse.
 
+NOTE (audit item 3): the albedo term is a SUBPOINT APPROXIMATION
+(:func:`subpoint_albedo_factor`), not disk-integrated albedo. Its beta-90 and
+eclipse albedo nulls are artifacts of sampling reflectance only beneath the
+spacecraft; the true disk-integrated albedo can be nonzero there.
+
 This deliberately omits direct solar on the radiator: a heat-rejection surface is
 oriented away from the Sun, so direct flux falls on its back face. The model is
 therefore the environment seen by the *cold* side.
@@ -53,6 +58,31 @@ SOLAR_CONSTANT: float = 1361.0     # solar irradiance at 1 AU
 EARTH_ALBEDO: float = 0.30         # Bond albedo
 
 
+def subpoint_albedo_factor(beta_deg: float, u_deg: float) -> float:
+    """SUBPOINT albedo approximation: clamped cosine of the solar zenith angle at
+    the sub-satellite point.
+
+        cos(zeta) = cos(beta) * cos(u),   factor = max(0, cos(zeta))
+
+    This is a first-order stand-in for the reflected-solar (albedo) drive on the
+    radiator: it samples reflectance only at the point directly below the
+    spacecraft. It is NOT the disk-integrated albedo. Two consequences are
+    artifacts of the approximation, not physics:
+
+    * At beta = 90 deg it returns 0 for every ``u``, so the model reports zero
+      albedo around a terminator orbit -- yet the visible Earth disk is still
+      partly sunlit, so the true disk-integrated albedo is nonzero.
+    * It vanishes whenever the subpoint is dark, even when sunlit Earth remains
+      within the radiator's field of view.
+
+    A faithful model integrates reflected radiance over the Earth region that is
+    simultaneously sunlit, above the radiator's horizon, and visible to it (see
+    the package roadmap / audit item 3). Until then, treat beta-90 albedo nulls
+    and eclipse-driven albedo nulls as model limitations.
+    """
+    return float(max(0.0, np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))))
+
+
 def effective_sink_temperature(
     altitude_km: float,
     beta_deg: float,
@@ -64,6 +94,7 @@ def effective_sink_temperature(
     albedo: float = EARTH_ALBEDO,
     solar_constant: float = SOLAR_CONSTANT,
     t_space: float = T_SPACE_K,
+    assume_sun_shielded: bool = True,
 ) -> float:
     """Effective radiative sink temperature, K, at one orbit position.
 
@@ -71,12 +102,30 @@ def effective_sink_temperature(
     the point closest to the Sun, 180 deg the anti-solar (deep night) point.
     ``tilt_deg`` is the radiator normal's angle from nadir (0 = Earth-facing,
     180 = space-facing).
+
+    Attitude assumption (audit item 8): this models only the *cold-side*
+    environment and OMITS direct solar flux on the radiator face -- valid only for
+    an anti-solar / sun-shielded attitude, where direct sunlight falls on the back
+    face. ``tilt_deg`` is accepted for arbitrary Earth coupling, but the result is
+    NOT a general all-attitude sink. ``assume_sun_shielded`` makes this explicit:
+    it must be True (the default). Setting it False raises ``NotImplementedError``,
+    since direct-solar loading from the surface normal and Sun vector is not yet
+    modeled -- a guard so the omission cannot be silently misread as general.
     """
     if emissivity <= 0:
         raise ValueError("emissivity must be positive")
+    if not assume_sun_shielded:
+        raise NotImplementedError(
+            "effective_sink_temperature models only the sun-shielded (anti-solar) "
+            "cold side; direct solar flux on the radiator face is not modeled. "
+            "Pass assume_sun_shielded=True (the default) to acknowledge this, or "
+            "extend the model with a direct-solar term from the normal and Sun "
+            "vector before treating arbitrary tilt as a general sink."
+        )
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
-    albedo_factor = max(0.0, cos_zeta)
+    # Reflected-solar drive uses the SUBPOINT albedo approximation (see
+    # subpoint_albedo_factor): a stand-in, not disk-integrated albedo.
+    albedo_factor = subpoint_albedo_factor(beta_deg, u_deg)
     q_ir = earth_ir * vf
     q_alb = albedo * solar_constant * vf * albedo_factor
     t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
@@ -98,7 +147,12 @@ def sink_profile(
     n: int = 361,
     **kwargs,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (u_deg, T_s_eff) arrays over one full orbit (0..360 deg)."""
+    """Return (u_deg, T_s_eff) arrays over one full orbit (0..360 deg).
+
+    The grid includes both endpoints (0 and 360 deg are the same orbit point), so
+    it closes the loop for plotting. Any radiative averaging must drop the
+    duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
+    """
     u = np.linspace(0.0, 360.0, n)
     T = np.array(
         [effective_sink_temperature(altitude_km, beta_deg, ui, tilt_deg, **kwargs)
@@ -120,4 +174,6 @@ def orbit_averaged_sink(
     rejection scales with T^4.
     """
     _, T = sink_profile(altitude_km, beta_deg, tilt_deg, n=n, **kwargs)
-    return float(np.mean(T**4) ** 0.25)
+    # Drop the duplicated 360deg endpoint so it is not double-counted (consistent
+    # with transient.averaging_bias, which also slices [:-1]). Audit item 7.
+    return float(np.mean(T[:-1] ** 4) ** 0.25)

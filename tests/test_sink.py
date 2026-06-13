@@ -25,9 +25,13 @@ class TestEffectiveSink:
         got = sink.effective_sink_temperature(550, 0, 180, tilt_deg=0)
         assert got == pytest.approx(expected, rel=1e-12)
 
-    def test_terminator_orbit_has_no_albedo_swing(self):
-        # At beta = 90 the sub-satellite point is never sunlit: cos(zeta)=0 for
-        # all u, so the sink is flat at the IR floor around the whole orbit.
+    def test_subpoint_approx_no_albedo_swing_at_terminator(self):
+        # APPROXIMATION BEHAVIOR, not physics: under the SUBPOINT albedo
+        # approximation the sub-satellite point is never sunlit at beta = 90
+        # (cos(zeta)=0 for all u), so the modeled sink is flat at the IR floor.
+        # The real disk-integrated albedo is nonzero around a terminator orbit
+        # (see TestPhysicalAlbedoFacts). This test pins the approximation, not a
+        # physical truth.
         u, T = sink.sink_profile(550, 90.0, tilt_deg=0)
         assert np.ptp(T) == pytest.approx(0.0, abs=1e-9)
 
@@ -44,6 +48,8 @@ class TestEffectiveSink:
             return noon - night
         swings = [swing(b) for b in (0, 30, 60, 90)]
         assert all(a >= b - 1e-9 for a, b in zip(swings, swings[1:]))
+        # NB swings[-1] == 0 is subpoint-approximation behavior, not physics
+        # (see TestPhysicalAlbedoFacts); the trend toward smaller swing is real.
         assert swings[-1] == pytest.approx(0.0, abs=1e-9)
 
     def test_space_facing_approaches_cmb(self):
@@ -66,6 +72,21 @@ class TestEffectiveSink:
         with pytest.raises(ValueError):
             sink.effective_sink_temperature(550, 0, 0, emissivity=0.0)
 
+    def test_sun_shielded_default_unchanged(self):
+        # The default (sun-shielded) result is unchanged by the new flag.
+        a = sink.effective_sink_temperature(550, 0, 0, tilt_deg=0)
+        b = sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=True)
+        assert a == b
+
+    def test_unshielded_raises(self):
+        # Asking for a general (non-sun-shielded) sink is refused, not faked.
+        with pytest.raises(NotImplementedError):
+            sink.effective_sink_temperature(550, 0, 0, tilt_deg=0, assume_sun_shielded=False)
+
+    def test_flag_flows_through_profile(self):
+        with pytest.raises(NotImplementedError):
+            sink.sink_profile(550, 0.0, tilt_deg=0, assume_sun_shielded=False)
+
 
 class TestEclipse:
     def test_night_anti_solar_point_in_eclipse_at_beta0(self):
@@ -84,7 +105,55 @@ class TestOrbitAverage:
         avg = sink.orbit_averaged_sink(550, 0.0, tilt_deg=0)
         assert T.min() <= avg <= T.max()
 
-    def test_average_equals_floor_at_terminator(self):
+    def test_average_excludes_duplicated_endpoint(self):
+        # orbit_averaged_sink must drop the duplicated 360deg point; it should
+        # equal the endpoint-excluded T^4 mean, not the all-points mean.
+        _, T = sink.sink_profile(550, 0.0, tilt_deg=0, n=720)
+        excl = float(np.mean(T[:-1] ** 4) ** 0.25)
+        incl = float(np.mean(T ** 4) ** 0.25)
+        avg = sink.orbit_averaged_sink(550, 0.0, tilt_deg=0, n=720)
+        assert avg == pytest.approx(excl, rel=1e-12)
+        assert abs(avg - incl) > 1e-3      # the duplicate really did bias it
+
+    def test_subpoint_approx_average_equals_floor_at_terminator(self):
+        # APPROXIMATION BEHAVIOR, not physics: because the subpoint albedo
+        # approximation nulls all albedo at beta = 90, the orbit-averaged sink
+        # collapses to the IR floor. A disk-integrated model would sit above it.
         avg = sink.orbit_averaged_sink(550, 90.0, tilt_deg=0)
         floor = sink.effective_sink_temperature(550, 90, 180, tilt_deg=0)
         assert avg == pytest.approx(floor, rel=1e-9)
+
+
+class TestPhysicalAlbedoFacts:
+    """Physical truths the SUBPOINT albedo approximation does not capture.
+
+    These document the behavior the future disk-integrated albedo model must
+    have. They are xfail against the current subpoint approximation: each will
+    flip to passing (xpass) once disk-integration replaces the subpoint factor,
+    flagging that the model has been upgraded.
+    """
+
+    @pytest.mark.xfail(reason="subpoint approximation nulls albedo at beta=90; "
+                              "disk-integrated albedo is nonzero (audit item 3)",
+                       strict=True)
+    def test_beta90_orbit_has_nonzero_disk_integrated_albedo(self):
+        # A terminator (beta=90) orbit still flies over sunlit Earth off-nadir,
+        # so the disk-integrated reflected-solar drive is nonzero at orbit noon.
+        assert sink.subpoint_albedo_factor(90.0, 0.0) > 1e-6
+
+    @pytest.mark.xfail(reason="subpoint darkness nulls albedo even when sunlit "
+                              "Earth is still in view (audit item 3)",
+                       strict=True)
+    def test_subpoint_darkness_does_not_imply_dark_disk(self):
+        # Just past the terminator the subpoint is dark (cos(zeta)<=0) but a
+        # sunlit crescent of Earth remains visible to the radiator.
+        assert sink.subpoint_albedo_factor(0.0, 100.0) > 1e-6
+
+    @pytest.mark.xfail(reason="spacecraft eclipse does not imply zero Earth "
+                              "albedo in the field of view (audit item 3)",
+                       strict=True)
+    def test_spacecraft_eclipse_does_not_imply_zero_albedo(self):
+        # Deep in eclipse (beta=0, anti-solar point) the subpoint approximation
+        # gives zero, but the limb of the sunlit hemisphere can still contribute.
+        assert sink.in_eclipse(550, 0.0, 180.0) is True
+        assert sink.subpoint_albedo_factor(0.0, 180.0) > 1e-6

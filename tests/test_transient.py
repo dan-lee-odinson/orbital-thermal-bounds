@@ -60,9 +60,27 @@ class TestTransient:
 
 
 class TestAveragingBias:
-    def test_mean_bias_is_small(self):
+    def test_mean_bias_is_nonpositive(self):
+        # At periodic steady state <T^4> = T_steady^4; since x^(1/4) is concave
+        # the arithmetic mean is <= T_steady, so the averaged-sink steady solution
+        # does NOT under-predict the mean. bias_K must be <= 0 up to numerical
+        # slack (and only marginally below, since the ripple is small).
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
-        assert abs(b["bias_K"]) < 0.5
+        assert b["bias_K"] <= 1e-3
+        assert b["bias_K"] > -0.5
+
+    def test_periodic_steady_state_energy_balance(self):
+        # Exact identity at periodic SS: <T^4> = q_load/(eps*sigma) + <Tsink^4>,
+        # equivalently <T^4> = T_steady^4. Holds across thermal masses.
+        import numpy as np
+        for C in (2000.0, 8000.0, 40000.0):
+            _, T, Ts = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0, **SIM)
+            lhs = float(np.mean(T[:-1] ** 4))
+            rhs = Q_LOAD / (EPS * SIGMA_SB) + float(np.mean(Ts[:-1] ** 4))
+            assert lhs == pytest.approx(rhs, rel=1e-5)
+            steady = tr.steady_state_temperature(
+                Q_LOAD, float(np.mean(Ts[:-1] ** 4)) ** 0.25, EPS)
+            assert lhs ** 0.25 == pytest.approx(steady, abs=1e-3)
 
     def test_peak_exceeds_steady(self):
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
@@ -79,3 +97,77 @@ class TestAveragingBias:
         b = tr.averaging_bias(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
         ref = sink_mod.orbit_averaged_sink(550, 0.0, tilt_deg=0)
         assert b["sink_avg_K"] == pytest.approx(ref, abs=0.2)
+
+
+
+class TestConvergence:
+    def test_returns_three_tuple_by_default(self):
+        # Backward compatibility: the default return is still (t, T, T_sink).
+        out = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0, **SIM)
+        assert len(out) == 3
+
+    def test_diagnostics_reported_and_converged(self):
+        t, T, Ts, d = tr.simulate(550, 0.0, Q_LOAD, 8000.0, tilt_deg=0,
+                                   return_diagnostics=True, **SIM)
+        assert set(d) == {"converged", "orbits_used", "closure_error_K",
+                          "tol_K", "energy_residual_W_m2"}
+        assert d["converged"] is True
+        assert d["closure_error_K"] < d["tol_K"]
+        assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
+
+    def test_high_mass_needs_more_orbits(self):
+        # Motivation for the change: heavier panels take more orbits to settle.
+        _, _, _, lo = tr.simulate(550, 0.0, Q_LOAD, 2000.0, tilt_deg=0,
+                                  return_diagnostics=True, **SIM)
+        _, _, _, hi = tr.simulate(550, 0.0, Q_LOAD, 40000.0, tilt_deg=0,
+                                  return_diagnostics=True, **SIM)
+        assert hi["orbits_used"] > lo["orbits_used"]
+        assert lo["converged"] and hi["converged"]
+
+    def test_nonconvergence_warns_and_flags(self):
+        # A very high thermal mass under a tight orbit cap cannot reach periodic
+        # steady state: simulate must warn and report converged=False.
+        with pytest.warns(RuntimeWarning):
+            _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                                     n_orbits=3, steps_per_orbit=360,
+                                     return_diagnostics=True)
+        assert d["converged"] is False
+        assert d["orbits_used"] == 3
+
+    def test_nonconvergence_can_raise(self):
+        with pytest.raises(RuntimeError):
+            tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
+                        n_orbits=3, steps_per_orbit=360,
+                        raise_on_nonconvergence=True)
+
+
+
+class TestHeatCapacityProvenance:
+    def test_areal_heat_capacity_sums_layers(self):
+        # C_A = rho*cp*t for a single 2 mm aluminum layer.
+        c = tr.areal_heat_capacity([("aluminum_6061", 0.002)])
+        assert c == pytest.approx(2700.0 * 896.0 * 0.002, rel=1e-12)
+
+    def test_builds_are_physically_plausible(self):
+        vals = {k: tr.build_areal_heat_capacity(k) for k in tr.REPRESENTATIVE_BUILDS}
+        # All bracket the illustrative 2000..40000 J/m^2/K range used in examples.
+        assert all(1e3 < v < 5e4 for v in vals.values())
+        # Adding a coolant inventory and compute mass raises C_A monotonically.
+        assert (vals["pv_on_substrate"]
+                < vals["radiator_with_coolant"]
+                < vals["integrated_compute_radiator"])
+
+    def test_unknown_material_and_build_raise(self):
+        with pytest.raises(KeyError):
+            tr.areal_heat_capacity([("unobtanium", 0.001)])
+        with pytest.raises(KeyError):
+            tr.build_areal_heat_capacity("warp_nacelle")
+        with pytest.raises(ValueError):
+            tr.areal_heat_capacity([("aluminum_6061", -0.001)])
+
+    def test_derived_capacity_drives_the_transient(self):
+        # A build-derived C_A runs the solver and reaches periodic steady state.
+        C = tr.build_areal_heat_capacity("radiator_with_coolant")
+        _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0,
+                                 return_diagnostics=True, **SIM)
+        assert d["converged"] is True
