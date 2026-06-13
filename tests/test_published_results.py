@@ -259,6 +259,17 @@ class TestTheorem3NearSinkLimit:
         q = T_sink / t
         assert (t - 450.0) / 450.0 == pytest.approx(q**4 / 3.0, abs=1e-9)
 
+    def test_raises_on_iteration_exhaustion(self):
+        # Cap exhaustion must raise, not silently return an unconverged midpoint.
+        with pytest.raises(RuntimeError):
+            nonzero_sink_optimum(600.0, 220.0, max_iter=1)
+
+    def test_rejects_nonpositive_tol_and_max_iter(self):
+        with pytest.raises(ValueError):
+            nonzero_sink_optimum(600.0, 220.0, tol=0.0)
+        with pytest.raises(ValueError):
+            nonzero_sink_optimum(600.0, 220.0, max_iter=0)
+
     def test_monotone_through_high_sink(self):
         vals = [nonzero_sink_optimum(600.0, ts) for ts in (300, 540, 594, 599.4)]
         assert vals == sorted(vals)

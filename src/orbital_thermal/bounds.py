@@ -102,6 +102,10 @@ def nonzero_sink_optimum(
         raise ValueError(f"T_h must be positive, got {T_h}")
     if not 0.0 <= T_sink < T_h:
         raise ValueError(f"need 0 <= T_sink < T_h, got {T_sink}")
+    if tol <= 0.0:
+        raise ValueError(f"tol must be positive, got {tol}")
+    if max_iter <= 0:
+        raise ValueError(f"max_iter must be positive, got {max_iter}")
     if T_sink == 0.0:
         return 0.75 * T_h
     # Bisection on the dimensionless quintic f(y) = 4y^5 - 3y^4 - r^4, y = T_c/T_h,
@@ -125,7 +129,11 @@ def nonzero_sink_optimum(
             hi = mid
         if (hi - lo) * T_h < tol:
             return 0.5 * (lo + hi) * T_h
-    return 0.5 * (lo + hi) * T_h
+    raise RuntimeError(
+        f"nonzero_sink_optimum did not converge to tol={tol} K in {max_iter} "
+        f"bisection steps (bracket width {(hi - lo) * T_h:.3g} K for T_h={T_h}, "
+        f"T_sink={T_sink}); increase max_iter"
+    )
 
 
 def quintic_residual(T_c: float, T_h: float, T_sink: float) -> float:
