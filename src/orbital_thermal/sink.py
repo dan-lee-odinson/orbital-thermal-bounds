@@ -83,6 +83,28 @@ def subpoint_albedo_factor(beta_deg: float, u_deg: float) -> float:
     return float(max(0.0, np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))))
 
 
+def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
+    """Disk-integrated reflected-solar (albedo) factor -- NOT YET IMPLEMENTED.
+
+    The physically faithful replacement for :func:`subpoint_albedo_factor`:
+    integrate reflected solar radiance over the Earth region that is simultaneously
+    sunlit, above the radiator's horizon, and within its field of view. The
+    Lambertian-sphere phase function Phi(alpha) = (sin a + (pi - a) cos a) / pi
+    vanishes ONLY at exact opposition (alpha = pi, i.e. u = 180 deg), so a sunlit
+    crescent contributes at every other geometry -- including a terminator (beta=90)
+    orbit and off-opposition eclipse points where the subpoint approximation nulls.
+
+    Raises ``NotImplementedError`` until implemented. The strict-xfail tests in
+    ``tests/test_sink.py`` target THIS function (not the subpoint helper, whose
+    documented semantics will not change), so they xpass and flag the day a correct
+    disk-integrated model lands (audit re-review P2-a).
+    """
+    raise NotImplementedError(
+        "disk-integrated albedo is not yet modeled; the package currently uses the "
+        "subpoint approximation (subpoint_albedo_factor). See audit re-review P2-a."
+    )
+
+
 def _require_shielding(assume_sun_shielded: bool) -> None:
     """Guard: the model omits direct solar on the radiator face. The caller must
     explicitly assert the face is sun-shielded (audit re-review P1-b)."""
