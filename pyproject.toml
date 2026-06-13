@@ -9,15 +9,16 @@ description = "Executable reference implementation of the orbital-thermal-bounds
 authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "CC-BY-4.0" }
-# The core package is deliberately dependency-free: every function is exact
-# closed-form algebra from the published papers. Heavier dependencies
-# (CoolProp, scipy, skyfield) arrive with later modules and are added here
-# when those modules land.
+license = { text = "MIT" }
+# The analytical modules (radiation, equilibrium, bounds) are dependency-light,
+# but the full package requires numpy (environment, sink, transient). Optional
+# extras add CoolProp (the [fluids] ammonia checks) and matplotlib (figure
+# scripts); both are also pulled in by [dev].
 dependencies = ["numpy>=1.24"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "CoolProp>=6.6", "matplotlib>=3.7"]
+fluids = ["CoolProp>=6.6"]
 
 [project.urls]
 Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"

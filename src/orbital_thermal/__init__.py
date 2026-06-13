@@ -26,7 +26,12 @@ from .radiation import (
     required_area,
 )
 
-__version__ = "0.2.0"
+from importlib.metadata import PackageNotFoundError, version as _version
+
+try:
+    __version__ = _version("orbital-thermal")
+except PackageNotFoundError:  # pragma: no cover - running from an uninstalled tree
+    __version__ = "0.0.0+unknown"
 
 __all__ = [
     "SIGMA_SB",

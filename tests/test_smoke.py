@@ -58,3 +58,12 @@ def test_rejects_nonphysical_inputs():
         net_flux(300.0, 1.5)  # emissivity above 1
     with pytest.raises(ValueError):
         required_area(-5.0, 293.0, 0.91)  # negative heat load
+
+
+
+def test_version_is_single_sourced():
+    # __version__ must come from the installed package metadata (pyproject),
+    # not a hardcoded string that can drift (audit item 11a).
+    import orbital_thermal
+    from importlib.metadata import version
+    assert orbital_thermal.__version__ == version("orbital-thermal")
