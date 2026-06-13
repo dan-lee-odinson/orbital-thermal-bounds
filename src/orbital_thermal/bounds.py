@@ -52,10 +52,13 @@ def optimal_cold_fraction(a: float = 1.0, tol: float = 1e-12) -> float:
 
         g(y) = a/(1 - a*(1 - y)) + 1/(1 - y) - 4/y = 0
 
-    (the derivative of log A/W). Every term of g is strictly increasing on
-    (0, 1), so g has exactly one root and bisection converges to full
-    precision -- a direct search on the objective itself stalls near the
-    minimum, where objective differences fall below float resolution.
+    (the derivative of log A/W). g is strictly increasing on (0, 1): although its
+    first term a/(1 - a(1 - y)) is *decreasing*, the full derivative
+    g'(y) = -a^2/(1 - a(1 - y))^2 + 1/(1 - y)^2 + 4/y^2 is positive there, because
+    1 - a(1 - y) >= y (their difference is (1 - y)(1 - a) >= 0 for a <= 1) gives
+    a^2/(1 - a(1 - y))^2 <= 1/y^2 < 4/y^2. So g has exactly one root and bisection
+    converges to full precision -- a direct search on the objective itself stalls
+    near the minimum, where objective differences fall below float resolution.
 
     Theorem 2: a = 1 (reversible) gives exactly 3/4 (g reduces to
     1/(1 - y) - 3/y), with a 25% efficiency ceiling. Irreversibility

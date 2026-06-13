@@ -135,6 +135,20 @@ class TestTheorem2:
         # Handoff/preprint values to four decimals.
         assert optimal_cold_fraction(a) == pytest.approx(expected, abs=5e-5)
 
+    def test_stationarity_function_is_strictly_increasing(self):
+        # Uniqueness of the optimum: the stationarity function g(y) (d/dy log A/W)
+        # is strictly increasing on (0,1) -- its decreasing first term is dominated
+        # by 4/y^2 (audit re-review P3-b). One sign change => one root.
+        import numpy as np
+
+        def g(y, a):
+            return a / (1.0 - a * (1.0 - y)) + 1.0 / (1.0 - y) - 4.0 / y
+
+        for a in (0.5, 0.8, 1.0):
+            gv = g(np.linspace(0.01, 0.99, 500), a)
+            assert np.all(np.diff(gv) > 0)
+            assert np.sum(np.diff(np.sign(gv)) != 0) == 1
+
     def test_second_order_condition(self):
         # The optimum is a strict minimum of the area-per-work objective.
         y = optimal_cold_fraction(1.0)
