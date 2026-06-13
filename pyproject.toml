@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbital-thermal"
+version = "0.1.0"
+description = "Executable reference implementation of the orbital-thermal-bounds radiator model (Lee-Odinson, 2026)"
+authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "CC-BY-4.0" }
+# The core package is deliberately dependency-free: every function is exact
+# closed-form algebra from the published papers. Heavier dependencies
+# (CoolProp, scipy, skyfield) arrive with later modules and are added here
+# when those modules land.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.urls]
+Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
+"Theory preprint" = "https://doi.org/10.5281/zenodo.20650893"
+"AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670772"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
