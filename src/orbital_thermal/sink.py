@@ -34,6 +34,11 @@ Geometry (standard first-order spacecraft-thermal model)
   and ``u`` is the in-orbit angle from orbit noon. Albedo is zero on the night
   side (cos(zeta) <= 0), which automatically includes eclipse.
 
+NOTE (audit item 3): the albedo term is a SUBPOINT APPROXIMATION
+(:func:`subpoint_albedo_factor`), not disk-integrated albedo. Its beta-90 and
+eclipse albedo nulls are artifacts of sampling reflectance only beneath the
+spacecraft; the true disk-integrated albedo can be nonzero there.
+
 This deliberately omits direct solar on the radiator: a heat-rejection surface is
 oriented away from the Sun, so direct flux falls on its back face. The model is
 therefore the environment seen by the *cold* side.
@@ -51,6 +56,31 @@ T_SPACE_K: float = 2.7255
 EARTH_IR_FLUX: float = 237.0       # Earth outgoing longwave radiation
 SOLAR_CONSTANT: float = 1361.0     # solar irradiance at 1 AU
 EARTH_ALBEDO: float = 0.30         # Bond albedo
+
+
+def subpoint_albedo_factor(beta_deg: float, u_deg: float) -> float:
+    """SUBPOINT albedo approximation: clamped cosine of the solar zenith angle at
+    the sub-satellite point.
+
+        cos(zeta) = cos(beta) * cos(u),   factor = max(0, cos(zeta))
+
+    This is a first-order stand-in for the reflected-solar (albedo) drive on the
+    radiator: it samples reflectance only at the point directly below the
+    spacecraft. It is NOT the disk-integrated albedo. Two consequences are
+    artifacts of the approximation, not physics:
+
+    * At beta = 90 deg it returns 0 for every ``u``, so the model reports zero
+      albedo around a terminator orbit -- yet the visible Earth disk is still
+      partly sunlit, so the true disk-integrated albedo is nonzero.
+    * It vanishes whenever the subpoint is dark, even when sunlit Earth remains
+      within the radiator's field of view.
+
+    A faithful model integrates reflected radiance over the Earth region that is
+    simultaneously sunlit, above the radiator's horizon, and visible to it (see
+    the package roadmap / audit item 3). Until then, treat beta-90 albedo nulls
+    and eclipse-driven albedo nulls as model limitations.
+    """
+    return float(max(0.0, np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))))
 
 
 def effective_sink_temperature(
@@ -75,8 +105,9 @@ def effective_sink_temperature(
     if emissivity <= 0:
         raise ValueError("emissivity must be positive")
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
-    albedo_factor = max(0.0, cos_zeta)
+    # Reflected-solar drive uses the SUBPOINT albedo approximation (see
+    # subpoint_albedo_factor): a stand-in, not disk-integrated albedo.
+    albedo_factor = subpoint_albedo_factor(beta_deg, u_deg)
     q_ir = earth_ir * vf
     q_alb = albedo * solar_constant * vf * albedo_factor
     t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
