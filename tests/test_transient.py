@@ -139,3 +139,35 @@ class TestConvergence:
             tr.simulate(550, 0.0, Q_LOAD, 500000.0, tilt_deg=0,
                         n_orbits=3, steps_per_orbit=360,
                         raise_on_nonconvergence=True)
+
+
+
+class TestHeatCapacityProvenance:
+    def test_areal_heat_capacity_sums_layers(self):
+        # C_A = rho*cp*t for a single 2 mm aluminum layer.
+        c = tr.areal_heat_capacity([("aluminum_6061", 0.002)])
+        assert c == pytest.approx(2700.0 * 896.0 * 0.002, rel=1e-12)
+
+    def test_builds_are_physically_plausible(self):
+        vals = {k: tr.build_areal_heat_capacity(k) for k in tr.REPRESENTATIVE_BUILDS}
+        # All bracket the illustrative 2000..40000 J/m^2/K range used in examples.
+        assert all(1e3 < v < 5e4 for v in vals.values())
+        # Adding a coolant inventory and compute mass raises C_A monotonically.
+        assert (vals["pv_on_substrate"]
+                < vals["radiator_with_coolant"]
+                < vals["integrated_compute_radiator"])
+
+    def test_unknown_material_and_build_raise(self):
+        with pytest.raises(KeyError):
+            tr.areal_heat_capacity([("unobtanium", 0.001)])
+        with pytest.raises(KeyError):
+            tr.build_areal_heat_capacity("warp_nacelle")
+        with pytest.raises(ValueError):
+            tr.areal_heat_capacity([("aluminum_6061", -0.001)])
+
+    def test_derived_capacity_drives_the_transient(self):
+        # A build-derived C_A runs the solver and reaches periodic steady state.
+        C = tr.build_areal_heat_capacity("radiator_with_coolant")
+        _, _, _, d = tr.simulate(550, 0.0, Q_LOAD, C, tilt_deg=0,
+                                 return_diagnostics=True, **SIM)
+        assert d["converged"] is True

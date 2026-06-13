@@ -169,6 +169,67 @@ def simulate(
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
 
+
+# ---------------------------------------------------------------------------
+# Areal heat-capacity provenance (audit item 10)
+# ---------------------------------------------------------------------------
+# The example thermal masses C used elsewhere (e.g. 2000 / 8000 / 40000 J/m^2/K)
+# are ILLUSTRATIVE. Real areal heat capacity is C_A = sum_i rho_i c_p,i t_i over
+# the panel's material layers. The builds below derive representative values from
+# handbook room-temperature properties so transient swings can be tied to a
+# concrete stack rather than a bare number.
+
+#: Handbook material properties: name -> (density kg/m^3, specific heat J/kg/K).
+MATERIALS = {
+    "aluminum_6061": (2700.0, 896.0),
+    "cover_glass": (2500.0, 800.0),
+    "silicon": (2330.0, 700.0),
+    "cfrp_substrate": (1600.0, 800.0),
+    "ammonia_liquid": (600.0, 4700.0),
+    "copper": (8960.0, 385.0),
+    "fr4_pcb": (1850.0, 1100.0),
+}
+
+#: Representative panel builds: name -> list of (material, thickness_m) layers.
+#: Thicknesses are illustrative but physically plausible.
+REPRESENTATIVE_BUILDS = {
+    "bare_aluminum_sheet_2mm": [("aluminum_6061", 0.002)],
+    "pv_on_substrate": [
+        ("cover_glass", 0.0005), ("silicon", 0.0002),
+        ("cfrp_substrate", 0.001), ("aluminum_6061", 0.0005),
+    ],
+    "radiator_with_coolant": [("aluminum_6061", 0.002), ("ammonia_liquid", 0.005)],
+    "integrated_compute_radiator": [
+        ("aluminum_6061", 0.003), ("copper", 0.002), ("fr4_pcb", 0.0016),
+        ("silicon", 0.0008), ("ammonia_liquid", 0.006),
+    ],
+}
+
+
+def areal_heat_capacity(layers) -> float:
+    """Areal heat capacity C_A = sum_i rho_i c_p,i t_i, J/m^2/K.
+
+    ``layers`` is an iterable of ``(material_name, thickness_m)`` pairs; material
+    names key into :data:`MATERIALS`. This is the quantity ``C`` in the one-node
+    model, derived from a physical stack rather than assumed.
+    """
+    total = 0.0
+    for material, thickness in layers:
+        if material not in MATERIALS:
+            raise KeyError(f"unknown material {material!r}; see MATERIALS")
+        if thickness <= 0.0:
+            raise ValueError(f"thickness must be positive, got {thickness}")
+        rho, cp = MATERIALS[material]
+        total += rho * cp * thickness
+    return total
+
+
+def build_areal_heat_capacity(build_name: str) -> float:
+    """Areal heat capacity, J/m^2/K, of a named build in :data:`REPRESENTATIVE_BUILDS`."""
+    if build_name not in REPRESENTATIVE_BUILDS:
+        raise KeyError(f"unknown build {build_name!r}; see REPRESENTATIVE_BUILDS")
+    return areal_heat_capacity(REPRESENTATIVE_BUILDS[build_name])
+
 def averaging_bias(
     altitude_km: float,
     beta_deg: float,
