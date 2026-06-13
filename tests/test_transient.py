@@ -192,6 +192,20 @@ class TestHeatCapacityProvenance:
                                  return_diagnostics=True, **SIM)
         assert d["converged"] is True
 
+    def test_materials_carry_provenance(self):
+        keys = {"rho_kg_m3", "cp_J_kgK", "state", "source", "rel_uncertainty"}
+        for name, m in tr.MATERIALS.items():
+            assert keys <= set(m), name
+            assert m["rho_kg_m3"] > 0 and m["cp_J_kgK"] > 0
+            assert 0.0 < m["rel_uncertainty"] < 1.0
+
+    def test_ammonia_entry_matches_coolprop_reference_state(self):
+        pytest.importorskip("CoolProp")
+        rho, cp = tr.coolant_rho_cp("Ammonia", 300.0)
+        m = tr.MATERIALS["ammonia_liquid"]
+        assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
+        assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
+
 
 
 class TestShieldingPropagation:

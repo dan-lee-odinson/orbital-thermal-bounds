@@ -179,15 +179,58 @@ def simulate(
 # handbook room-temperature properties so transient swings can be tied to a
 # concrete stack rather than a bare number.
 
-#: Handbook material properties: name -> (density kg/m^3, specific heat J/kg/K).
+#: Material properties with provenance (audit re-review P2-d). Each entry records
+#: density and specific heat at a stated reference state, a source, and a relative
+#: uncertainty. Values are representative grades, not a specific lot; the builds
+#: below remain illustrative. The liquid-coolant entry is a single documented
+#: reference state (ammonia is strongly state-dependent near these temperatures);
+#: :func:`coolant_rho_cp` recomputes it from the pinned CoolProp backend.
 MATERIALS = {
-    "aluminum_6061": (2700.0, 896.0),
-    "cover_glass": (2500.0, 800.0),
-    "silicon": (2330.0, 700.0),
-    "cfrp_substrate": (1600.0, 800.0),
-    "ammonia_liquid": (600.0, 4700.0),
-    "copper": (8960.0, 385.0),
-    "fr4_pcb": (1850.0, 1100.0),
+    "aluminum_6061": {
+        "rho_kg_m3": 2700.0, "cp_J_kgK": 896.0,
+        "state": "solid, 298 K, 1 atm",
+        "source": "ASM aluminum 6061-T6 nominal (rho 2700 kg/m^3; c_p 896 J/kg/K at 25 C)",
+        "rel_uncertainty": 0.02,
+    },
+    "cover_glass": {
+        "rho_kg_m3": 2500.0, "cp_J_kgK": 800.0,
+        "state": "solid, 298 K",
+        "source": "borosilicate solar cover glass, typical (rho ~2500; c_p ~800 J/kg/K)",
+        "rel_uncertainty": 0.05,
+    },
+    "silicon": {
+        "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
+        "state": "crystalline solid, 298 K",
+        "source": "CRC Handbook, crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "rel_uncertainty": 0.02,
+    },
+    "cfrp_substrate": {
+        "rho_kg_m3": 1600.0, "cp_J_kgK": 800.0,
+        "state": "solid, 298 K",
+        "source": "carbon-fiber/epoxy laminate, quasi-isotropic typical (rho ~1550-1600; "
+                  "c_p ~800-1000 J/kg/K; strongly layup-dependent)",
+        "rel_uncertainty": 0.15,
+    },
+    "ammonia_liquid": {
+        "rho_kg_m3": 600.17, "cp_J_kgK": 4796.38,
+        "state": "saturated liquid, 300 K (Q=0)",
+        "source": "CoolProp HEOS (Tillner-Roth & Friend EOS) at T=300 K, Q=0; "
+                  "strongly state-dependent (280 K: 629/4649; 320 K: 568/5023). "
+                  "See coolant_rho_cp().",
+        "rel_uncertainty": 0.01,
+    },
+    "copper": {
+        "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
+        "state": "solid, 298 K",
+        "source": "CRC Handbook, Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "rel_uncertainty": 0.01,
+    },
+    "fr4_pcb": {
+        "rho_kg_m3": 1850.0, "cp_J_kgK": 1100.0,
+        "state": "solid, 298 K",
+        "source": "FR-4 glass-epoxy laminate, typical (rho ~1850; c_p ~1100-1200 J/kg/K)",
+        "rel_uncertainty": 0.15,
+    },
 }
 
 #: Representative panel builds: name -> list of (material, thickness_m) layers.
@@ -219,8 +262,8 @@ def areal_heat_capacity(layers) -> float:
             raise KeyError(f"unknown material {material!r}; see MATERIALS")
         if thickness <= 0.0:
             raise ValueError(f"thickness must be positive, got {thickness}")
-        rho, cp = MATERIALS[material]
-        total += rho * cp * thickness
+        entry = MATERIALS[material]
+        total += entry["rho_kg_m3"] * entry["cp_J_kgK"] * thickness
     return total
 
 
@@ -229,6 +272,19 @@ def build_areal_heat_capacity(build_name: str) -> float:
     if build_name not in REPRESENTATIVE_BUILDS:
         raise KeyError(f"unknown build {build_name!r}; see REPRESENTATIVE_BUILDS")
     return areal_heat_capacity(REPRESENTATIVE_BUILDS[build_name])
+
+
+def coolant_rho_cp(fluid: str = "Ammonia", T: float = 300.0):
+    """(density, specific heat) of the saturated liquid at temperature ``T`` from
+    the pinned CoolProp backend, kg/m^3 and J/kg/K (audit re-review P2-d).
+
+    This is the source/validator for the strongly state-dependent liquid-coolant
+    entry in :data:`MATERIALS`, which is pinned to one documented reference state
+    (300 K saturated liquid). Requires CoolProp (the [fluids] extra)."""
+    from CoolProp.CoolProp import PropsSI
+    rho = PropsSI("D", "T", T, "Q", 0, fluid)
+    cp = PropsSI("C", "T", T, "Q", 0, fluid)
+    return float(rho), float(cp)
 
 def averaging_bias(
     altitude_km: float,
