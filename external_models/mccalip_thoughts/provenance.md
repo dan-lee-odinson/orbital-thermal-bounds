@@ -66,6 +66,8 @@ McCalip implements a bifacial sun-tracking panel model:
 - Altitude sweep: 400, 550, 800 km (at beta = 90 deg)
 - Emissivity sweep: eps_rad in {0.85, 0.90, 0.95} (at altitude 550 km, beta = 90 deg)
 
+**Enforcement scope (audit re-review P2-8).** CI runs `verify_oracle_reproducible.py`, which (1) checks SHA-256 pins of `math.js`, `generate_oracle.js`, and `expected_outputs.json` (PINS.json), (2) regenerates the oracle from the vendored `math.js` and compares it semantically, and (3) attests the vendored `math.js` against the raw blob at the external pinned commit on GitHub. Together these enforce repository consistency, accidental-drift detection, and external-source attestation. They do NOT, by themselves, prove the oracle was historically never edited; that is a process commitment recorded here.
+
 **Oracle-freeze rule**: values in `expected_outputs.json` are never edited to make
 a failing test pass. If McCalip's model is updated and oracle values change, the
 entire `expected_outputs.json` must be regenerated with `generate_oracle.js` at a
