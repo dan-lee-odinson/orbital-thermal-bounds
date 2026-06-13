@@ -167,10 +167,11 @@ def simulate(
             ts[i] = t - t_orbit0
             Ts_panel[i] = T
             Ts_sink[i] = sink_at(t)
-        if not np.isfinite(T):
+        if not np.all(np.isfinite(Ts_panel)) or float(np.min(Ts_panel)) <= 0.0:
             raise RuntimeError(
-                "RK4 diverged to a non-finite temperature; the timestep is too "
-                "large for this heat capacity -- increase steps_per_orbit or "
+                "RK4 produced a non-finite or non-positive temperature "
+                f"(min {float(np.min(Ts_panel)):.1f} K over the orbit); the timestep "
+                "is too large for this heat capacity -- increase steps_per_orbit or "
                 "areal_heat_capacity (see the stability warning)"
             )
         orbits_used = orbit + 1

@@ -288,6 +288,15 @@ class TestInputDomainAndStability:
                 tr.simulate(550, 0.0, Q_LOAD, 1.0, tilt_deg=0, assume_sun_shielded=True,
                             n_orbits=2, steps_per_orbit=100)
 
+    def test_rk4_negative_temperature_raises(self):
+        # An unstable-but-finite run dipped to ~-332 K and was returned before;
+        # any non-positive accepted state must now raise (audit re-review P1-3).
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.simulate(550, 0, 5000.0, 1000.0, assume_sun_shielded=True,
+                            n_orbits=3, steps_per_orbit=50)
+
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([])
