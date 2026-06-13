@@ -4,10 +4,15 @@ The companion paper sizes the radiator at steady state with a constant sink: it
 solves eps*sigma*(T^4 - T_s^4) = q_load once and reads off T = 337.1 K. But a
 real panel has thermal mass, so as the effective sink swings around the orbit
 (:mod:`orbital_thermal.sink`) the temperature cannot follow instantly -- it lags
-and ripples. Because heat rejection goes as T^4, the time-average of that ripple
-is NOT the steady solution evaluated at the average sink (Jensen's inequality).
-This module integrates the transient and quantifies that gap -- the bias incurred
-by the steady, averaged-load assumption.
+and ripples. Because heat rejection goes as T^4, energy balance at periodic steady state
+forces the fourth-power mean to equal the steady value exactly:
+<T^4> = T_steady^4, with T_steady evaluated at the T^4-weighted average sink.
+Since x^(1/4) is concave, the *arithmetic* mean then sits slightly BELOW
+T_steady (a small, signed <= 0 effect) while the peak sits ABOVE it. The
+engineering penalty of the steady, averaged-load assumption is therefore peak
+UNDER-prediction, not a mean offset. This module integrates the transient and
+quantifies both: the peak excess (the operationally important number) and the
+small signed mean bias.
 
 Model (per unit radiator area)
 ------------------------------
@@ -136,8 +141,12 @@ def averaging_bias(
     """Compare the transient time-mean temperature to the steady, averaged-sink
     solution. Returns a dict of temperatures (K), the bias, and timescales.
 
-    ``bias_K`` = transient mean - steady(averaged sink). A positive value means
-    the steady/averaged assumption UNDER-predicts the true mean temperature.
+    ``bias_K`` = transient mean - steady(averaged sink). At periodic steady state
+    <T^4> = T_steady^4, so by concavity of x^(1/4) the arithmetic mean is
+    <= T_steady and ``bias_K`` is <= 0 up to numerical slack: the averaged-sink
+    steady solution does NOT under-predict the mean. The operationally important
+    quantity is ``peak_excess_over_steady_K`` (> 0), the peak the steady,
+    averaged-load assumption misses.
     """
     t, T, Tsink = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
                            tilt_deg=tilt_deg, emissivity=emissivity, **kwargs)
