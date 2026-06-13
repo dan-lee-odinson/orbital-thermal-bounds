@@ -30,7 +30,7 @@ when comparing McCalip outputs to our Python model (Task 10):
 
 | Parameter | McCalip value | Our value | Relative difference |
 |---|---|---|---|
-| Stefan-Boltzmann sigma | `5.67e-8` (truncated) | `5.670374419e-8` (CODATA 2018) | 6.6e-5 |
+| Stefan-Boltzmann sigma | `5.67e-8` (truncated) | `5.670374419184429e-8` (binary64 SI-derived) | 6.6e-5 |
 | Deep-space sink T | `3 K` (rounded) | `2.7255 K` (CMB) | ~0.10 K |
 
 The sigma truncation alone shifts equilibrium temperatures by ~0.002 K at 340 K

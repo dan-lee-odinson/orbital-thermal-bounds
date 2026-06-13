@@ -35,11 +35,11 @@ The design implication: within the model, orbital thermal management is a temper
 | `orbital-thermal-resolution-proof-v3.md` | Audited source document with full revision history across three audit rounds |
 | `verify_suite.py` | Python assertion suite covering every central numerical claim |
 | `verify_suite.wl` | Wolfram Language symbolic verification suite (stationarity, second-order conditions, limits, exact rationals, high-precision roots) |
-| `LICENSE` | CC BY 4.0 |
+| `LICENSE-DOCS-CC-BY-4.0` | CC BY 4.0 for papers/docs; code is MIT (`LICENSE-MIT`) -- see `LICENSING.md` |
 
 ## Running the verification suites
 
-**Python** (requires Python 3.8+ and numpy):
+**Python** (requires Python 3.10+ and numpy):
 
 ```bash
 python3 verify_suite.py

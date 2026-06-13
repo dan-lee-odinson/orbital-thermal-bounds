@@ -88,11 +88,15 @@ def disk_integrated_albedo_factor(altitude_km, beta_deg, u_deg, tilt_deg=0.0):
 
     The physically faithful replacement for :func:`subpoint_albedo_factor`:
     integrate reflected solar radiance over the Earth region that is simultaneously
-    sunlit, above the radiator's horizon, and within its field of view. The
-    Lambertian-sphere phase function Phi(alpha) = (sin a + (pi - a) cos a) / pi
-    vanishes ONLY at exact opposition (alpha = pi, i.e. u = 180 deg), so a sunlit
-    crescent contributes at every other geometry -- including a terminator (beta=90)
-    orbit and off-opposition eclipse points where the subpoint approximation nulls.
+    sunlit, above the radiator's horizon, and within its field of view. For the FULL
+    visible Earth disk (e.g. a nadir-facing plate), the Lambertian-sphere phase
+    function Phi(alpha) = (sin a + (pi - a) cos a) / pi vanishes only at exact
+    opposition (alpha = pi, i.e. u = 180 deg), so a sunlit crescent contributes at
+    every other phase -- including a terminator (beta=90) orbit and off-opposition
+    eclipse points where the subpoint approximation nulls. This full-disk statement
+    does NOT generalize to arbitrary tilt: horizon-clipping of a tilted plate can
+    hide the illuminated region, and a space-facing plate (tilt ~ 180 deg) has ~zero
+    Earth coupling at every phase. The strict-xfail tests use the nadir/full-disk case.
 
     Raises ``NotImplementedError`` until implemented. The strict-xfail tests in
     ``tests/test_sink.py`` target THIS function (not the subpoint helper, whose

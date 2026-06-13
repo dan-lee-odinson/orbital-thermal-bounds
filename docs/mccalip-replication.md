@@ -25,13 +25,13 @@ recompute it in another language.
 **Verification** -- *is the physics internally correct?* This is the job of the
 core package (`orbital_thermal.radiation`, `.equilibrium`, `.bounds`,
 `.environment`) and its published-results suite, which use the exact CODATA
-sigma = 5.670374419e-8 and the exact tilted-plate-to-sphere view factor rather
+sigma = 5.670374419184429e-8 (binary64 of the SI-derived value) and the exact tilted-plate-to-sphere view factor rather
 than McCalip's approximations. Where the two diverge, the gap is bounded and
 explained, not reconciled away:
 
 | Element | McCalip model | Core package | Consequence |
 |---|---|---|---|
-| Stefan-Boltzmann sigma | 5.67e-8 (truncated) | 5.670374419e-8 (exact) | ~0.002 K at 340 K |
+| Stefan-Boltzmann sigma | 5.67e-8 (truncated) | 5.670374419184429e-8 (binary64 SI-derived) | ~0.002 K at 340 K |
 | Deep-space sink | 3 K (rounded) | 2.7255 K (CMB) | negligible above 300 K |
 | Tilted view factor | cos-tilt heuristic + 5% edge-on floor | exact integral (machine precision) | >0.10 in VF near the horizon |
 | Orbit-averaged VF | 72-point Riemann sum | exact / analytic | small, but uncontrolled |
