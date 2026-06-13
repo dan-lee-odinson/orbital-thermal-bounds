@@ -8,6 +8,8 @@ Conventions: temperatures in kelvin, ``eta`` is heat-engine efficiency in
 (0, 1), areas are emitting areas. The zero-sink case is ``T_sink = 0``.
 """
 
+import math
+
 from .constants import SIGMA_SB
 
 
@@ -116,8 +118,8 @@ def nonzero_sink_optimum(
         raise ValueError(f"T_h must be positive, got {T_h}")
     if not 0.0 <= T_sink < T_h:
         raise ValueError(f"need 0 <= T_sink < T_h, got {T_sink}")
-    if tol <= 0.0:
-        raise ValueError(f"tol must be positive, got {tol}")
+    if not (math.isfinite(tol) and tol > 0.0):
+        raise ValueError(f"tol must be finite and > 0, got {tol}")
     if max_iter <= 0:
         raise ValueError(f"max_iter must be positive, got {max_iter}")
     if T_sink == 0.0:
@@ -208,8 +210,8 @@ def carnot_cop_cooling(T_c: float, T_h: float) -> float:
 
 def heating_cop(cop_cooling: float) -> float:
     """First-law identity COP_h = COP_c + 1 (Theorem 4)."""
-    if cop_cooling <= 0.0:
-        raise ValueError(f"COP_c must be positive, got {cop_cooling}")
+    if not (math.isfinite(cop_cooling) and cop_cooling > 0.0):
+        raise ValueError(f"COP_c must be finite and > 0, got {cop_cooling}")
     return cop_cooling + 1.0
 
 
@@ -219,8 +221,8 @@ def heat_pump_overhead(cop_cooling: float) -> float:
     Worked anchor: the 353/520 K Carnot ceiling gives minimum overhead
     0.473 W per W.
     """
-    if cop_cooling <= 0.0:
-        raise ValueError(f"COP_c must be positive, got {cop_cooling}")
+    if not (math.isfinite(cop_cooling) and cop_cooling > 0.0):
+        raise ValueError(f"COP_c must be finite and > 0, got {cop_cooling}")
     return 1.0 / cop_cooling
 
 

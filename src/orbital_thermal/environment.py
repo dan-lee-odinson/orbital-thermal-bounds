@@ -36,8 +36,8 @@ _GL_X, _GL_W = np.polynomial.legendre.leggauss(48)
 
 
 def _check_altitude(altitude_km: float) -> None:
-    if altitude_km <= 0:
-        raise ValueError(f"altitude_km must be positive, got {altitude_km}")
+    if not (np.isfinite(altitude_km) and altitude_km > 0):
+        raise ValueError(f"altitude_km must be finite and > 0, got {altitude_km}")
 
 
 # ---------------------------------------------------------------------------

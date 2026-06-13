@@ -163,12 +163,18 @@ def sink_temperature_series(
         raise ValueError(f"solar_absorptivity must be in [0, 1], got {solar_absorptivity}")
     if not 0.0 <= albedo <= 1.0:
         raise ValueError(f"albedo must be in [0, 1], got {albedo}")
-    if t_space < 0.0:
-        raise ValueError(f"t_space must be >= 0 K, got {t_space}")
+    if not (np.isfinite(t_space) and t_space >= 0.0):
+        raise ValueError(f"t_space must be finite and >= 0 K, got {t_space}")
     if not (np.isfinite(earth_ir) and earth_ir >= 0.0):
         raise ValueError(f"earth_ir must be finite and >= 0, got {earth_ir}")
     if not (np.isfinite(solar_constant) and solar_constant >= 0.0):
         raise ValueError(f"solar_constant must be finite and >= 0, got {solar_constant}")
+    if not (np.isfinite(view_factor) and 0.0 <= view_factor <= 1.0):
+        raise ValueError(f"view_factor must be finite in [0, 1], got {view_factor}")
+    if not (np.isfinite(beta_deg) and 0.0 <= beta_deg <= 90.0):
+        raise ValueError(f"beta_deg must be finite in [0, 90], got {beta_deg}")
+    if not np.all(np.isfinite(np.asarray(u_deg, dtype=float))):
+        raise ValueError("u_deg must be finite")
     _require_shielding(assume_sun_shielded)
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
     albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation
@@ -260,8 +266,9 @@ def sink_profile(
     it closes the loop for plotting. Any radiative averaging must drop the
     duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
     """
-    if n < 2:
-        raise ValueError(f"n must be >= 2 to resolve an orbit, got {n}")
+    if n < 3:
+        raise ValueError(f"n must be >= 3 to resolve an orbit (the duplicate 360deg "
+                         f"endpoint is dropped when averaging), got {n}")
     u = np.linspace(0.0, 360.0, n)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
     T = sink_temperature_series(

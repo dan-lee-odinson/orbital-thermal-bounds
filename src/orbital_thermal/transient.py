@@ -103,12 +103,16 @@ def simulate(
     eps = emissivity
     if not (np.isfinite(C) and C > 0.0):
         raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
-    if steps_per_orbit < 1:
-        raise ValueError(f"steps_per_orbit must be >= 1, got {steps_per_orbit}")
-    if n_orbits < 1:
-        raise ValueError(f"n_orbits must be >= 1, got {n_orbits}")
-    if max_orbits is not None and max_orbits < 1:
-        raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
+    for _name, _val in (("steps_per_orbit", steps_per_orbit), ("n_orbits", n_orbits)):
+        if isinstance(_val, bool) or not isinstance(_val, int):
+            raise TypeError(f"{_name} must be an int, got {type(_val).__name__}")
+        if _val < 1:
+            raise ValueError(f"{_name} must be >= 1, got {_val}")
+    if max_orbits is not None:
+        if isinstance(max_orbits, bool) or not isinstance(max_orbits, int):
+            raise TypeError(f"max_orbits must be an int, got {type(max_orbits).__name__}")
+        if max_orbits < 1:
+            raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
     if not (np.isfinite(q_load) and q_load > 0.0):
         raise ValueError(f"q_load must be finite and > 0, got {q_load}")
     if not 0.0 < emissivity <= 1.0:
@@ -366,8 +370,8 @@ def areal_heat_capacity(layers) -> float:
     for material, thickness in layers:
         if material not in MATERIALS:
             raise KeyError(f"unknown material {material!r}; see MATERIALS")
-        if thickness <= 0.0:
-            raise ValueError(f"thickness must be positive, got {thickness}")
+        if not (np.isfinite(thickness) and thickness > 0.0):
+            raise ValueError(f"thickness must be finite and > 0, got {thickness}")
         entry = MATERIALS[material]
         total += entry["rho_kg_m3"] * entry["cp_J_kgK"] * thickness
     return total
