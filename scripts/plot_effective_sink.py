@@ -30,7 +30,7 @@ def main() -> None:
     ax.axhline(PAPER_SINK, color="crimson", lw=1.8, ls="--",
                label=f"companion paper assumption ({PAPER_SINK:.0f} K)")
 
-    floor = sink.effective_sink_temperature(ALT, 0, 180, tilt_deg=0, assume_sun_shielded=True)
+    floor = sink.orbital_effective_sink_temperature(ALT, 0, 180, tilt_deg=0, assume_sun_shielded=True)
     ax.annotate(f"Earth-IR floor (eclipse / terminator) ~ {floor:.0f} K",
                 xy=(180, floor), xytext=(150, floor - 9),
                 fontsize=8, color="0.3")

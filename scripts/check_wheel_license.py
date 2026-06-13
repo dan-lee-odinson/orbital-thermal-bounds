@@ -22,13 +22,16 @@ def main() -> int:
     errs = []
     if not (len(lics) == 1 and lics[0].endswith("LICENSE-MIT")):
         errs.append(f"expected exactly dist-info/licenses/LICENSE-MIT, got {lics}")
-    if not any(line.strip() == "License: MIT" for line in meta.splitlines()):
-        errs.append("wheel METADATA does not declare 'License: MIT'")
+    # PEP 639 emits 'License-Expression: MIT' (Metadata 2.4); accept the legacy
+    # 'License: MIT' too for older builds.
+    if not any(line.strip() in ("License-Expression: MIT", "License: MIT")
+               for line in meta.splitlines()):
+        errs.append("wheel METADATA does not declare MIT (License-Expression or License)")
     if errs:
         for e in errs:
             print("WHEEL LICENSE ERROR:", e)
         return 1
-    print(f"wheel license OK: only {lics[0]}; METADATA declares License: MIT")
+    print(f"wheel license OK: only {lics[0]}; METADATA declares MIT")
     return 0
 
 
