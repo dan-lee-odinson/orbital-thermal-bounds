@@ -24,13 +24,13 @@ def main() -> None:
 
     colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(BETAS)))
     for beta, c in zip(BETAS, colors):
-        u, T = sink.sink_profile(ALT, beta, tilt_deg=0.0)
+        u, T = sink.sink_profile(ALT, beta, tilt_deg=0.0, assume_sun_shielded=True)
         ax.plot(u, T, color=c, lw=2.2, label=f"beta = {beta:.0f} deg")
 
     ax.axhline(PAPER_SINK, color="crimson", lw=1.8, ls="--",
                label=f"companion paper assumption ({PAPER_SINK:.0f} K)")
 
-    floor = sink.effective_sink_temperature(ALT, 0, 180, tilt_deg=0)
+    floor = sink.effective_sink_temperature(ALT, 0, 180, tilt_deg=0, assume_sun_shielded=True)
     ax.annotate(f"Earth-IR floor (eclipse / terminator) ~ {floor:.0f} K",
                 xy=(180, floor), xytext=(150, floor - 9),
                 fontsize=8, color="0.3")

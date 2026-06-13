@@ -50,16 +50,8 @@ def thermal_time_constant(
     return float(areal_heat_capacity / (4.0 * emissivity * SIGMA_SB * temperature**3))
 
 
-def _sink_series(altitude_km, beta_deg, tilt_deg, u_deg, emissivity,
-                 solar_absorptivity, earth_ir, albedo, solar_constant, t_space):
-    """Vectorized T_s_eff at orbit angles ``u_deg``; VF computed once (constant
-    for fixed tilt), only the cheap albedo term varies with u."""
-    vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
-    q_ir = earth_ir * vf
-    q_alb = albedo * solar_constant * vf * np.clip(cos_zeta, 0.0, None)
-    t4 = (q_ir + (solar_absorptivity / emissivity) * q_alb) / SIGMA_SB + t_space**4
-    return t4 ** 0.25
+# (the duplicated _sink_series was removed in audit re-review P1-b;
+# the one effective-sink equation now lives in sink.sink_temperature_series.)
 
 
 def simulate(
@@ -68,6 +60,8 @@ def simulate(
     q_load: float,
     areal_heat_capacity: float,
     tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
     solar_absorptivity: float = 0.20,
     earth_ir: float = sink_mod.EARTH_IR_FLUX,
@@ -90,6 +84,9 @@ def simulate(
     >> 1) can need many more orbits than a fixed count would allow, so a fixed
     march can silently return a not-yet-periodic profile; this loop detects that.
 
+    ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
+    effective-sink equation (sink.sink_temperature_series); see that function.
+
     ``t`` is seconds from the start of the final orbit; ``T`` and ``T_sink`` are
     the panel and effective-sink temperatures, K.
 
@@ -105,10 +102,13 @@ def simulate(
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
     cap = n_orbits if max_orbits is None else max_orbits
+    vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
-        return _sink_series(altitude_km, beta_deg, tilt_deg, deg_per_s * t, eps,
-                            solar_absorptivity, earth_ir, albedo, solar_constant, t_space)
+        return sink_mod.sink_temperature_series(
+            vf, beta_deg, deg_per_s * t, assume_sun_shielded=assume_sun_shielded,
+            emissivity=eps, solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
+            albedo=albedo, solar_constant=solar_constant, t_space=t_space)
 
     def deriv(t, T):
         Ts = sink_at(t)
@@ -236,6 +236,8 @@ def averaging_bias(
     q_load: float,
     areal_heat_capacity: float,
     tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
     require_convergence: bool = True,
     **kwargs,
@@ -261,8 +263,8 @@ def averaging_bias(
     """
     kwargs.pop("return_diagnostics", None)
     t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,
-                                 tilt_deg=tilt_deg, emissivity=emissivity,
-                                 return_diagnostics=True, **kwargs)
+                                 tilt_deg=tilt_deg, assume_sun_shielded=assume_sun_shielded,
+                                 emissivity=emissivity, return_diagnostics=True, **kwargs)
     if require_convergence and not diag["converged"]:
         raise RuntimeError(
             "averaging_bias: transient did not reach periodic steady state "
