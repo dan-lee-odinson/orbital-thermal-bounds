@@ -120,6 +120,18 @@ class TestTheorem1:
 
 
 class TestTheorem2:
+    def test_optimal_cold_fraction_rejects_bad_tol_and_caps_iterations(self):
+        # No hangs on degenerate tol; cap exhaustion raises (audit re-review P2-5).
+        for bad in (0.0, -1.0, float("inf"), float("nan")):
+            with pytest.raises(ValueError):
+                optimal_cold_fraction(1.0, tol=bad)
+        with pytest.raises(ValueError):
+            optimal_cold_fraction(1.0, max_iter=0)
+        with pytest.raises(RuntimeError):
+            optimal_cold_fraction(1.0, tol=1e-12, max_iter=1)
+        # below float resolution: stagnation guard returns a finite value, no hang
+        assert optimal_cold_fraction(1.0, tol=1e-16) == pytest.approx(0.75, abs=1e-6)
+
     def test_reversible_optimum_is_exactly_three_quarters(self):
         assert optimal_cold_fraction(1.0) == pytest.approx(0.75, abs=1e-9)
 
