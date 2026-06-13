@@ -239,7 +239,7 @@ MATERIALS = {
     "silicon": {
         "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
         "state": "crystalline solid, 298 K",
-        "source": "CRC Handbook, crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
         "rel_uncertainty": 0.02,
     },
     "cfrp_substrate": {
@@ -252,15 +252,16 @@ MATERIALS = {
     "ammonia_liquid": {
         "rho_kg_m3": 600.17, "cp_J_kgK": 4796.38,
         "state": "saturated liquid, 300 K (Q=0)",
-        "source": "CoolProp HEOS (Tillner-Roth & Friend EOS) at T=300 K, Q=0; "
-                  "strongly state-dependent (280 K: 629/4649; 320 K: 568/5023). "
-                  "See coolant_rho_cp().",
+        "source": "CoolProp HEOS at T=300 K, Q=0; strongly state-dependent "
+                  "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
+        "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
+        "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
         "rel_uncertainty": 0.01,
     },
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
         "state": "solid, 298 K",
-        "source": "CRC Handbook, Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
         "rel_uncertainty": 0.01,
     },
     "fr4_pcb": {

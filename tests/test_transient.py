@@ -238,6 +238,16 @@ class TestHeatCapacityProvenance:
         assert m["rho_kg_m3"] == pytest.approx(rho, rel=m["rel_uncertainty"])
         assert m["cp_J_kgK"] == pytest.approx(cp, rel=m["rel_uncertainty"])
 
+    def test_ammonia_provenance_matches_backend(self):
+        # The recorded CoolProp version + EOS key must match the installed backend
+        # so the citation cannot drift from the numbers (audit re-review P2-6).
+        pytest.importorskip("CoolProp")
+        from orbital_thermal import fluids
+        prov = fluids.provenance("Ammonia")
+        m = tr.MATERIALS["ammonia_liquid"]
+        assert prov["version"] == m["coolprop_version"]
+        assert prov["eos_bibtex_key"] == m["eos_bibtex_key"]
+
 
 
 class TestShieldingPropagation:
