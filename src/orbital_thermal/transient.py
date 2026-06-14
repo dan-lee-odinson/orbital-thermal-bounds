@@ -265,28 +265,33 @@ def simulate(
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
 
-    # Temporal-accuracy gate (audit r5 P1 + r6 P1): periodic closure + energy
-    # balance do not certify that the timestep resolves the intra-orbit forcing.
-    # Two independent certificates, because a single N->2N doubling can be EXACTLY
-    # aliased by the orbital forcing (the 3- and 6-sample means of max(0,cos u) are
-    # both 1/3, vs the continuous 1/pi):
-    #   (a) forcing-quadrature certificate -- the subpoint albedo has an exact
-    #       orbit mean cos(beta)/pi, giving a grid-free closed form for <T_sink^4>;
-    #       require the discrete forcing mean on the N grid to match it; and
-    #   (b) TWO successive grid refinements -- converge 2N and 4N to their OWN
-    #       periodic fixed points and require N~2N AND 2N~4N to agree, so the
-    #       certificate never rests on a single doubling.
+    # Temporal-accuracy gate (audit r5/r6/r7 P1): periodic closure + energy balance
+    # do not certify that the timestep resolves the intra-orbit forcing, and ADJACENT
+    # summary differences (N~2N, 2N~4N) are not a bound on the returned N-grid
+    # solution -- two adjacent changes can each be < tol while the cumulative N->4N
+    # drift, and the pointwise waveform error, exceed it (audit r7 P1). The
+    # certificate therefore bounds the RETURNED profile directly with, all < time_tol_K:
+    #   * a grid-free forcing-quadrature certificate (subpoint albedo has the exact
+    #     orbit mean cos(beta)/pi, giving a closed form for <T_sink^4>);
+    #   * POINTWISE errors of the returned N orbit and of 2N, each interpolated onto
+    #     the converged 4N phase grid -- this bounds the full periodic waveform,
+    #     including peak timing, not just peak/mean/swing; and
+    #   * the DIRECT N->4N (and 2N->4N, N->2N) peak/mean/swing summaries.
     # Each refined grid must itself reach periodic steady state, else uncertified.
+    forcing_residual_K = n_to_2n_residual_K = two_n_to_4n_residual_K = None
+    n_to_4n_residual_K = pointwise_n_to_4n_K = pointwise_2n_to_4n_K = None
+    refined_orbits_used = None
     if check_time_resolution:
         g2 = _converge(2 * steps_per_orbit)
         g4 = _converge(4 * steps_per_orbit)
+        refined_orbits_used = (g2["orbits_used"], g4["orbits_used"])
         exact4 = sink_mod.sink_fourth_power_mean(
             vf, beta_deg, emissivity=eps, solar_absorptivity=solar_absorptivity,
             earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
             t_space=t_space)
         disc4 = float(np.mean(Ts_sink[:-1] ** 4))
         T_ref = float(np.mean(Ts_panel[:-1]))
-        forcing_resid_K = abs(disc4 - exact4) / (4.0 * T_ref ** 3)
+        forcing_residual_K = abs(disc4 - exact4) / (4.0 * T_ref ** 3)
         if not (g2["converged"] and g4["converged"]):
             time_residual_K = float("inf")
             time_discretization_converged = False
@@ -297,9 +302,19 @@ def simulate(
             p1, m1, s1 = _pms(Ts_panel)
             p2, m2, s2 = _pms(g2["Tp"])
             p4, m4, s4 = _pms(g4["Tp"])
-            r12 = max(abs(p1 - p2), abs(m1 - m2), abs(s1 - s2))
-            r24 = max(abs(p2 - p4), abs(m2 - m4), abs(s2 - s4))
-            time_residual_K = max(r12, r24, forcing_resid_K)
+            n_to_2n_residual_K = max(abs(p1 - p2), abs(m1 - m2), abs(s1 - s2))
+            two_n_to_4n_residual_K = max(abs(p2 - p4), abs(m2 - m4), abs(s2 - s4))
+            n_to_4n_residual_K = max(abs(p1 - p4), abs(m1 - m4), abs(s1 - s4))
+            # Pointwise: interpolate N and 2N onto the 4N orbit phase grid (both
+            # share the orbital period, so the time axis is the phase axis).
+            t4 = g4["ts"]
+            pointwise_n_to_4n_K = float(np.max(np.abs(
+                np.interp(t4, ts, Ts_panel) - g4["Tp"])))
+            pointwise_2n_to_4n_K = float(np.max(np.abs(
+                np.interp(t4, g2["ts"], g2["Tp"]) - g4["Tp"])))
+            time_residual_K = max(
+                forcing_residual_K, n_to_2n_residual_K, two_n_to_4n_residual_K,
+                n_to_4n_residual_K, pointwise_n_to_4n_K, pointwise_2n_to_4n_K)
             time_discretization_converged = bool(
                 periodic_converged and time_residual_K < time_tol_K)
     else:
