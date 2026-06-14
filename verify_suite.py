@@ -1,7 +1,10 @@
 import numpy as np
 
 TOL = 1e-9
-sigma = 5.670374419e-8
+sigma = 5.670374419184429e-8  # full binary64 SI-derived Stefan-Boltzmann
+# constant (matches orbital_thermal.constants.SIGMA_SB); the truncated
+# 5.670374419e-8 literal is rejected so this standalone suite independently
+# locks the exact-sigma ground rule (audit r6 P3).
 
 # --- B1: Corollary 1.1 exact sink-corrected ratio ---
 T1, T2, Ts = 293.0, 600.0, 220.0

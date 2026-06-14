@@ -14,7 +14,10 @@ used as lower bounds on loop pressure) are reference values from the NIST
 Chemistry WebBook (SRD 69; Lemmon, McLinden, and Friend, 'Thermophysical
 Properties of Fluid Systems') and are NOT computed or asserted here."""
 
-sigma = 5.670374419e-8
+sigma = 5.670374419184429e-8  # full binary64 SI-derived Stefan-Boltzmann
+# constant (matches orbital_thermal.constants.SIGMA_SB); the truncated
+# 5.670374419e-8 literal is rejected so this standalone suite independently
+# locks the exact-sigma ground rule (audit r6 P3).
 
 # Reported AI1 figures (announcement coverage; Table 1 of the paper)
 Q_peak, Q_sust = 150e3, 120e3      # W (compute payload, used as radiative load; f=0)

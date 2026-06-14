@@ -25,6 +25,7 @@ import math
 
 from . import environment as env
 from . import mccalip_replication as mc
+from . import _validate as _v
 
 
 def exact_per_face_view_factors(altitude_km, beta_deg, n=72):
@@ -37,6 +38,9 @@ def exact_per_face_view_factors(altitude_km, beta_deg, n=72):
     tilted-plate-to-sphere view factor (:func:`environment.sphere_view_factor`)
     at each orbit step instead of his cos-tilt heuristic with a 5% edge-on floor.
     """
+    _v.positive("altitude_km", altitude_km)
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    _v.positive_int("n", n)
     beta = math.radians(beta_deg)
     a = b = 0.0
     for i in range(n):
@@ -92,6 +96,9 @@ def correction_table_vs_beta(betas=DEFAULT_BETAS, overrides=None, n=72):
     (= exact - McCalip). The correction is positive at every beta and grows
     monotonically toward the edge-on default (beta = 90 deg), where it is +6.35 K.
     """
+    _v.positive_int("n", n)
+    for _b in betas:
+        _v.in_range("beta_deg", _b, 0.0, 90.0)
     base = dict(overrides or {})
     rows = []
     for beta in betas:

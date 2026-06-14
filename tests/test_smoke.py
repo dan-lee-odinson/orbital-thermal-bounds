@@ -80,3 +80,15 @@ def test_sigma_sb_is_binary64_si_derived():
     assert SIGMA_SB == pytest.approx(sigma_si, rel=1e-12)
     assert SIGMA_SB != 5.670374419e-8
     assert abs(SIGMA_SB - 5.670374419e-8) / SIGMA_SB == pytest.approx(3.25e-11, rel=0.1)
+
+
+def test_standalone_verify_suites_lock_full_precision_sigma():
+    # Audit r6 P3: the standalone manuscript suites must independently use the full
+    # binary64 SI-derived sigma, not the truncated 5.670374419e-8 literal, so they
+    # lock the exact-sigma ground rule rather than relying on the package tests.
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    for rel in ("verify_suite.py", "companion/verify_ai1.py"):
+        text = (root / rel).read_text()
+        assert "5.670374419184429e-8" in text, rel
+        assert "sigma = 5.670374419e-8" not in text, rel
