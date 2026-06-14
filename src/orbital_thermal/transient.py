@@ -220,12 +220,12 @@ def simulate(
 
     main = _converge(steps_per_orbit)
     ts, Ts_panel, Ts_sink = main["ts"], main["Tp"], main["Tsk"]
-    converged = main["converged"]
+    periodic_converged = main["converged"]
     orbits_used = main["orbits_used"]
     closure_error_K = main["closure_K"]
     energy_residual_W_m2 = main["energy_W"]
     energy_residual_K = main["energy_K"]
-    if not converged:
+    if not periodic_converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
                f"orbits (closure {closure_error_K:.2e} K vs tol "
@@ -261,10 +261,26 @@ def simulate(
                 abs(swing_n - float(Rp.max() - Rp.min())),
             )
             time_discretization_converged = bool(
-                converged and time_residual_K < time_tol_K)
+                periodic_converged and time_residual_K < time_tol_K)
     else:
         time_residual_K = None
         time_discretization_converged = None
+
+    # The combined convergence flag IS gated by temporal accuracy when the caller
+    # asks for it (audit r5 P2): a result that passes periodic closure + energy
+    # balance but fails the step-doubling check is NOT certified. Without this the
+    # bare three-tuple path could silently return a time-under-resolved profile.
+    converged = periodic_converged and (
+        not check_time_resolution or bool(time_discretization_converged))
+    if check_time_resolution and periodic_converged and not time_discretization_converged:
+        msg = (f"transient did not resolve the intra-orbit forcing: step-doubling "
+               f"residual {time_residual_K} K vs tol {time_tol_K:.1e} K at "
+               f"{steps_per_orbit} steps/orbit; increase steps_per_orbit (and "
+               f"n_orbits/max_orbits so the 2x grid also reaches periodic steady "
+               f"state)")
+        if raise_on_nonconvergence:
+            raise RuntimeError(msg)
+        warnings.warn(msg, RuntimeWarning)
 
     if return_diagnostics:
         diagnostics = {
@@ -275,7 +291,7 @@ def simulate(
             "energy_residual_W_m2": energy_residual_W_m2,
             "energy_residual_K": energy_residual_K,
             "energy_tol_K": float(energy_tol_K),
-            "periodic_converged": converged,
+            "periodic_converged": periodic_converged,
             "time_discretization_converged": time_discretization_converged,
             "time_residual_K": time_residual_K,
             "time_tol_K": float(time_tol_K),
