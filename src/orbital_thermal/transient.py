@@ -90,11 +90,27 @@ def simulate(
 ):
     """Integrate to a periodic steady state; return (t, T, T_sink) for the final orbit.
 
-    The panel is marched orbit by orbit until the start-to-end temperature change
-    over an orbit falls below ``convergence_tol_K`` (periodic closure), capped at
-    ``max_orbits`` (default ``n_orbits``). High-thermal-mass panels (tau/period
-    >> 1) can need many more orbits than a fixed count would allow, so a fixed
-    march can silently return a not-yet-periodic profile; this loop detects that.
+    The panel is marched orbit by orbit (capped at ``max_orbits``, default
+    ``n_orbits``) until it reaches periodic steady state under TWO criteria, both
+    of which must hold (audit r4 P1):
+
+    * periodic closure: the start-to-end temperature change over an orbit is below
+      ``convergence_tol_K``; and
+    * energy balance: the orbit-mean net flux, expressed as an equivalent
+      temperature error ``dT_eq = |<q_net>| / (4 eps sigma T_ref^3)``, is below
+      ``energy_tol_K``.
+
+    Closure alone is insufficient when tau/period >> 1: the orbit-to-orbit change
+    vanishes while the panel is still far from steady state, so the scale-aware
+    energy residual is required as well.
+
+    Temporal resolution (``check_time_resolution``, default False): periodic
+    closure + energy balance do not certify that ``steps_per_orbit`` resolves the
+    intra-orbit forcing. When enabled, a second solution is converged at 2x
+    resolution to ITS OWN periodic fixed point and the two periodic orbits'
+    peak/mean/swing must agree within ``time_tol_K`` (audit r5 P1). Comparing
+    converged N- vs 2N-step fixed points (not one refined orbit from the coarse
+    state) is what catches coarse-quadrature bias at high thermal inertia.
 
     ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
     effective-sink equation (sink.sink_temperature_series); see that function.
@@ -102,11 +118,21 @@ def simulate(
     ``t`` is seconds from the start of the final orbit; ``T`` and ``T_sink`` are
     the panel and effective-sink temperatures, K.
 
-    If ``return_diagnostics`` is True, returns ``(t, T, T_sink, diagnostics)``
-    where diagnostics is a dict: ``converged`` (bool), ``orbits_used`` (int),
-    ``closure_error_K`` (|T_end - T_start| of the final orbit), ``tol_K``, and
-    ``energy_residual_W_m2`` (orbit-mean net flux, ~0 at periodic steady state).
-    On non-convergence it warns (or raises if ``raise_on_nonconvergence``).
+    If ``return_diagnostics`` is True, returns ``(t, T, T_sink, diagnostics)``.
+    The diagnostics dict distinguishes three convergence notions:
+
+    * ``periodic_converged`` -- periodic closure AND energy balance both met;
+    * ``time_discretization_converged`` -- the step-doubling check passed (None
+      when ``check_time_resolution`` is False);
+    * ``converged`` -- the COMBINED flag: ``periodic_converged`` AND, when
+      ``check_time_resolution`` is True, ``time_discretization_converged``.
+
+    It also carries ``orbits_used``, ``closure_error_K`` and ``tol_K`` (periodic
+    closure), ``energy_residual_W_m2`` / ``energy_residual_K`` and ``energy_tol_K``
+    (energy balance), and ``time_residual_K`` / ``time_tol_K`` (temporal gate).
+    On periodic non-convergence -- and, when ``check_time_resolution`` is on, on
+    temporal under-resolution -- it warns (or raises if ``raise_on_nonconvergence``),
+    so the bare three-tuple caller is signalled too.
     """
     C = areal_heat_capacity
     eps = emissivity
@@ -131,10 +157,11 @@ def simulate(
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
     cap = n_orbits if max_orbits is None else max_orbits
-    # Energy-balance convergence tolerance (W/m^2): relative to the load with an
-    # absolute floor. Per-orbit closure alone is insufficient when tau/P >> 1 --
-    # the orbit-to-orbit change vanishes while the panel is still far from periodic
-    # steady state (audit re-review P1-1). The mean net flux must also be ~0.
+    # Per-orbit closure alone is insufficient when tau/P >> 1: the orbit-to-orbit
+    # change vanishes while the panel is still far from periodic steady state
+    # (audit re-review P1-1). _converge() therefore ALSO requires the orbit-mean
+    # net flux -- as a scale-aware equivalent temperature error dT_eq, not a fixed
+    # W/m^2 floor (4 eps sigma T^3 -> 0 at low T) -- to fall below energy_tol_K.
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
