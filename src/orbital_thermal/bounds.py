@@ -118,8 +118,8 @@ def nonzero_sink_optimum(
     T_h = 600 K, T_sink = 220 K gives T_c* = 457.98675408138325 K
     (+1.7748% above 450 K).
     """
-    if T_h <= 0.0:
-        raise ValueError(f"T_h must be positive, got {T_h}")
+    _v.positive("T_h", T_h)
+    _v.nonneg("T_sink", T_sink)
     if not 0.0 <= T_sink < T_h:
         raise ValueError(f"need 0 <= T_sink < T_h, got {T_sink}")
     if not (math.isfinite(tol) and tol > 0.0):
@@ -184,6 +184,10 @@ def conversion_area_penalty(
     Zero-sink reversible bound: >= (T_h/T_c)^3, with minimum (4/3)^3 ~ 2.370
     at the Theorem 2 optimum; strictly larger for T_sink > 0.
     """
+    _v.finite("eta", eta)
+    _v.finite("T_h", T_h)
+    _v.finite("T_c", T_c)
+    _v.nonneg("T_sink", T_sink)
     if not 0.0 < eta < 1.0:
         raise ValueError(f"eta must be in (0, 1), got {eta}")
     if not 0.0 <= T_sink < T_c < T_h:

@@ -123,3 +123,33 @@ class TestEntryPointsRejectNonFinite:
         with pytest.raises(TypeError):
             tr.averaging_bias(550, 0, 545.0, 8000.0, assume_sun_shielded=True,
                               require_convergence="yes")
+
+
+class TestRemainingPublicAPIs:
+    """Audit r6 P2: validation extended to the public APIs that still admitted
+    NaN/inf or non-integer counts (bounds edges, exact-VF module, fluids)."""
+
+    def test_bounds_nonzero_sink_optimum_and_penalty(self):
+        with pytest.raises(ValueError):
+            bounds.nonzero_sink_optimum(INF, 220.0)
+        with pytest.raises(ValueError):
+            bounds.conversion_area_penalty(INF, 450.0, 0.2, 220.0)
+
+    def test_exact_view_factor_counts_and_range(self):
+        from orbital_thermal import mccalip_exact_vf as mx
+        with pytest.raises(ValueError):
+            mx.exact_per_face_view_factors(550, 90, n=0)
+        with pytest.raises(TypeError):
+            mx.exact_per_face_view_factors(550, 90, n=3.5)
+        with pytest.raises(ValueError):
+            mx.exact_per_face_view_factors(550, NAN, n=72)
+        with pytest.raises(ValueError):
+            mx.correction_table_vs_beta([NAN])
+
+    def test_fluids_critical_margin_finite(self):
+        pytest.importorskip("CoolProp")
+        from orbital_thermal import fluids
+        with pytest.raises(ValueError):
+            fluids.critical_margin(NAN)
+        with pytest.raises(ValueError):
+            fluids.critical_margin(INF)

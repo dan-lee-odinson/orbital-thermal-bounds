@@ -35,6 +35,8 @@ except ImportError as exc:  # pragma: no cover
         "or: pip install CoolProp"
     ) from exc
 
+from . import _validate as _v
+
 #: Pascals per bar.
 PA_PER_BAR: float = 1e5
 
@@ -88,6 +90,7 @@ def critical_margin(T: float, fluid: str = DEFAULT_FLUID) -> float:
     paper's screen: >50 K margin for the two-sided readings, <14 K for
     one-sided sustained, negative for one-sided continuous-peak.
     """
+    _v.finite("T", T)
     return critical_temperature(fluid) - T
 
 
