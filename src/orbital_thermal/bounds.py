@@ -192,7 +192,12 @@ def conversion_area_penalty(
             f"T_c={T_c}, T_h={T_h}"
         )
     eta_carnot = 1.0 - T_c / T_h
-    if eta > eta_carnot + 1e-9:
+    # Scale-aware Carnot check (audit r6 P2): an ABSOLUTE 1e-9 slack admits a
+    # super-Carnot engine when T_c -> T_h, where eta_carnot can be << 1e-9, and the
+    # returned penalty then falls below its own (T_h/T_c)^3 lower bound. Allow only
+    # a relative-epsilon overshoot for floating-point equality at the reversible
+    # boundary, not a fixed absolute floor.
+    if eta > eta_carnot and not math.isclose(eta, eta_carnot, rel_tol=1e-12, abs_tol=0.0):
         raise ValueError(
             f"eta={eta} exceeds the Carnot ceiling 1 - T_c/T_h = {eta_carnot:.6g} "
             f"for an engine between T_h={T_h} K and T_c={T_c} K; the area-penalty "

@@ -345,6 +345,18 @@ class TestBoundsPhysicalContracts:
         assert conversion_area_penalty(600.0, 450.0, eta=0.25) == pytest.approx(
             (4.0 / 3.0) ** 3, rel=1e-12)
 
+    def test_conversion_penalty_carnot_tol_is_scale_aware(self):
+        # Audit r6 P2: with T_c -> T_h the Carnot ceiling is << 1e-9, so an
+        # absolute slack admitted a super-Carnot eta and returned a penalty below
+        # the (T_h/T_c)^3 lower bound. A scale-aware check must reject it.
+        with pytest.raises(ValueError):
+            conversion_area_penalty(1000.0, 999.999999999, eta=1e-9)
+        # And for any admitted (reversible) eta near unity ratio, the penalty must
+        # never fall below the cubic bound.
+        Th, Tc = 1000.0, 999.9
+        eta = 1.0 - Tc / Th
+        assert conversion_area_penalty(Th, Tc, eta) >= (Th / Tc) ** 3 * (1.0 - 1e-12)
+
     def test_heat_pump_rejects_super_carnot_cop(self):
         # Carnot cooling ceiling for 353->520 K is 353/167 ~ 2.114; COP=100 is impossible.
         with pytest.raises(ValueError):
