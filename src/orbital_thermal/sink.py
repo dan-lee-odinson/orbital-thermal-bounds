@@ -46,6 +46,8 @@ therefore the environment seen by the *cold* side.
 
 import numpy as np
 
+from . import _validate as _v
+
 from .constants import SIGMA_SB
 from . import environment as env
 
@@ -80,6 +82,8 @@ def subpoint_albedo_factor(beta_deg: float, u_deg: float) -> float:
     the package roadmap / audit item 3). Until then, treat beta-90 albedo nulls
     and eclipse-driven albedo nulls as model limitations.
     """
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    _v.finite("u_deg", u_deg)
     return float(max(0.0, np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))))
 
 
@@ -245,6 +249,9 @@ def effective_sink_temperature(*args, **kwargs):
 
 def in_eclipse(altitude_km: float, beta_deg: float, u_deg: float) -> bool:
     """True if the spacecraft is in Earth's cylindrical shadow at this position."""
+    _v.positive("altitude_km", altitude_km)
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    _v.finite("u_deg", u_deg)
     r = env.orbital_radius(altitude_km)
     cos_eta = np.sqrt(1.0 - (env.EARTH_RADIUS_KM / r) ** 2)
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
@@ -266,6 +273,10 @@ def sink_profile(
     it closes the loop for plotting. Any radiative averaging must drop the
     duplicated endpoint (slice ``[:-1]``); :func:`orbit_averaged_sink` does this.
     """
+    _v.positive("altitude_km", altitude_km)
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    _v.finite("tilt_deg", tilt_deg)
+    _v.positive_int("n", n)
     if n < 3:
         raise ValueError(f"n must be >= 3 to resolve an orbit (the duplicate 360deg "
                          f"endpoint is dropped when averaging), got {n}")

@@ -68,3 +68,58 @@ class TestRangeAndType:
     def test_areal_heat_capacity_rejects_nonfinite_thickness(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([("aluminum_6061", NAN)])
+
+
+class TestEntryPointsRejectNonFinite:
+    """Audit r5 P2: entry points that previously accepted NaN/inf now use the
+    shared validators (orbital_thermal._validate) and reject them."""
+
+    def test_radiative_capacity_area(self):
+        with pytest.raises(ValueError):
+            eq.radiative_capacity(300.0, NAN, 0.91, 220.0)
+        with pytest.raises(ValueError):
+            eq.radiative_capacity(300.0, INF, 0.91, 220.0)
+
+    def test_steady_state_temperature(self):
+        with pytest.raises(ValueError):
+            tr.steady_state_temperature(NAN, 220.0, 0.91)
+        with pytest.raises(ValueError):
+            tr.steady_state_temperature(545.0, 220.0, 0.0)
+
+    def test_thermal_time_constant(self):
+        with pytest.raises(ValueError):
+            tr.thermal_time_constant(NAN, 337.0, 0.91)
+        with pytest.raises(ValueError):
+            tr.thermal_time_constant(8000.0, -300.0, 0.91)
+
+    def test_subpoint_albedo_factor(self):
+        with pytest.raises(ValueError):
+            sk.subpoint_albedo_factor(NAN, 0.0)
+        with pytest.raises(ValueError):
+            sk.subpoint_albedo_factor(0.0, INF)
+
+    def test_in_eclipse(self):
+        with pytest.raises(ValueError):
+            sk.in_eclipse(550, NAN, 0.0)
+        with pytest.raises(ValueError):
+            sk.in_eclipse(550, 100.0, 0.0)
+
+    def test_sink_profile_non_integer_n(self):
+        with pytest.raises(TypeError):
+            sk.sink_profile(550, 0.0, assume_sun_shielded=True, n=3.5)
+
+    def test_bounds_inf_and_zero(self):
+        with pytest.raises(ValueError):
+            bounds.fixed_work_area_per_watt(INF, 3.0, 2.7)
+        with pytest.raises(ValueError):
+            bounds.carnot_cop_cooling(353.0, INF)
+        with pytest.raises(ValueError):
+            bounds.quintic_residual(250.0, 0.0, 220.0)
+
+    def test_boolean_contracts(self):
+        with pytest.raises(TypeError):
+            tr.simulate(550, 0, 545.0, 8000.0, assume_sun_shielded=True,
+                        check_time_resolution=1)
+        with pytest.raises(TypeError):
+            tr.averaging_bias(550, 0, 545.0, 8000.0, assume_sun_shielded=True,
+                              require_convergence="yes")

@@ -33,6 +33,7 @@ import numpy as np
 from .constants import SIGMA_SB
 from . import environment as env
 from . import sink as sink_mod
+from . import _validate as _v
 
 
 def steady_state_temperature(q_load: float, t_sink: float, emissivity: float = 0.91) -> float:
@@ -40,6 +41,10 @@ def steady_state_temperature(q_load: float, t_sink: float, emissivity: float = 0
 
     Solves eps*sigma*(T^4 - t_sink^4) = q_load:  T = (q_load/(eps*sigma) + t_sink^4)^(1/4).
     """
+    _v.nonneg("q_load", q_load)
+    _v.nonneg("t_sink", t_sink)
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     return float((q_load / (emissivity * SIGMA_SB) + t_sink**4) ** 0.25)
 
 
@@ -47,6 +52,10 @@ def thermal_time_constant(
     areal_heat_capacity: float, temperature: float, emissivity: float = 0.91
 ) -> float:
     """Linearized radiative time constant, s:  C / (4*eps*sigma*T^3)."""
+    _v.positive("areal_heat_capacity", areal_heat_capacity)
+    _v.positive("temperature", temperature)
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     return float(areal_heat_capacity / (4.0 * emissivity * SIGMA_SB * temperature**3))
 
 
@@ -101,30 +110,23 @@ def simulate(
     """
     C = areal_heat_capacity
     eps = emissivity
-    if not (np.isfinite(C) and C > 0.0):
-        raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
-    for _name, _val in (("steps_per_orbit", steps_per_orbit), ("n_orbits", n_orbits)):
-        if isinstance(_val, bool) or not isinstance(_val, int):
-            raise TypeError(f"{_name} must be an int, got {type(_val).__name__}")
-        if _val < 1:
-            raise ValueError(f"{_name} must be >= 1, got {_val}")
+    _v.positive("areal_heat_capacity", C)
+    _v.positive_int("steps_per_orbit", steps_per_orbit)
+    _v.positive_int("n_orbits", n_orbits)
     if max_orbits is not None:
-        if isinstance(max_orbits, bool) or not isinstance(max_orbits, int):
-            raise TypeError(f"max_orbits must be an int, got {type(max_orbits).__name__}")
-        if max_orbits < 1:
-            raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
-    if not (np.isfinite(q_load) and q_load > 0.0):
-        raise ValueError(f"q_load must be finite and > 0, got {q_load}")
+        _v.positive_int("max_orbits", max_orbits)
+    _v.boolean("assume_sun_shielded", assume_sun_shielded)
+    _v.boolean("check_time_resolution", check_time_resolution)
+    _v.boolean("return_diagnostics", return_diagnostics)
+    _v.boolean("raise_on_nonconvergence", raise_on_nonconvergence)
+    _v.positive("q_load", q_load)
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
-    if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
-        raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
-    if not (np.isfinite(energy_tol_K) and energy_tol_K > 0.0):
-        raise ValueError(f"energy_tol_K must be finite and > 0, got {energy_tol_K}")
-    if not (np.isfinite(time_tol_K) and time_tol_K > 0.0):
-        raise ValueError(f"time_tol_K must be finite and > 0, got {time_tol_K}")
-    if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
-        raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
+    _v.positive("convergence_tol_K", convergence_tol_K)
+    _v.positive("energy_tol_K", energy_tol_K)
+    _v.positive("time_tol_K", time_tol_K)
+    if t0_guess is not None:
+        _v.positive("t0_guess", t0_guess)
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
@@ -453,6 +455,8 @@ def averaging_bias(
     returned dict always carries ``converged``, ``orbits_used``,
     ``closure_error_K``, and ``energy_residual_W_m2``.
     """
+    _v.boolean("assume_sun_shielded", assume_sun_shielded)
+    _v.boolean("require_convergence", require_convergence)
     kwargs.pop("return_diagnostics", None)
     kwargs.pop("check_time_resolution", None)
     t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,

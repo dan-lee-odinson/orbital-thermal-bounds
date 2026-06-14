@@ -12,6 +12,7 @@ import math
 
 from .constants import SIGMA_SB
 from .radiation import _check
+from . import _validate as _v
 
 
 def equilibrium_temperature(
@@ -45,7 +46,6 @@ def radiative_capacity(
     Inverse of :func:`equilibrium_temperature` at fixed area, emissivity,
     and sink.
     """
-    if area <= 0.0:
-        raise ValueError(f"area must be positive, got {area}")
+    _v.positive("area", area)
     _check(emissivity, T, T_sink)
     return emissivity * SIGMA_SB * area * (T**4 - T_sink**4)
