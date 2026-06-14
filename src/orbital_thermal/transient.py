@@ -145,24 +145,63 @@ def simulate(
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
 
-    def _one_orbit(T0, nsteps, t_begin):
-        """RK4-march one orbital period from ``T0`` at ``t_begin`` with ``nsteps``
-        steps; return the (nsteps+1) panel-temperature samples. Used for the
-        step-doubling temporal-accuracy check (audit re-review P1-2)."""
+    def _converge(nsteps):
+        """March orbit-by-orbit at ``nsteps`` steps/orbit from the shared initial
+        guess ``t0_guess`` until periodic closure AND energy balance, capped at
+        ``cap`` orbits. Returns the final-orbit arrays plus convergence
+        diagnostics.
+
+        Used for both the primary result and the 2x-resolution temporal-accuracy
+        comparison. Each grid is converged to its OWN periodic fixed point, so the
+        step-doubling gate compares periodic solutions -- not one-orbit transients
+        from a shared coarse state, which collapse to a false pass at high thermal
+        inertia because both barely move over a single orbit (audit r5 P1)."""
         dtl = period / nsteps
-        Tloc = float(T0)
-        arr = np.empty(nsteps + 1)
-        arr[0] = Tloc
-        tt = t_begin
-        for i in range(1, nsteps + 1):
-            k1 = deriv(tt, Tloc)
-            k2 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k1)
-            k3 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k2)
-            k4 = deriv(tt + dtl, Tloc + dtl * k3)
-            Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            tt += dtl
-            arr[i] = Tloc
-        return arr
+        Tloc = float(t0_guess)
+        ts_l = np.zeros(nsteps + 1)
+        Tp = np.zeros(nsteps + 1)
+        Tsk = np.zeros(nsteps + 1)
+        t_l = 0.0
+        conv = False
+        used = 0
+        for orbit in range(cap):
+            t_orbit0 = t_l
+            T_start = Tloc
+            ts_l[0] = 0.0
+            Tp[0] = Tloc
+            Tsk[0] = sink_at(t_l)
+            for i in range(1, nsteps + 1):
+                k1 = deriv(t_l, Tloc)
+                k2 = deriv(t_l + dtl / 2, Tloc + dtl / 2 * k1)
+                k3 = deriv(t_l + dtl / 2, Tloc + dtl / 2 * k2)
+                k4 = deriv(t_l + dtl, Tloc + dtl * k3)
+                Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+                t_l += dtl
+                ts_l[i] = t_l - t_orbit0
+                Tp[i] = Tloc
+                Tsk[i] = sink_at(t_l)
+            if not np.all(np.isfinite(Tp)) or float(np.min(Tp)) <= 0.0:
+                raise RuntimeError(
+                    "RK4 produced a non-finite or non-positive temperature "
+                    f"(min {float(np.min(Tp)):.1f} K over the orbit); the timestep "
+                    "is too large for this heat capacity -- increase steps_per_orbit "
+                    "or areal_heat_capacity (see the stability warning)"
+                )
+            used = orbit + 1
+            resid = float(abs(np.mean(
+                q_load - eps * SIGMA_SB * (Tp[:-1] ** 4 - Tsk[:-1] ** 4))))
+            T_ref = float(np.mean(Tp[:-1]))
+            dT_eq = resid / (4.0 * eps * SIGMA_SB * T_ref ** 3)
+            if abs(Tloc - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
+                conv = True
+                break
+        closure = float(abs(Tp[-1] - Tp[0]))
+        e_w = float(abs(np.mean(
+            q_load - eps * SIGMA_SB * (Tp[:-1] ** 4 - Tsk[:-1] ** 4))))
+        e_K = e_w / (4.0 * eps * SIGMA_SB * float(np.mean(Tp[:-1])) ** 3)
+        return {"ts": ts_l, "Tp": Tp, "Tsk": Tsk, "converged": conv,
+                "orbits_used": used, "closure_K": closure,
+                "energy_W": e_w, "energy_K": e_K}
 
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
@@ -179,52 +218,13 @@ def simulate(
             RuntimeWarning,
         )
 
-    ts = np.zeros(steps_per_orbit + 1)
-    Ts_panel = np.zeros(steps_per_orbit + 1)
-    Ts_sink = np.zeros(steps_per_orbit + 1)
-    t = 0.0
-    converged = False
-    orbits_used = 0
-    for orbit in range(cap):
-        t_orbit0 = t
-        T_start = T
-        ts[0] = 0.0
-        Ts_panel[0] = T
-        Ts_sink[0] = sink_at(t)
-        for i in range(1, steps_per_orbit + 1):
-            k1 = deriv(t, T)
-            k2 = deriv(t + dt / 2, T + dt / 2 * k1)
-            k3 = deriv(t + dt / 2, T + dt / 2 * k2)
-            k4 = deriv(t + dt, T + dt * k3)
-            T += dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            t += dt
-            ts[i] = t - t_orbit0
-            Ts_panel[i] = T
-            Ts_sink[i] = sink_at(t)
-        if not np.all(np.isfinite(Ts_panel)) or float(np.min(Ts_panel)) <= 0.0:
-            raise RuntimeError(
-                "RK4 produced a non-finite or non-positive temperature "
-                f"(min {float(np.min(Ts_panel)):.1f} K over the orbit); the timestep "
-                "is too large for this heat capacity -- increase steps_per_orbit or "
-                "areal_heat_capacity (see the stability warning)"
-            )
-        orbits_used = orbit + 1
-        orbit_energy_residual = float(abs(np.mean(
-            q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4))))
-        # Scale-aware: convert the flux residual to an equivalent temperature error
-        # dT_eq = |<q_net>| / (4 eps sigma T_ref^3). A fixed W/m^2 floor cannot bound
-        # temperature error uniformly (4 eps sigma T^3 -> 0 at low T); audit P1-1.
-        T_ref = float(np.mean(Ts_panel[:-1]))
-        dT_eq = orbit_energy_residual / (4.0 * eps * SIGMA_SB * T_ref ** 3)
-        if abs(T - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
-            converged = True
-            break
-
-    closure_error_K = float(abs(Ts_panel[-1] - Ts_panel[0]))
-    net = q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4)
-    energy_residual_W_m2 = float(abs(np.mean(net)))
-    energy_residual_K = energy_residual_W_m2 / (
-        4.0 * eps * SIGMA_SB * float(np.mean(Ts_panel[:-1])) ** 3)
+    main = _converge(steps_per_orbit)
+    ts, Ts_panel, Ts_sink = main["ts"], main["Tp"], main["Tsk"]
+    converged = main["converged"]
+    orbits_used = main["orbits_used"]
+    closure_error_K = main["closure_K"]
+    energy_residual_W_m2 = main["energy_W"]
+    energy_residual_K = main["energy_K"]
     if not converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
@@ -236,24 +236,32 @@ def simulate(
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
 
-    # Temporal-accuracy gate (audit re-review P1-2): periodic closure + energy
-    # balance do not certify that the timestep resolves the intra-orbit forcing/peak.
-    # Re-integrate the final orbit at 2x resolution and require peak/mean/swing to agree.
+    # Temporal-accuracy gate (audit r5 P1): periodic closure + energy balance do
+    # not certify that the timestep resolves the intra-orbit forcing. Converge a
+    # SECOND solution at 2x resolution to ITS OWN periodic fixed point and require
+    # the two periodic orbits' peak/mean/swing to agree. Comparing converged N- vs
+    # 2N-step fixed points (rather than one refined orbit launched from the coarse
+    # state) is what detects coarse-quadrature bias: in the high-thermal-inertia
+    # limit both one-orbit transients barely move and falsely agree, but the two
+    # grids' periodic equilibria still differ. The refined grid must itself reach
+    # periodic steady state, else temporal accuracy is uncertified.
     if check_time_resolution:
-        peak_n = float(Ts_panel.max())
-        mean_n = float(np.mean(Ts_panel[:-1]))
-        swing_n = float(Ts_panel.max() - Ts_panel.min())
-        refined = _one_orbit(Ts_panel[0], 2 * steps_per_orbit, t_orbit0)
-        if not np.all(np.isfinite(refined)) or float(np.min(refined)) <= 0.0:
+        refined = _converge(2 * steps_per_orbit)
+        if not refined["converged"]:
             time_residual_K = float("inf")
             time_discretization_converged = False
         else:
+            peak_n = float(Ts_panel.max())
+            mean_n = float(np.mean(Ts_panel[:-1]))
+            swing_n = float(Ts_panel.max() - Ts_panel.min())
+            Rp = refined["Tp"]
             time_residual_K = max(
-                abs(peak_n - float(refined.max())),
-                abs(mean_n - float(np.mean(refined[:-1]))),
-                abs(swing_n - float(refined.max() - refined.min())),
+                abs(peak_n - float(Rp.max())),
+                abs(mean_n - float(np.mean(Rp[:-1]))),
+                abs(swing_n - float(Rp.max() - Rp.min())),
             )
-            time_discretization_converged = bool(time_residual_K < time_tol_K)
+            time_discretization_converged = bool(
+                converged and time_residual_K < time_tol_K)
     else:
         time_residual_K = None
         time_discretization_converged = None
