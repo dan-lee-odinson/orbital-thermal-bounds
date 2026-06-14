@@ -190,6 +190,18 @@ def simulate(
             albedo=albedo, solar_constant=solar_constant, t_space=t_space)
 
     def deriv(t, T):
+        # RK4-stage positivity guard (audit r8 P2-c): every RK stage state -- not
+        # just the accepted step -- is evaluated through T**4, so an intermediate
+        # stage that crosses below absolute zero would silently corrupt the step
+        # yet can still yield a positive endpoint. Reject any non-finite or
+        # non-positive stage here so the raw simulate() API cannot return a
+        # numerically corrupted trajectory.
+        if not (np.isfinite(T) and T > 0.0):
+            raise RuntimeError(
+                f"RK4 stage temperature {float(T):.6g} K is non-finite or <= 0 K; "
+                f"the timestep is too large for this heat capacity at this state -- "
+                f"increase steps_per_orbit or areal_heat_capacity (see the "
+                f"stability warning)")
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
 
@@ -257,12 +269,18 @@ def simulate(
 
     # Explicit fixed-step RK4 is conditionally stable: warn if the step exceeds the
     # radiative time constant tau = C / (4 eps sigma T^3) (audit re-review P3-a).
-    tau0 = thermal_time_constant(C, T, eps)
+    # Evaluate stability at the HOTTEST plausible state (the zero-sink equilibrium),
+    # where tau = C/(4 eps sigma T^3) is smallest and the explicit scheme is least
+    # stable. Using t0_guess alone misses a cold start that heats into an unstable
+    # regime (audit r8 P2-c).
+    T_stab = max(float(T), steady_state_temperature(q_load, 0.0, eps))
+    tau0 = thermal_time_constant(C, T_stab, eps)
     if dt > tau0:
         warnings.warn(
             f"RK4 timestep dt={dt:.3g} s exceeds the radiative time constant "
-            f"tau={tau0:.3g} s; explicit integration may be unstable -- increase "
-            f"steps_per_orbit or areal_heat_capacity",
+            f"tau={tau0:.3g} s at the zero-sink equilibrium ({T_stab:.1f} K); "
+            f"explicit integration may be unstable -- increase steps_per_orbit or "
+            f"areal_heat_capacity",
             RuntimeWarning,
         )
 

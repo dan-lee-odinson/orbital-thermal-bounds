@@ -361,6 +361,25 @@ class TestInputDomainAndStability:
                 tr.simulate(550, 0, 5000.0, 1000.0, assume_sun_shielded=True,
                             n_orbits=3, steps_per_orbit=50)
 
+    def test_rk4_intermediate_stage_positivity_raises(self):
+        # Audit r8 P2-c: a cold start with too coarse a step drives an intermediate
+        # RK4 stage below absolute zero (evaluated through T**4) even though the
+        # accepted endpoint can stay positive. The stage guard must raise rather
+        # than return a numerically corrupted trajectory.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.simulate(550, 0, Q_LOAD, 3715.0, tilt_deg=0, assume_sun_shielded=True,
+                            t0_guess=30.0, n_orbits=1, steps_per_orbit=1)
+
+    def test_cold_start_into_unstable_regime_warns(self):
+        # The stability check is evaluated at the hottest (zero-sink) equilibrium,
+        # so a cold start that heats into an unstable regime still warns (audit r8).
+        with pytest.raises(RuntimeError):
+            with pytest.warns(RuntimeWarning):
+                tr.simulate(550, 0, Q_LOAD, 3715.0, tilt_deg=0, assume_sun_shielded=True,
+                            t0_guess=30.0, n_orbits=1, steps_per_orbit=1)
+
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([])
