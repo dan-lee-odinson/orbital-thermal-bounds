@@ -11,6 +11,7 @@ Conventions: temperatures in kelvin, ``eta`` is heat-engine efficiency in
 import math
 
 from .constants import SIGMA_SB
+from . import _validate as _v
 
 
 # --------------------------------------------------------------------------
@@ -31,6 +32,9 @@ def fixed_work_area_per_watt(
     """
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    _v.finite("T_h", T_h)
+    _v.finite("T_c", T_c)
+    _v.nonneg("T_sink", T_sink)
     if not 0.0 <= T_sink < T_c < T_h:
         raise ValueError(
             f"need 0 <= T_sink < T_c < T_h, got T_sink={T_sink}, "
@@ -158,6 +162,9 @@ def quintic_residual(T_c: float, T_h: float, T_sink: float) -> float:
     With y = T_c/T_h and r = T_sink/T_h: residual = 4y^5 - 3y^4 - r^4,
     which is zero at the optimum (published tolerance: |residual| < 1e-12).
     """
+    _v.nonneg("T_c", T_c)
+    _v.positive("T_h", T_h)
+    _v.nonneg("T_sink", T_sink)
     y = T_c / T_h
     r = T_sink / T_h
     return 4.0 * y**5 - 3.0 * y**4 - r**4
@@ -203,6 +210,8 @@ def carnot_cop_cooling(T_c: float, T_h: float) -> float:
 
     Worked anchor: lifting 353 K -> 520 K gives COP_c <= 2.114.
     """
+    _v.positive("T_c", T_c)
+    _v.finite("T_h", T_h)
     if not 0.0 < T_c < T_h:
         raise ValueError(f"need 0 < T_c < T_h, got T_c={T_c}, T_h={T_h}")
     return T_c / (T_h - T_c)

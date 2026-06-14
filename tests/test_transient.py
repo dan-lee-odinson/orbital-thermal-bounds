@@ -248,6 +248,17 @@ class TestHeatCapacityProvenance:
             assert m["rho_kg_m3"] > 0 and m["cp_J_kgK"] > 0
             assert 0.0 < m["rel_uncertainty"] < 1.0
 
+    def test_materials_carry_source_class(self):
+        # Audit r5 P3: every entry is tagged with how its provenance is grounded,
+        # and representative-grade (range, not single-source) entries carry the
+        # larger uncertainty that a single page citation cannot express.
+        for name, m in tr.MATERIALS.items():
+            assert "source_class" in m, name
+            assert m["source_class"], name
+            if "representative grade" in m["source_class"]:
+                assert m["rel_uncertainty"] >= 0.05, name
+                assert "no single page" in m["source"] or "not meaningful" in m["source"], name
+
     def test_ammonia_entry_matches_coolprop_reference_state(self):
         # CODE-regression: the stored (2-decimal) values must reproduce the pinned
         # backend to a TIGHT tolerance (regression_rtol), not the loose 1% physical
@@ -377,3 +388,27 @@ class TestTemporalResolution:
                               assume_sun_shielded=True, **SIM)
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
+
+    def test_high_inertia_aliasing_is_not_falsely_certified(self):
+        # Audit r5 P1 regression: at very high thermal inertia a one-orbit refined
+        # trajectory launched from the coarse periodic state barely moves and falsely
+        # agrees, so the OLD step-doubling certified a coarse-grid equilibrium that is
+        # ~5.3 K above the true orbit-averaged answer (~347.24 K). The corrected gate
+        # converges the 2x grid to its OWN periodic fixed point, which cannot reach
+        # periodic steady state here, so the result must be refused.
+        with pytest.raises(RuntimeError):
+            tr.averaging_bias(550, 0, Q_LOAD, 1e10, tilt_deg=0,
+                              assume_sun_shielded=True,
+                              t0_guess=352.57869798605526,
+                              n_orbits=1, steps_per_orbit=1)
+
+    def test_high_inertia_aliasing_diagnostics_flag_time_failure(self):
+        # Same counterexample via the diagnostics path: periodic closure + energy
+        # balance pass on the coarse grid, but the temporal gate must not certify it.
+        _, _, _, d = tr.simulate(550, 0, Q_LOAD, 1e10, tilt_deg=0,
+                                 assume_sun_shielded=True,
+                                 t0_guess=352.57869798605526,
+                                 n_orbits=1, steps_per_orbit=1,
+                                 return_diagnostics=True, check_time_resolution=True)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False

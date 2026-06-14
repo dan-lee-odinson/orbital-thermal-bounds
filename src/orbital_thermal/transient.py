@@ -33,6 +33,7 @@ import numpy as np
 from .constants import SIGMA_SB
 from . import environment as env
 from . import sink as sink_mod
+from . import _validate as _v
 
 
 def steady_state_temperature(q_load: float, t_sink: float, emissivity: float = 0.91) -> float:
@@ -40,6 +41,10 @@ def steady_state_temperature(q_load: float, t_sink: float, emissivity: float = 0
 
     Solves eps*sigma*(T^4 - t_sink^4) = q_load:  T = (q_load/(eps*sigma) + t_sink^4)^(1/4).
     """
+    _v.nonneg("q_load", q_load)
+    _v.nonneg("t_sink", t_sink)
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     return float((q_load / (emissivity * SIGMA_SB) + t_sink**4) ** 0.25)
 
 
@@ -47,6 +52,10 @@ def thermal_time_constant(
     areal_heat_capacity: float, temperature: float, emissivity: float = 0.91
 ) -> float:
     """Linearized radiative time constant, s:  C / (4*eps*sigma*T^3)."""
+    _v.positive("areal_heat_capacity", areal_heat_capacity)
+    _v.positive("temperature", temperature)
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
     return float(areal_heat_capacity / (4.0 * emissivity * SIGMA_SB * temperature**3))
 
 
@@ -81,11 +90,27 @@ def simulate(
 ):
     """Integrate to a periodic steady state; return (t, T, T_sink) for the final orbit.
 
-    The panel is marched orbit by orbit until the start-to-end temperature change
-    over an orbit falls below ``convergence_tol_K`` (periodic closure), capped at
-    ``max_orbits`` (default ``n_orbits``). High-thermal-mass panels (tau/period
-    >> 1) can need many more orbits than a fixed count would allow, so a fixed
-    march can silently return a not-yet-periodic profile; this loop detects that.
+    The panel is marched orbit by orbit (capped at ``max_orbits``, default
+    ``n_orbits``) until it reaches periodic steady state under TWO criteria, both
+    of which must hold (audit r4 P1):
+
+    * periodic closure: the start-to-end temperature change over an orbit is below
+      ``convergence_tol_K``; and
+    * energy balance: the orbit-mean net flux, expressed as an equivalent
+      temperature error ``dT_eq = |<q_net>| / (4 eps sigma T_ref^3)``, is below
+      ``energy_tol_K``.
+
+    Closure alone is insufficient when tau/period >> 1: the orbit-to-orbit change
+    vanishes while the panel is still far from steady state, so the scale-aware
+    energy residual is required as well.
+
+    Temporal resolution (``check_time_resolution``, default False): periodic
+    closure + energy balance do not certify that ``steps_per_orbit`` resolves the
+    intra-orbit forcing. When enabled, a second solution is converged at 2x
+    resolution to ITS OWN periodic fixed point and the two periodic orbits'
+    peak/mean/swing must agree within ``time_tol_K`` (audit r5 P1). Comparing
+    converged N- vs 2N-step fixed points (not one refined orbit from the coarse
+    state) is what catches coarse-quadrature bias at high thermal inertia.
 
     ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
     effective-sink equation (sink.sink_temperature_series); see that function.
@@ -93,46 +118,50 @@ def simulate(
     ``t`` is seconds from the start of the final orbit; ``T`` and ``T_sink`` are
     the panel and effective-sink temperatures, K.
 
-    If ``return_diagnostics`` is True, returns ``(t, T, T_sink, diagnostics)``
-    where diagnostics is a dict: ``converged`` (bool), ``orbits_used`` (int),
-    ``closure_error_K`` (|T_end - T_start| of the final orbit), ``tol_K``, and
-    ``energy_residual_W_m2`` (orbit-mean net flux, ~0 at periodic steady state).
-    On non-convergence it warns (or raises if ``raise_on_nonconvergence``).
+    If ``return_diagnostics`` is True, returns ``(t, T, T_sink, diagnostics)``.
+    The diagnostics dict distinguishes three convergence notions:
+
+    * ``periodic_converged`` -- periodic closure AND energy balance both met;
+    * ``time_discretization_converged`` -- the step-doubling check passed (None
+      when ``check_time_resolution`` is False);
+    * ``converged`` -- the COMBINED flag: ``periodic_converged`` AND, when
+      ``check_time_resolution`` is True, ``time_discretization_converged``.
+
+    It also carries ``orbits_used``, ``closure_error_K`` and ``tol_K`` (periodic
+    closure), ``energy_residual_W_m2`` / ``energy_residual_K`` and ``energy_tol_K``
+    (energy balance), and ``time_residual_K`` / ``time_tol_K`` (temporal gate).
+    On periodic non-convergence -- and, when ``check_time_resolution`` is on, on
+    temporal under-resolution -- it warns (or raises if ``raise_on_nonconvergence``),
+    so the bare three-tuple caller is signalled too.
     """
     C = areal_heat_capacity
     eps = emissivity
-    if not (np.isfinite(C) and C > 0.0):
-        raise ValueError(f"areal_heat_capacity must be finite and > 0, got {C}")
-    for _name, _val in (("steps_per_orbit", steps_per_orbit), ("n_orbits", n_orbits)):
-        if isinstance(_val, bool) or not isinstance(_val, int):
-            raise TypeError(f"{_name} must be an int, got {type(_val).__name__}")
-        if _val < 1:
-            raise ValueError(f"{_name} must be >= 1, got {_val}")
+    _v.positive("areal_heat_capacity", C)
+    _v.positive_int("steps_per_orbit", steps_per_orbit)
+    _v.positive_int("n_orbits", n_orbits)
     if max_orbits is not None:
-        if isinstance(max_orbits, bool) or not isinstance(max_orbits, int):
-            raise TypeError(f"max_orbits must be an int, got {type(max_orbits).__name__}")
-        if max_orbits < 1:
-            raise ValueError(f"max_orbits must be >= 1, got {max_orbits}")
-    if not (np.isfinite(q_load) and q_load > 0.0):
-        raise ValueError(f"q_load must be finite and > 0, got {q_load}")
+        _v.positive_int("max_orbits", max_orbits)
+    _v.boolean("assume_sun_shielded", assume_sun_shielded)
+    _v.boolean("check_time_resolution", check_time_resolution)
+    _v.boolean("return_diagnostics", return_diagnostics)
+    _v.boolean("raise_on_nonconvergence", raise_on_nonconvergence)
+    _v.positive("q_load", q_load)
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
-    if not (np.isfinite(convergence_tol_K) and convergence_tol_K > 0.0):
-        raise ValueError(f"convergence_tol_K must be finite and > 0, got {convergence_tol_K}")
-    if not (np.isfinite(energy_tol_K) and energy_tol_K > 0.0):
-        raise ValueError(f"energy_tol_K must be finite and > 0, got {energy_tol_K}")
-    if not (np.isfinite(time_tol_K) and time_tol_K > 0.0):
-        raise ValueError(f"time_tol_K must be finite and > 0, got {time_tol_K}")
-    if t0_guess is not None and not (np.isfinite(t0_guess) and t0_guess > 0.0):
-        raise ValueError(f"t0_guess must be finite and > 0 K, got {t0_guess}")
+    _v.positive("convergence_tol_K", convergence_tol_K)
+    _v.positive("energy_tol_K", energy_tol_K)
+    _v.positive("time_tol_K", time_tol_K)
+    if t0_guess is not None:
+        _v.positive("t0_guess", t0_guess)
     period = env.orbital_period(altitude_km)
     dt = period / steps_per_orbit
     deg_per_s = 360.0 / period
     cap = n_orbits if max_orbits is None else max_orbits
-    # Energy-balance convergence tolerance (W/m^2): relative to the load with an
-    # absolute floor. Per-orbit closure alone is insufficient when tau/P >> 1 --
-    # the orbit-to-orbit change vanishes while the panel is still far from periodic
-    # steady state (audit re-review P1-1). The mean net flux must also be ~0.
+    # Per-orbit closure alone is insufficient when tau/P >> 1: the orbit-to-orbit
+    # change vanishes while the panel is still far from periodic steady state
+    # (audit re-review P1-1). _converge() therefore ALSO requires the orbit-mean
+    # net flux -- as a scale-aware equivalent temperature error dT_eq, not a fixed
+    # W/m^2 floor (4 eps sigma T^3 -> 0 at low T) -- to fall below energy_tol_K.
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
     def sink_at(t):
@@ -145,24 +174,63 @@ def simulate(
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
 
-    def _one_orbit(T0, nsteps, t_begin):
-        """RK4-march one orbital period from ``T0`` at ``t_begin`` with ``nsteps``
-        steps; return the (nsteps+1) panel-temperature samples. Used for the
-        step-doubling temporal-accuracy check (audit re-review P1-2)."""
+    def _converge(nsteps):
+        """March orbit-by-orbit at ``nsteps`` steps/orbit from the shared initial
+        guess ``t0_guess`` until periodic closure AND energy balance, capped at
+        ``cap`` orbits. Returns the final-orbit arrays plus convergence
+        diagnostics.
+
+        Used for both the primary result and the 2x-resolution temporal-accuracy
+        comparison. Each grid is converged to its OWN periodic fixed point, so the
+        step-doubling gate compares periodic solutions -- not one-orbit transients
+        from a shared coarse state, which collapse to a false pass at high thermal
+        inertia because both barely move over a single orbit (audit r5 P1)."""
         dtl = period / nsteps
-        Tloc = float(T0)
-        arr = np.empty(nsteps + 1)
-        arr[0] = Tloc
-        tt = t_begin
-        for i in range(1, nsteps + 1):
-            k1 = deriv(tt, Tloc)
-            k2 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k1)
-            k3 = deriv(tt + dtl / 2, Tloc + dtl / 2 * k2)
-            k4 = deriv(tt + dtl, Tloc + dtl * k3)
-            Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            tt += dtl
-            arr[i] = Tloc
-        return arr
+        Tloc = float(t0_guess)
+        ts_l = np.zeros(nsteps + 1)
+        Tp = np.zeros(nsteps + 1)
+        Tsk = np.zeros(nsteps + 1)
+        t_l = 0.0
+        conv = False
+        used = 0
+        for orbit in range(cap):
+            t_orbit0 = t_l
+            T_start = Tloc
+            ts_l[0] = 0.0
+            Tp[0] = Tloc
+            Tsk[0] = sink_at(t_l)
+            for i in range(1, nsteps + 1):
+                k1 = deriv(t_l, Tloc)
+                k2 = deriv(t_l + dtl / 2, Tloc + dtl / 2 * k1)
+                k3 = deriv(t_l + dtl / 2, Tloc + dtl / 2 * k2)
+                k4 = deriv(t_l + dtl, Tloc + dtl * k3)
+                Tloc += dtl / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+                t_l += dtl
+                ts_l[i] = t_l - t_orbit0
+                Tp[i] = Tloc
+                Tsk[i] = sink_at(t_l)
+            if not np.all(np.isfinite(Tp)) or float(np.min(Tp)) <= 0.0:
+                raise RuntimeError(
+                    "RK4 produced a non-finite or non-positive temperature "
+                    f"(min {float(np.min(Tp)):.1f} K over the orbit); the timestep "
+                    "is too large for this heat capacity -- increase steps_per_orbit "
+                    "or areal_heat_capacity (see the stability warning)"
+                )
+            used = orbit + 1
+            resid = float(abs(np.mean(
+                q_load - eps * SIGMA_SB * (Tp[:-1] ** 4 - Tsk[:-1] ** 4))))
+            T_ref = float(np.mean(Tp[:-1]))
+            dT_eq = resid / (4.0 * eps * SIGMA_SB * T_ref ** 3)
+            if abs(Tloc - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
+                conv = True
+                break
+        closure = float(abs(Tp[-1] - Tp[0]))
+        e_w = float(abs(np.mean(
+            q_load - eps * SIGMA_SB * (Tp[:-1] ** 4 - Tsk[:-1] ** 4))))
+        e_K = e_w / (4.0 * eps * SIGMA_SB * float(np.mean(Tp[:-1])) ** 3)
+        return {"ts": ts_l, "Tp": Tp, "Tsk": Tsk, "converged": conv,
+                "orbits_used": used, "closure_K": closure,
+                "energy_W": e_w, "energy_K": e_K}
 
     if t0_guess is None:
         t0_guess = steady_state_temperature(q_load, 240.0, eps)
@@ -179,53 +247,14 @@ def simulate(
             RuntimeWarning,
         )
 
-    ts = np.zeros(steps_per_orbit + 1)
-    Ts_panel = np.zeros(steps_per_orbit + 1)
-    Ts_sink = np.zeros(steps_per_orbit + 1)
-    t = 0.0
-    converged = False
-    orbits_used = 0
-    for orbit in range(cap):
-        t_orbit0 = t
-        T_start = T
-        ts[0] = 0.0
-        Ts_panel[0] = T
-        Ts_sink[0] = sink_at(t)
-        for i in range(1, steps_per_orbit + 1):
-            k1 = deriv(t, T)
-            k2 = deriv(t + dt / 2, T + dt / 2 * k1)
-            k3 = deriv(t + dt / 2, T + dt / 2 * k2)
-            k4 = deriv(t + dt, T + dt * k3)
-            T += dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
-            t += dt
-            ts[i] = t - t_orbit0
-            Ts_panel[i] = T
-            Ts_sink[i] = sink_at(t)
-        if not np.all(np.isfinite(Ts_panel)) or float(np.min(Ts_panel)) <= 0.0:
-            raise RuntimeError(
-                "RK4 produced a non-finite or non-positive temperature "
-                f"(min {float(np.min(Ts_panel)):.1f} K over the orbit); the timestep "
-                "is too large for this heat capacity -- increase steps_per_orbit or "
-                "areal_heat_capacity (see the stability warning)"
-            )
-        orbits_used = orbit + 1
-        orbit_energy_residual = float(abs(np.mean(
-            q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4))))
-        # Scale-aware: convert the flux residual to an equivalent temperature error
-        # dT_eq = |<q_net>| / (4 eps sigma T_ref^3). A fixed W/m^2 floor cannot bound
-        # temperature error uniformly (4 eps sigma T^3 -> 0 at low T); audit P1-1.
-        T_ref = float(np.mean(Ts_panel[:-1]))
-        dT_eq = orbit_energy_residual / (4.0 * eps * SIGMA_SB * T_ref ** 3)
-        if abs(T - T_start) < convergence_tol_K and dT_eq < energy_tol_K:
-            converged = True
-            break
-
-    closure_error_K = float(abs(Ts_panel[-1] - Ts_panel[0]))
-    net = q_load - eps * SIGMA_SB * (Ts_panel[:-1] ** 4 - Ts_sink[:-1] ** 4)
-    energy_residual_W_m2 = float(abs(np.mean(net)))
-    energy_residual_K = energy_residual_W_m2 / (
-        4.0 * eps * SIGMA_SB * float(np.mean(Ts_panel[:-1])) ** 3)
-    if not converged:
+    main = _converge(steps_per_orbit)
+    ts, Ts_panel, Ts_sink = main["ts"], main["Tp"], main["Tsk"]
+    periodic_converged = main["converged"]
+    orbits_used = main["orbits_used"]
+    closure_error_K = main["closure_K"]
+    energy_residual_W_m2 = main["energy_W"]
+    energy_residual_K = main["energy_K"]
+    if not periodic_converged:
         tau = thermal_time_constant(C, float(Ts_panel.mean()), eps)
         msg = (f"transient did not reach periodic steady state in {orbits_used} "
                f"orbits (closure {closure_error_K:.2e} K vs tol "
@@ -236,27 +265,51 @@ def simulate(
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
 
-    # Temporal-accuracy gate (audit re-review P1-2): periodic closure + energy
-    # balance do not certify that the timestep resolves the intra-orbit forcing/peak.
-    # Re-integrate the final orbit at 2x resolution and require peak/mean/swing to agree.
+    # Temporal-accuracy gate (audit r5 P1): periodic closure + energy balance do
+    # not certify that the timestep resolves the intra-orbit forcing. Converge a
+    # SECOND solution at 2x resolution to ITS OWN periodic fixed point and require
+    # the two periodic orbits' peak/mean/swing to agree. Comparing converged N- vs
+    # 2N-step fixed points (rather than one refined orbit launched from the coarse
+    # state) is what detects coarse-quadrature bias: in the high-thermal-inertia
+    # limit both one-orbit transients barely move and falsely agree, but the two
+    # grids' periodic equilibria still differ. The refined grid must itself reach
+    # periodic steady state, else temporal accuracy is uncertified.
     if check_time_resolution:
-        peak_n = float(Ts_panel.max())
-        mean_n = float(np.mean(Ts_panel[:-1]))
-        swing_n = float(Ts_panel.max() - Ts_panel.min())
-        refined = _one_orbit(Ts_panel[0], 2 * steps_per_orbit, t_orbit0)
-        if not np.all(np.isfinite(refined)) or float(np.min(refined)) <= 0.0:
+        refined = _converge(2 * steps_per_orbit)
+        if not refined["converged"]:
             time_residual_K = float("inf")
             time_discretization_converged = False
         else:
+            peak_n = float(Ts_panel.max())
+            mean_n = float(np.mean(Ts_panel[:-1]))
+            swing_n = float(Ts_panel.max() - Ts_panel.min())
+            Rp = refined["Tp"]
             time_residual_K = max(
-                abs(peak_n - float(refined.max())),
-                abs(mean_n - float(np.mean(refined[:-1]))),
-                abs(swing_n - float(refined.max() - refined.min())),
+                abs(peak_n - float(Rp.max())),
+                abs(mean_n - float(np.mean(Rp[:-1]))),
+                abs(swing_n - float(Rp.max() - Rp.min())),
             )
-            time_discretization_converged = bool(time_residual_K < time_tol_K)
+            time_discretization_converged = bool(
+                periodic_converged and time_residual_K < time_tol_K)
     else:
         time_residual_K = None
         time_discretization_converged = None
+
+    # The combined convergence flag IS gated by temporal accuracy when the caller
+    # asks for it (audit r5 P2): a result that passes periodic closure + energy
+    # balance but fails the step-doubling check is NOT certified. Without this the
+    # bare three-tuple path could silently return a time-under-resolved profile.
+    converged = periodic_converged and (
+        not check_time_resolution or bool(time_discretization_converged))
+    if check_time_resolution and periodic_converged and not time_discretization_converged:
+        msg = (f"transient did not resolve the intra-orbit forcing: step-doubling "
+               f"residual {time_residual_K} K vs tol {time_tol_K:.1e} K at "
+               f"{steps_per_orbit} steps/orbit; increase steps_per_orbit (and "
+               f"n_orbits/max_orbits so the 2x grid also reaches periodic steady "
+               f"state)")
+        if raise_on_nonconvergence:
+            raise RuntimeError(msg)
+        warnings.warn(msg, RuntimeWarning)
 
     if return_diagnostics:
         diagnostics = {
@@ -267,7 +320,7 @@ def simulate(
             "energy_residual_W_m2": energy_residual_W_m2,
             "energy_residual_K": energy_residual_K,
             "energy_tol_K": float(energy_tol_K),
-            "periodic_converged": converged,
+            "periodic_converged": periodic_converged,
             "time_discretization_converged": time_discretization_converged,
             "time_residual_K": time_residual_K,
             "time_tol_K": float(time_tol_K),
@@ -295,26 +348,36 @@ MATERIALS = {
     "aluminum_6061": {
         "rho_kg_m3": 2700.0, "cp_J_kgK": 896.0,
         "state": "solid, 298 K, 1 atm",
-        "source": "ASM aluminum 6061-T6 nominal (rho 2700 kg/m^3; c_p 896 J/kg/K at 25 C)",
+        "source": "ASM Aerospace Specification Metals, Aluminum 6061-T6 datasheet "
+                  "(rho 2.70 g/cm^3; specific heat 896 J/kg/K at 20 C)",
+        "source_class": "alloy datasheet (single nominal value)",
         "rel_uncertainty": 0.02,
     },
     "cover_glass": {
         "rho_kg_m3": 2500.0, "cp_J_kgK": 800.0,
         "state": "solid, 298 K",
-        "source": "borosilicate solar cover glass, typical (rho ~2500; c_p ~800 J/kg/K)",
+        "source": "space PV cover glass, cerium-doped borosilicate class (e.g. Qioptiq "
+                  "CMG/CMX); nominal rho ~2.5 g/cm^3, c_p ~800 J/kg/K at 25 C. A single "
+                  "page citation is not meaningful: value is grade-dependent in-class.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.05,
     },
     "silicon": {
         "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
         "state": "crystalline solid, 298 K",
-        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed. (2016), "
+                  "'Heat Capacity of the Elements at 25 C' + element density table; "
+                  "crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source_class": "handbook (single tabulated value)",
         "rel_uncertainty": 0.02,
     },
     "cfrp_substrate": {
         "rho_kg_m3": 1600.0, "cp_J_kgK": 800.0,
         "state": "solid, 298 K",
-        "source": "carbon-fiber/epoxy laminate, quasi-isotropic typical (rho ~1550-1600; "
-                  "c_p ~800-1000 J/kg/K; strongly layup-dependent)",
+        "source": "CMH-17 (Composite Materials Handbook, Vol. 2) carbon/epoxy laminate, "
+                  "quasi-isotropic; rho ~1550-1600 kg/m^3, c_p ~800-1000 J/kg/K. Layup / "
+                  "resin / fiber-volume dependent, so no single page applies.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.15,
     },
     "ammonia_liquid": {
@@ -322,6 +385,7 @@ MATERIALS = {
         "state": "saturated liquid, 300 K (Q=0)",
         "source": "CoolProp HEOS at T=300 K, Q=0; strongly state-dependent "
                   "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
+        "source_class": "EOS backend (recomputed from the pinned CoolProp version)",
         "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
         "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
         "rel_uncertainty": 0.01,                # PHYSICAL property uncertainty (cross-check)
@@ -331,13 +395,19 @@ MATERIALS = {
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
         "state": "solid, 298 K",
-        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed. (2016), "
+                  "'Heat Capacity of the Elements at 25 C' + element density table; "
+                  "Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source_class": "handbook (single tabulated value)",
         "rel_uncertainty": 0.01,
     },
     "fr4_pcb": {
         "rho_kg_m3": 1850.0, "cp_J_kgK": 1100.0,
         "state": "solid, 298 K",
-        "source": "FR-4 glass-epoxy laminate, typical (rho ~1850; c_p ~1100-1200 J/kg/K)",
+        "source": "IPC-4101 FR-4 glass-reinforced epoxy laminate class; rho ~1850 kg/m^3, "
+                  "c_p ~1100-1200 J/kg/K at 25 C. Resin/glass-ratio dependent within the "
+                  "spec, so no single page applies.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.15,
     },
 }
@@ -429,6 +499,8 @@ def averaging_bias(
     returned dict always carries ``converged``, ``orbits_used``,
     ``closure_error_K``, and ``energy_residual_W_m2``.
     """
+    _v.boolean("assume_sun_shielded", assume_sun_shielded)
+    _v.boolean("require_convergence", require_convergence)
     kwargs.pop("return_diagnostics", None)
     kwargs.pop("check_time_resolution", None)
     t, T, Tsink, diag = simulate(altitude_km, beta_deg, q_load, areal_heat_capacity,

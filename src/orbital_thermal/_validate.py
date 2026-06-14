@@ -35,6 +35,13 @@ def in_range(name: str, x: float, lo: float, hi: float) -> float:
     return x
 
 
+def boolean(name: str, x) -> bool:
+    if not isinstance(x, bool):
+        raise TypeError(f"{name} must be the boolean True or False, "
+                        f"got {type(x).__name__}")
+    return x
+
+
 def positive_int(name: str, x) -> int:
     if isinstance(x, bool) or not isinstance(x, int):
         raise TypeError(f"{name} must be an int, got {type(x).__name__}")
