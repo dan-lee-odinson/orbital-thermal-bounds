@@ -348,26 +348,36 @@ MATERIALS = {
     "aluminum_6061": {
         "rho_kg_m3": 2700.0, "cp_J_kgK": 896.0,
         "state": "solid, 298 K, 1 atm",
-        "source": "ASM aluminum 6061-T6 nominal (rho 2700 kg/m^3; c_p 896 J/kg/K at 25 C)",
+        "source": "ASM Aerospace Specification Metals, Aluminum 6061-T6 datasheet "
+                  "(rho 2.70 g/cm^3; specific heat 896 J/kg/K at 20 C)",
+        "source_class": "alloy datasheet (single nominal value)",
         "rel_uncertainty": 0.02,
     },
     "cover_glass": {
         "rho_kg_m3": 2500.0, "cp_J_kgK": 800.0,
         "state": "solid, 298 K",
-        "source": "borosilicate solar cover glass, typical (rho ~2500; c_p ~800 J/kg/K)",
+        "source": "space PV cover glass, cerium-doped borosilicate class (e.g. Qioptiq "
+                  "CMG/CMX); nominal rho ~2.5 g/cm^3, c_p ~800 J/kg/K at 25 C. A single "
+                  "page citation is not meaningful: value is grade-dependent in-class.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.05,
     },
     "silicon": {
         "rho_kg_m3": 2330.0, "cp_J_kgK": 700.0,
         "state": "crystalline solid, 298 K",
-        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed. (2016), "
+                  "'Heat Capacity of the Elements at 25 C' + element density table; "
+                  "crystalline Si (rho 2329 kg/m^3; c_p 705 J/kg/K at 298 K)",
+        "source_class": "handbook (single tabulated value)",
         "rel_uncertainty": 0.02,
     },
     "cfrp_substrate": {
         "rho_kg_m3": 1600.0, "cp_J_kgK": 800.0,
         "state": "solid, 298 K",
-        "source": "carbon-fiber/epoxy laminate, quasi-isotropic typical (rho ~1550-1600; "
-                  "c_p ~800-1000 J/kg/K; strongly layup-dependent)",
+        "source": "CMH-17 (Composite Materials Handbook, Vol. 2) carbon/epoxy laminate, "
+                  "quasi-isotropic; rho ~1550-1600 kg/m^3, c_p ~800-1000 J/kg/K. Layup / "
+                  "resin / fiber-volume dependent, so no single page applies.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.15,
     },
     "ammonia_liquid": {
@@ -375,6 +385,7 @@ MATERIALS = {
         "state": "saturated liquid, 300 K (Q=0)",
         "source": "CoolProp HEOS at T=300 K, Q=0; strongly state-dependent "
                   "(280 K: 629/4649; 320 K: 568/5023). See coolant_rho_cp().",
+        "source_class": "EOS backend (recomputed from the pinned CoolProp version)",
         "coolprop_version": "7.2.0",            # pinned in the [fluids] extra
         "eos_bibtex_key": "Gao-JPCRD-2020",     # from get_BibTeXKey at that version
         "rel_uncertainty": 0.01,                # PHYSICAL property uncertainty (cross-check)
@@ -384,13 +395,19 @@ MATERIALS = {
     "copper": {
         "rho_kg_m3": 8960.0, "cp_J_kgK": 385.0,
         "state": "solid, 298 K",
-        "source": "CRC Handbook of Chemistry and Physics, 97th ed.; Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source": "CRC Handbook of Chemistry and Physics, 97th ed. (2016), "
+                  "'Heat Capacity of the Elements at 25 C' + element density table; "
+                  "Cu (rho 8960 kg/m^3; c_p 385 J/kg/K at 298 K)",
+        "source_class": "handbook (single tabulated value)",
         "rel_uncertainty": 0.01,
     },
     "fr4_pcb": {
         "rho_kg_m3": 1850.0, "cp_J_kgK": 1100.0,
         "state": "solid, 298 K",
-        "source": "FR-4 glass-epoxy laminate, typical (rho ~1850; c_p ~1100-1200 J/kg/K)",
+        "source": "IPC-4101 FR-4 glass-reinforced epoxy laminate class; rho ~1850 kg/m^3, "
+                  "c_p ~1100-1200 J/kg/K at 25 C. Resin/glass-ratio dependent within the "
+                  "spec, so no single page applies.",
+        "source_class": "representative grade (range; not single-source)",
         "rel_uncertainty": 0.15,
     },
 }

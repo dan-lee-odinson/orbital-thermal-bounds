@@ -248,6 +248,17 @@ class TestHeatCapacityProvenance:
             assert m["rho_kg_m3"] > 0 and m["cp_J_kgK"] > 0
             assert 0.0 < m["rel_uncertainty"] < 1.0
 
+    def test_materials_carry_source_class(self):
+        # Audit r5 P3: every entry is tagged with how its provenance is grounded,
+        # and representative-grade (range, not single-source) entries carry the
+        # larger uncertainty that a single page citation cannot express.
+        for name, m in tr.MATERIALS.items():
+            assert "source_class" in m, name
+            assert m["source_class"], name
+            if "representative grade" in m["source_class"]:
+                assert m["rel_uncertainty"] >= 0.05, name
+                assert "no single page" in m["source"] or "not meaningful" in m["source"], name
+
     def test_ammonia_entry_matches_coolprop_reference_state(self):
         # CODE-regression: the stored (2-decimal) values must reproduce the pinned
         # backend to a TIGHT tolerance (regression_rtol), not the loose 1% physical
