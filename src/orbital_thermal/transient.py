@@ -299,6 +299,7 @@ def simulate(
     # Each refined grid must itself reach periodic steady state, else uncertified.
     forcing_residual_K = n_to_2n_residual_K = two_n_to_4n_residual_K = None
     n_to_4n_residual_K = pointwise_n_to_4n_K = pointwise_2n_to_4n_K = None
+    peak_time_residual_s = peak_phase_residual_deg = None
     refined_orbits_used = None
     if check_time_resolution:
         g2 = _converge(2 * steps_per_orbit)
@@ -332,6 +333,13 @@ def simulate(
                 np.interp(t4, ts, Ts_panel) - g4["Tp"])))
             pointwise_2n_to_4n_K = float(np.max(np.abs(
                 np.interp(t4, g2["ts"], g2["Tp"]) - g4["Tp"])))
+            # Peak-timing residual (audit r8 P2-b): an L-infinity TEMPERATURE bound
+            # does not bound the time/phase of the argmax (a flat peak can drift).
+            # Report it from the N vs 4N peak times; it is NOT gated by time_tol_K.
+            peak_time_residual_s = abs(
+                float(ts[int(np.argmax(Ts_panel))])
+                - float(t4[int(np.argmax(g4["Tp"]))]))
+            peak_phase_residual_deg = 360.0 * peak_time_residual_s / period
             time_residual_K = max(
                 forcing_residual_K, n_to_2n_residual_K, two_n_to_4n_residual_K,
                 n_to_4n_residual_K, pointwise_n_to_4n_K, pointwise_2n_to_4n_K)
@@ -378,6 +386,8 @@ def simulate(
             "n_to_4n_residual_K": n_to_4n_residual_K,
             "pointwise_n_to_4n_K": pointwise_n_to_4n_K,
             "pointwise_2n_to_4n_K": pointwise_2n_to_4n_K,
+            "peak_time_residual_s": peak_time_residual_s,
+            "peak_phase_residual_deg": peak_phase_residual_deg,
             "refined_orbits_used": refined_orbits_used,
         }
         return ts, Ts_panel, Ts_sink, diagnostics
@@ -608,5 +618,7 @@ def averaging_bias(
         "n_to_4n_residual_K": diag["n_to_4n_residual_K"],
         "pointwise_n_to_4n_K": diag["pointwise_n_to_4n_K"],
         "pointwise_2n_to_4n_K": diag["pointwise_2n_to_4n_K"],
+        "peak_time_residual_s": diag["peak_time_residual_s"],
+        "peak_phase_residual_deg": diag["peak_phase_residual_deg"],
         "refined_orbits_used": diag["refined_orbits_used"],
     }

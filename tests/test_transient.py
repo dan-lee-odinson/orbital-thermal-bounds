@@ -138,6 +138,7 @@ class TestConvergence:
                           "forcing_residual_K", "n_to_2n_residual_K",
                           "two_n_to_4n_residual_K", "n_to_4n_residual_K",
                           "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                          "peak_time_residual_s", "peak_phase_residual_deg",
                           "refined_orbits_used"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
@@ -392,6 +393,23 @@ class TestTemporalResolution:
                               assume_sun_shielded=True, **SIM)
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
+
+    def test_peak_phase_residual_reported_not_gated(self):
+        # Audit r8 P2-b: the temperature waveform is bounded in L-infinity, but the
+        # peak TIME is not -- a flat peak can drift while temperatures stay close.
+        # The peak-phase residual must be reported (for the beta=0/C=18000/steps=48
+        # case the peak time moves ~1 minute) even when amplitude is well resolved.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                     n_orbits=200, steps_per_orbit=48,
+                                     return_diagnostics=True, check_time_resolution=True)
+        from orbital_thermal import environment as env
+        period = env.orbital_period(550)
+        assert d["peak_time_residual_s"] is not None
+        assert d["peak_phase_residual_deg"] == pytest.approx(
+            360.0 * d["peak_time_residual_s"] / period, rel=1e-9)
+        assert d["peak_phase_residual_deg"] > 1.0   # genuinely drifts at this coarseness
 
     def test_safety_factor_rejects_marginal_continuum_overshoot(self):
         # Audit r8 P2-a: time_residual_K is a refinement ESTIMATE, not a strict
