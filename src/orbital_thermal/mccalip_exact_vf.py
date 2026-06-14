@@ -57,6 +57,8 @@ def equilibrium_temperature_with_view_factors(overrides, vf_side_a, vf_side_b):
     ``calculate_thermal(...)['eqTempK']`` to floating-point roundoff -- so any
     temperature change comes from the view factors alone.
     """
+    _v.in_range("vf_side_a", vf_side_a, 0.0, 1.0)
+    _v.in_range("vf_side_b", vf_side_b, 0.0, 1.0)
     s = mc._state(overrides)
     area = mc.calculate_orbital(s)["_arrayAreaM2"]
     S = mc.CONST["SOLAR_IRRADIANCE_W_M2"]

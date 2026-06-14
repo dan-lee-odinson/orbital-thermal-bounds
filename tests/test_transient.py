@@ -460,7 +460,7 @@ class TestTemporalResolution:
                                t0_guess=347.3648378530917,
                                n_orbits=1, steps_per_orbit=3)
         vf = env.sphere_view_factor(550, 0.0)
-        exact4 = sk.sink_fourth_power_mean(vf, 0.0, emissivity=EPS)
+        exact4 = sk.sink_fourth_power_mean(vf, 0.0, assume_sun_shielded=True, emissivity=EPS)
         disc4 = float(np.mean(Ts[:-1] ** 4))
         resid = abs(disc4 - exact4) / (4.0 * float(np.mean(T[:-1])) ** 3)
         assert resid == pytest.approx(0.1202, abs=2e-3)

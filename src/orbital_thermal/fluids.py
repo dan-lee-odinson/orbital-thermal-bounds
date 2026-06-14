@@ -79,6 +79,8 @@ def phase_state(T: float, P: float, fluid: str = DEFAULT_FLUID) -> str:
     Typical labels: 'liquid', 'gas', 'supercritical', 'supercritical_gas',
     'supercritical_liquid', 'twophase'.
     """
+    _v.positive("T", T)
+    _v.positive("P", P)
     return PhaseSI("T", T, "P", P, fluid)
 
 

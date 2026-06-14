@@ -286,7 +286,8 @@ def simulate(
         g4 = _converge(4 * steps_per_orbit)
         refined_orbits_used = (g2["orbits_used"], g4["orbits_used"])
         exact4 = sink_mod.sink_fourth_power_mean(
-            vf, beta_deg, emissivity=eps, solar_absorptivity=solar_absorptivity,
+            vf, beta_deg, assume_sun_shielded=assume_sun_shielded,
+            emissivity=eps, solar_absorptivity=solar_absorptivity,
             earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
             t_space=t_space)
         disc4 = float(np.mean(Ts_sink[:-1] ** 4))
