@@ -5,3 +5,5 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+# throwaway audit bundle (regenerated each round, never tracked)
+audit-bundle.md
