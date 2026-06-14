@@ -188,3 +188,17 @@ class TestRoundSevenValidation:
             fluids.phase_state(NAN, 1e5)
         with pytest.raises(ValueError):
             fluids.phase_state(300.0, -1.0)
+
+    def test_fluids_saturation_helpers_validate_T(self):
+        # Audit r8 P3: saturation_pressure / saturated_densities require finite
+        # positive T and reject T at/above the critical point with a clear contract.
+        pytest.importorskip("CoolProp")
+        from orbital_thermal import fluids
+        with pytest.raises(ValueError):
+            fluids.saturation_pressure(NAN)
+        with pytest.raises(ValueError):
+            fluids.saturation_pressure(-5.0)
+        with pytest.raises(ValueError):
+            fluids.saturated_densities(NAN)
+        with pytest.raises(ValueError):
+            fluids.saturated_densities(450.0)        # above ammonia critical (405.5 K)

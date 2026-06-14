@@ -183,10 +183,19 @@ def simulate(
     # W/m^2 floor (4 eps sigma T^3 -> 0 at low T) -- to fall below energy_tol_K.
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
+    # Validate the sink parameters ONCE at the public boundary (full checks +
+    # shielding assert), then evaluate the prevalidated inner expression in the RK4
+    # inner loop -- which runs at every stage across the N/2N/4N grids -- to avoid
+    # re-validating every call (audit r8 P3).
+    sink_mod.sink_temperature_series(
+        vf, beta_deg, 0.0, assume_sun_shielded=assume_sun_shielded, emissivity=eps,
+        solar_absorptivity=solar_absorptivity, earth_ir=earth_ir, albedo=albedo,
+        solar_constant=solar_constant, t_space=t_space)
+
     def sink_at(t):
-        return sink_mod.sink_temperature_series(
-            vf, beta_deg, deg_per_s * t, assume_sun_shielded=assume_sun_shielded,
-            emissivity=eps, solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
+        return sink_mod._sink_series_compute(
+            vf, beta_deg, deg_per_s * t, emissivity=eps,
+            solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
             albedo=albedo, solar_constant=solar_constant, t_space=t_space)
 
     def deriv(t, T):
