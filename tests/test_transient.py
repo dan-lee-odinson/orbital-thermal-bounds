@@ -393,6 +393,24 @@ class TestTemporalResolution:
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
 
+    def test_safety_factor_rejects_marginal_continuum_overshoot(self):
+        # Audit r8 P2-a: time_residual_K is a refinement ESTIMATE, not a strict
+        # bound; the 4N reference is itself approximate. The beta=60/C=500/steps=152
+        # case sits ~7 uK over a fine reference while its N->4N residual reads just
+        # under tol. The default time_safety_factor (2.0) must make the gate refuse
+        # it; relaxing the factor to 1.0 reproduces the old (too-loose) acceptance.
+        kw = dict(altitude_km=550, beta_deg=60, q_load=Q_LOAD, areal_heat_capacity=500.0,
+                  tilt_deg=0, assume_sun_shielded=True, n_orbits=220, max_orbits=220,
+                  steps_per_orbit=152, return_diagnostics=True, check_time_resolution=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(**kw)
+            _, _, _, d1 = tr.simulate(time_safety_factor=1.0, **kw)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False        # default 2.0 -> refused
+        assert d1["time_discretization_converged"] is True        # 1.0 -> old behaviour
+        assert d["time_residual_K"] == pytest.approx(d1["time_residual_K"], rel=1e-9)
+
     def test_temporal_diagnostics_expose_components(self):
         # Audit r7 P3: the temporal certificate's components are individually
         # exposed (not only the aggregate max) so a borderline/failed certificate

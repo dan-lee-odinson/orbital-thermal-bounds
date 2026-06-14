@@ -84,6 +84,7 @@ def simulate(
     energy_tol_K: float = 1e-2,
     check_time_resolution: bool = False,
     time_tol_K: float = 1e-2,
+    time_safety_factor: float = 2.0,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -107,19 +108,24 @@ def simulate(
     Temporal resolution (``check_time_resolution``, default False): periodic
     closure + energy balance do not certify that ``steps_per_orbit`` resolves the
     intra-orbit forcing. When enabled, the N-, 2N-, and 4N-step solutions are each
-    converged to their OWN periodic fixed points and the returned N-grid profile is
-    BOUNDED directly, all within ``time_tol_K`` (audit r5/r6/r7 P1):
+    converged to their OWN periodic fixed points and ``time_residual_K`` is formed
+    from (all in K):
 
     * a grid-free forcing-quadrature certificate (the subpoint albedo has the exact
       orbit mean cos(beta)/pi, giving a closed form for <T_sink^4>);
     * POINTWISE errors of the returned N orbit and of 2N, each interpolated onto
-      the 4N phase grid -- bounding the full periodic waveform, including peak
-      timing, not just peak/mean/swing; and
+      the 4N phase grid (this bounds the temperature WAVEFORM in L-infinity; it does
+      NOT bound the time/phase of the peak -- see ``peak_phase_residual_deg``); and
     * the direct N->4N (and 2N->4N, N->2N) peak/mean/swing summaries.
 
-    One N->2N doubling alone is insufficient: it can be exactly aliased by the
-    orbital forcing, and adjacent summaries are not a bound on the returned
-    profile.
+    ``time_residual_K`` is a refinement-based error ESTIMATE of the returned N-grid
+    profile, not a guaranteed upper bound on the continuum error: the 4N reference
+    is itself approximate, and the terminator kinks in the forcing break a clean
+    fourth-order Richardson assumption. The gate is therefore made CONSERVATIVE by
+    requiring ``time_safety_factor * time_residual_K < time_tol_K`` (default factor
+    2.0; audit r8 P2-a). One N->2N doubling alone is insufficient -- it can be
+    exactly aliased by the orbital forcing, and adjacent summaries are not even an
+    estimate of the returned profile's error.
 
     ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
     effective-sink equation (sink.sink_temperature_series); see that function.
@@ -163,6 +169,7 @@ def simulate(
     _v.positive("convergence_tol_K", convergence_tol_K)
     _v.positive("energy_tol_K", energy_tol_K)
     _v.positive("time_tol_K", time_tol_K)
+    _v.positive("time_safety_factor", time_safety_factor)
     if t0_guess is not None:
         _v.positive("t0_guess", t0_guess)
     period = env.orbital_period(altitude_km)
@@ -329,7 +336,8 @@ def simulate(
                 forcing_residual_K, n_to_2n_residual_K, two_n_to_4n_residual_K,
                 n_to_4n_residual_K, pointwise_n_to_4n_K, pointwise_2n_to_4n_K)
             time_discretization_converged = bool(
-                periodic_converged and time_residual_K < time_tol_K)
+                periodic_converged
+                and time_safety_factor * time_residual_K < time_tol_K)
     else:
         time_residual_K = None
         time_discretization_converged = None
@@ -342,10 +350,11 @@ def simulate(
         not check_time_resolution or bool(time_discretization_converged))
     if check_time_resolution and periodic_converged and not time_discretization_converged:
         msg = (f"transient did not resolve the intra-orbit forcing: "
-               f"temporal-resolution residual {time_residual_K} K vs tol "
-               f"{time_tol_K:.1e} K at {steps_per_orbit} steps/orbit; increase "
-               f"steps_per_orbit (and n_orbits/max_orbits so the 2N and 4N grids "
-               f"also reach periodic steady state)")
+               f"temporal-resolution residual {time_residual_K} K (x safety "
+               f"{time_safety_factor:g}) vs tol {time_tol_K:.1e} K at "
+               f"{steps_per_orbit} steps/orbit; increase steps_per_orbit (and "
+               f"n_orbits/max_orbits so the 2N and 4N grids also reach periodic "
+               f"steady state)")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
