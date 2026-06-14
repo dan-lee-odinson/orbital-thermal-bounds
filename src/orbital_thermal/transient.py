@@ -84,6 +84,7 @@ def simulate(
     energy_tol_K: float = 1e-2,
     check_time_resolution: bool = False,
     time_tol_K: float = 1e-2,
+    time_safety_factor: float = 2.0,
     max_orbits: int | None = None,
     return_diagnostics: bool = False,
     raise_on_nonconvergence: bool = False,
@@ -107,19 +108,24 @@ def simulate(
     Temporal resolution (``check_time_resolution``, default False): periodic
     closure + energy balance do not certify that ``steps_per_orbit`` resolves the
     intra-orbit forcing. When enabled, the N-, 2N-, and 4N-step solutions are each
-    converged to their OWN periodic fixed points and the returned N-grid profile is
-    BOUNDED directly, all within ``time_tol_K`` (audit r5/r6/r7 P1):
+    converged to their OWN periodic fixed points and ``time_residual_K`` is formed
+    from (all in K):
 
     * a grid-free forcing-quadrature certificate (the subpoint albedo has the exact
       orbit mean cos(beta)/pi, giving a closed form for <T_sink^4>);
     * POINTWISE errors of the returned N orbit and of 2N, each interpolated onto
-      the 4N phase grid -- bounding the full periodic waveform, including peak
-      timing, not just peak/mean/swing; and
+      the 4N phase grid (this bounds the temperature WAVEFORM in L-infinity; it does
+      NOT bound the time/phase of the peak -- see ``peak_phase_residual_deg``); and
     * the direct N->4N (and 2N->4N, N->2N) peak/mean/swing summaries.
 
-    One N->2N doubling alone is insufficient: it can be exactly aliased by the
-    orbital forcing, and adjacent summaries are not a bound on the returned
-    profile.
+    ``time_residual_K`` is a refinement-based error ESTIMATE of the returned N-grid
+    profile, not a guaranteed upper bound on the continuum error: the 4N reference
+    is itself approximate, and the terminator kinks in the forcing break a clean
+    fourth-order Richardson assumption. The gate is therefore made CONSERVATIVE by
+    requiring ``time_safety_factor * time_residual_K < time_tol_K`` (default factor
+    2.0; audit r8 P2-a). One N->2N doubling alone is insufficient -- it can be
+    exactly aliased by the orbital forcing, and adjacent summaries are not even an
+    estimate of the returned profile's error.
 
     ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
     effective-sink equation (sink.sink_temperature_series); see that function.
@@ -163,6 +169,7 @@ def simulate(
     _v.positive("convergence_tol_K", convergence_tol_K)
     _v.positive("energy_tol_K", energy_tol_K)
     _v.positive("time_tol_K", time_tol_K)
+    _v.positive("time_safety_factor", time_safety_factor)
     if t0_guess is not None:
         _v.positive("t0_guess", t0_guess)
     period = env.orbital_period(altitude_km)
@@ -176,13 +183,34 @@ def simulate(
     # W/m^2 floor (4 eps sigma T^3 -> 0 at low T) -- to fall below energy_tol_K.
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
 
+    # Validate the sink parameters ONCE at the public boundary (full checks +
+    # shielding assert), then evaluate the prevalidated inner expression in the RK4
+    # inner loop -- which runs at every stage across the N/2N/4N grids -- to avoid
+    # re-validating every call (audit r8 P3).
+    sink_mod.sink_temperature_series(
+        vf, beta_deg, 0.0, assume_sun_shielded=assume_sun_shielded, emissivity=eps,
+        solar_absorptivity=solar_absorptivity, earth_ir=earth_ir, albedo=albedo,
+        solar_constant=solar_constant, t_space=t_space)
+
     def sink_at(t):
-        return sink_mod.sink_temperature_series(
-            vf, beta_deg, deg_per_s * t, assume_sun_shielded=assume_sun_shielded,
-            emissivity=eps, solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
+        return sink_mod._sink_series_compute(
+            vf, beta_deg, deg_per_s * t, emissivity=eps,
+            solar_absorptivity=solar_absorptivity, earth_ir=earth_ir,
             albedo=albedo, solar_constant=solar_constant, t_space=t_space)
 
     def deriv(t, T):
+        # RK4-stage positivity guard (audit r8 P2-c): every RK stage state -- not
+        # just the accepted step -- is evaluated through T**4, so an intermediate
+        # stage that crosses below absolute zero would silently corrupt the step
+        # yet can still yield a positive endpoint. Reject any non-finite or
+        # non-positive stage here so the raw simulate() API cannot return a
+        # numerically corrupted trajectory.
+        if not (np.isfinite(T) and T > 0.0):
+            raise RuntimeError(
+                f"RK4 stage temperature {float(T):.6g} K is non-finite or <= 0 K; "
+                f"the timestep is too large for this heat capacity at this state -- "
+                f"increase steps_per_orbit or areal_heat_capacity (see the "
+                f"stability warning)")
         Ts = sink_at(t)
         return (q_load - eps * SIGMA_SB * (T**4 - Ts**4)) / C
 
@@ -250,12 +278,18 @@ def simulate(
 
     # Explicit fixed-step RK4 is conditionally stable: warn if the step exceeds the
     # radiative time constant tau = C / (4 eps sigma T^3) (audit re-review P3-a).
-    tau0 = thermal_time_constant(C, T, eps)
+    # Evaluate stability at the HOTTEST plausible state (the zero-sink equilibrium),
+    # where tau = C/(4 eps sigma T^3) is smallest and the explicit scheme is least
+    # stable. Using t0_guess alone misses a cold start that heats into an unstable
+    # regime (audit r8 P2-c).
+    T_stab = max(float(T), steady_state_temperature(q_load, 0.0, eps))
+    tau0 = thermal_time_constant(C, T_stab, eps)
     if dt > tau0:
         warnings.warn(
             f"RK4 timestep dt={dt:.3g} s exceeds the radiative time constant "
-            f"tau={tau0:.3g} s; explicit integration may be unstable -- increase "
-            f"steps_per_orbit or areal_heat_capacity",
+            f"tau={tau0:.3g} s at the zero-sink equilibrium ({T_stab:.1f} K); "
+            f"explicit integration may be unstable -- increase steps_per_orbit or "
+            f"areal_heat_capacity",
             RuntimeWarning,
         )
 
@@ -292,6 +326,7 @@ def simulate(
     # Each refined grid must itself reach periodic steady state, else uncertified.
     forcing_residual_K = n_to_2n_residual_K = two_n_to_4n_residual_K = None
     n_to_4n_residual_K = pointwise_n_to_4n_K = pointwise_2n_to_4n_K = None
+    peak_time_residual_s = peak_phase_residual_deg = None
     refined_orbits_used = None
     if check_time_resolution:
         g2 = _converge(2 * steps_per_orbit)
@@ -325,11 +360,19 @@ def simulate(
                 np.interp(t4, ts, Ts_panel) - g4["Tp"])))
             pointwise_2n_to_4n_K = float(np.max(np.abs(
                 np.interp(t4, g2["ts"], g2["Tp"]) - g4["Tp"])))
+            # Peak-timing residual (audit r8 P2-b): an L-infinity TEMPERATURE bound
+            # does not bound the time/phase of the argmax (a flat peak can drift).
+            # Report it from the N vs 4N peak times; it is NOT gated by time_tol_K.
+            peak_time_residual_s = abs(
+                float(ts[int(np.argmax(Ts_panel))])
+                - float(t4[int(np.argmax(g4["Tp"]))]))
+            peak_phase_residual_deg = 360.0 * peak_time_residual_s / period
             time_residual_K = max(
                 forcing_residual_K, n_to_2n_residual_K, two_n_to_4n_residual_K,
                 n_to_4n_residual_K, pointwise_n_to_4n_K, pointwise_2n_to_4n_K)
             time_discretization_converged = bool(
-                periodic_converged and time_residual_K < time_tol_K)
+                periodic_converged
+                and time_safety_factor * time_residual_K < time_tol_K)
     else:
         time_residual_K = None
         time_discretization_converged = None
@@ -342,10 +385,11 @@ def simulate(
         not check_time_resolution or bool(time_discretization_converged))
     if check_time_resolution and periodic_converged and not time_discretization_converged:
         msg = (f"transient did not resolve the intra-orbit forcing: "
-               f"temporal-resolution residual {time_residual_K} K vs tol "
-               f"{time_tol_K:.1e} K at {steps_per_orbit} steps/orbit; increase "
-               f"steps_per_orbit (and n_orbits/max_orbits so the 2N and 4N grids "
-               f"also reach periodic steady state)")
+               f"temporal-resolution residual {time_residual_K} K (x safety "
+               f"{time_safety_factor:g}) vs tol {time_tol_K:.1e} K at "
+               f"{steps_per_orbit} steps/orbit; increase steps_per_orbit (and "
+               f"n_orbits/max_orbits so the 2N and 4N grids also reach periodic "
+               f"steady state)")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
@@ -369,6 +413,8 @@ def simulate(
             "n_to_4n_residual_K": n_to_4n_residual_K,
             "pointwise_n_to_4n_K": pointwise_n_to_4n_K,
             "pointwise_2n_to_4n_K": pointwise_2n_to_4n_K,
+            "peak_time_residual_s": peak_time_residual_s,
+            "peak_phase_residual_deg": peak_phase_residual_deg,
             "refined_orbits_used": refined_orbits_used,
         }
         return ts, Ts_panel, Ts_sink, diagnostics
@@ -599,5 +645,7 @@ def averaging_bias(
         "n_to_4n_residual_K": diag["n_to_4n_residual_K"],
         "pointwise_n_to_4n_K": diag["pointwise_n_to_4n_K"],
         "pointwise_2n_to_4n_K": diag["pointwise_2n_to_4n_K"],
+        "peak_time_residual_s": diag["peak_time_residual_s"],
+        "peak_phase_residual_deg": diag["peak_phase_residual_deg"],
         "refined_orbits_used": diag["refined_orbits_used"],
     }

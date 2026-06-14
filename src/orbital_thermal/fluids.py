@@ -64,6 +64,7 @@ def saturation_pressure(T: float, fluid: str = DEFAULT_FLUID) -> float:
     Raises ValueError above the critical temperature, where a saturation
     curve no longer exists.
     """
+    _v.positive("T", T)
     T_crit = critical_temperature(fluid)
     if T >= T_crit:
         raise ValueError(
@@ -99,7 +100,17 @@ def critical_margin(T: float, fluid: str = DEFAULT_FLUID) -> float:
 def saturated_densities(
     T: float, fluid: str = DEFAULT_FLUID
 ) -> tuple[float, float]:
-    """(liquid, vapor) densities on the saturation curve at ``T``, kg/m^3."""
+    """(liquid, vapor) densities on the saturation curve at ``T``, kg/m^3.
+
+    Raises ValueError for non-finite/non-positive ``T`` and at or above the
+    critical temperature, where the saturation curve no longer exists (audit r8 P3)."""
+    _v.positive("T", T)
+    T_crit = critical_temperature(fluid)
+    if T >= T_crit:
+        raise ValueError(
+            f"T = {T} K is at or above the critical temperature of "
+            f"{fluid} ({T_crit:.2f} K); no saturation densities exist"
+        )
     rho_liq = PropsSI("D", "T", T, "Q", 0.0, fluid)
     rho_vap = PropsSI("D", "T", T, "Q", 1.0, fluid)
     return rho_liq, rho_vap

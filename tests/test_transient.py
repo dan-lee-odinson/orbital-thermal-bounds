@@ -138,6 +138,7 @@ class TestConvergence:
                           "forcing_residual_K", "n_to_2n_residual_K",
                           "two_n_to_4n_residual_K", "n_to_4n_residual_K",
                           "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                          "peak_time_residual_s", "peak_phase_residual_deg",
                           "refined_orbits_used"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
@@ -360,6 +361,25 @@ class TestInputDomainAndStability:
                 tr.simulate(550, 0, 5000.0, 1000.0, assume_sun_shielded=True,
                             n_orbits=3, steps_per_orbit=50)
 
+    def test_rk4_intermediate_stage_positivity_raises(self):
+        # Audit r8 P2-c: a cold start with too coarse a step drives an intermediate
+        # RK4 stage below absolute zero (evaluated through T**4) even though the
+        # accepted endpoint can stay positive. The stage guard must raise rather
+        # than return a numerically corrupted trajectory.
+        with pytest.raises(RuntimeError):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                tr.simulate(550, 0, Q_LOAD, 3715.0, tilt_deg=0, assume_sun_shielded=True,
+                            t0_guess=30.0, n_orbits=1, steps_per_orbit=1)
+
+    def test_cold_start_into_unstable_regime_warns(self):
+        # The stability check is evaluated at the hottest (zero-sink) equilibrium,
+        # so a cold start that heats into an unstable regime still warns (audit r8).
+        with pytest.raises(RuntimeError):
+            with pytest.warns(RuntimeWarning):
+                tr.simulate(550, 0, Q_LOAD, 3715.0, tilt_deg=0, assume_sun_shielded=True,
+                            t0_guess=30.0, n_orbits=1, steps_per_orbit=1)
+
     def test_empty_layers_rejected(self):
         with pytest.raises(ValueError):
             tr.areal_heat_capacity([])
@@ -392,6 +412,41 @@ class TestTemporalResolution:
                               assume_sun_shielded=True, **SIM)
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
+
+    def test_peak_phase_residual_reported_not_gated(self):
+        # Audit r8 P2-b: the temperature waveform is bounded in L-infinity, but the
+        # peak TIME is not -- a flat peak can drift while temperatures stay close.
+        # The peak-phase residual must be reported (for the beta=0/C=18000/steps=48
+        # case the peak time moves ~1 minute) even when amplitude is well resolved.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 0, Q_LOAD, 18000.0, assume_sun_shielded=True,
+                                     n_orbits=200, steps_per_orbit=48,
+                                     return_diagnostics=True, check_time_resolution=True)
+        from orbital_thermal import environment as env
+        period = env.orbital_period(550)
+        assert d["peak_time_residual_s"] is not None
+        assert d["peak_phase_residual_deg"] == pytest.approx(
+            360.0 * d["peak_time_residual_s"] / period, rel=1e-9)
+        assert d["peak_phase_residual_deg"] > 1.0   # genuinely drifts at this coarseness
+
+    def test_safety_factor_rejects_marginal_continuum_overshoot(self):
+        # Audit r8 P2-a: time_residual_K is a refinement ESTIMATE, not a strict
+        # bound; the 4N reference is itself approximate. The beta=60/C=500/steps=152
+        # case sits ~7 uK over a fine reference while its N->4N residual reads just
+        # under tol. The default time_safety_factor (2.0) must make the gate refuse
+        # it; relaxing the factor to 1.0 reproduces the old (too-loose) acceptance.
+        kw = dict(altitude_km=550, beta_deg=60, q_load=Q_LOAD, areal_heat_capacity=500.0,
+                  tilt_deg=0, assume_sun_shielded=True, n_orbits=220, max_orbits=220,
+                  steps_per_orbit=152, return_diagnostics=True, check_time_resolution=True)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(**kw)
+            _, _, _, d1 = tr.simulate(time_safety_factor=1.0, **kw)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False        # default 2.0 -> refused
+        assert d1["time_discretization_converged"] is True        # 1.0 -> old behaviour
+        assert d["time_residual_K"] == pytest.approx(d1["time_residual_K"], rel=1e-9)
 
     def test_temporal_diagnostics_expose_components(self):
         # Audit r7 P3: the temporal certificate's components are individually

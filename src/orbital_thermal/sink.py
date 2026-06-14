@@ -182,6 +182,23 @@ def sink_temperature_series(
     if not np.all(np.isfinite(np.asarray(u_deg, dtype=float))):
         raise ValueError("u_deg must be finite")
     _require_shielding(assume_sun_shielded)
+    return _sink_series_compute(
+        view_factor, beta_deg, u_deg, emissivity=emissivity,
+        solar_absorptivity=solar_absorptivity, earth_ir=earth_ir, albedo=albedo,
+        solar_constant=solar_constant, t_space=t_space)
+
+
+def _sink_series_compute(view_factor, beta_deg, u_deg, *, emissivity=0.91,
+                         solar_absorptivity=0.20, earth_ir=EARTH_IR_FLUX,
+                         albedo=EARTH_ALBEDO, solar_constant=SOLAR_CONSTANT,
+                         t_space=T_SPACE_K):
+    """Effective-sink expression WITHOUT input validation or the shielding assert.
+
+    Private fast path for hot inner loops (the transient RK4 march evaluates the
+    sink at every stage across the N/2N/4N grids). Callers MUST have validated the
+    parameters and asserted shielding at the public boundary first; the public
+    :func:`sink_temperature_series` does exactly that and then delegates here
+    (audit r8 P3)."""
     cos_zeta = np.cos(np.radians(beta_deg)) * np.cos(np.radians(u_deg))
     albedo_factor = np.clip(cos_zeta, 0.0, None)            # subpoint approximation
     q_ir = earth_ir * view_factor

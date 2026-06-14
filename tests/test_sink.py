@@ -139,6 +139,14 @@ class TestOrbitAverage:
         assert sink.analytic_albedo_orbit_mean(0.0) == pytest.approx(1.0 / np.pi, rel=1e-12)
         assert sink.analytic_albedo_orbit_mean(90.0) == pytest.approx(0.0, abs=1e-12)
 
+    def test_prevalidated_inner_path_matches_public_series(self):
+        # Audit r8 P3: the private prevalidated inner expression used by the
+        # transient RK loop must reproduce the validated public series exactly.
+        for beta, u in [(0.0, 0.0), (30.0, 120.0), (90.0, 200.0)]:
+            pub = sink.sink_temperature_series(0.3, beta, u, assume_sun_shielded=True)
+            inner = sink._sink_series_compute(0.3, beta, u)
+            assert inner == pytest.approx(pub, rel=1e-15)
+
     def test_orbit_averaged_sink_warns_on_aliasing_small_n(self):
         # Effective 3-point grid (n=4 includes the duplicated endpoint) is aliased;
         # orbit_averaged_sink must warn it is too coarse (audit r6 P1).
