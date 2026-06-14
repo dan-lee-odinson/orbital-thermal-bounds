@@ -320,8 +320,8 @@ def simulate(
     #   * a grid-free forcing-quadrature certificate (subpoint albedo has the exact
     #     orbit mean cos(beta)/pi, giving a closed form for <T_sink^4>);
     #   * POINTWISE errors of the returned N orbit and of 2N, each interpolated onto
-    #     the converged 4N phase grid -- this bounds the full periodic waveform,
-    #     including peak timing, not just peak/mean/swing; and
+    #     the converged 4N phase grid -- this bounds the temperature waveform in
+    #     L-infinity (it does NOT bound the peak TIME; see peak_phase_residual_deg); and
     #   * the DIRECT N->4N (and 2N->4N, N->2N) peak/mean/swing summaries.
     # Each refined grid must itself reach periodic steady state, else uncertified.
     forcing_residual_K = n_to_2n_residual_K = two_n_to_4n_residual_K = None
