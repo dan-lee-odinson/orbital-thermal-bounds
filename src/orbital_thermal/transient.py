@@ -265,30 +265,41 @@ def simulate(
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
 
-    # Temporal-accuracy gate (audit r5 P1): periodic closure + energy balance do
-    # not certify that the timestep resolves the intra-orbit forcing. Converge a
-    # SECOND solution at 2x resolution to ITS OWN periodic fixed point and require
-    # the two periodic orbits' peak/mean/swing to agree. Comparing converged N- vs
-    # 2N-step fixed points (rather than one refined orbit launched from the coarse
-    # state) is what detects coarse-quadrature bias: in the high-thermal-inertia
-    # limit both one-orbit transients barely move and falsely agree, but the two
-    # grids' periodic equilibria still differ. The refined grid must itself reach
-    # periodic steady state, else temporal accuracy is uncertified.
+    # Temporal-accuracy gate (audit r5 P1 + r6 P1): periodic closure + energy
+    # balance do not certify that the timestep resolves the intra-orbit forcing.
+    # Two independent certificates, because a single N->2N doubling can be EXACTLY
+    # aliased by the orbital forcing (the 3- and 6-sample means of max(0,cos u) are
+    # both 1/3, vs the continuous 1/pi):
+    #   (a) forcing-quadrature certificate -- the subpoint albedo has an exact
+    #       orbit mean cos(beta)/pi, giving a grid-free closed form for <T_sink^4>;
+    #       require the discrete forcing mean on the N grid to match it; and
+    #   (b) TWO successive grid refinements -- converge 2N and 4N to their OWN
+    #       periodic fixed points and require N~2N AND 2N~4N to agree, so the
+    #       certificate never rests on a single doubling.
+    # Each refined grid must itself reach periodic steady state, else uncertified.
     if check_time_resolution:
-        refined = _converge(2 * steps_per_orbit)
-        if not refined["converged"]:
+        g2 = _converge(2 * steps_per_orbit)
+        g4 = _converge(4 * steps_per_orbit)
+        exact4 = sink_mod.sink_fourth_power_mean(
+            vf, beta_deg, emissivity=eps, solar_absorptivity=solar_absorptivity,
+            earth_ir=earth_ir, albedo=albedo, solar_constant=solar_constant,
+            t_space=t_space)
+        disc4 = float(np.mean(Ts_sink[:-1] ** 4))
+        T_ref = float(np.mean(Ts_panel[:-1]))
+        forcing_resid_K = abs(disc4 - exact4) / (4.0 * T_ref ** 3)
+        if not (g2["converged"] and g4["converged"]):
             time_residual_K = float("inf")
             time_discretization_converged = False
         else:
-            peak_n = float(Ts_panel.max())
-            mean_n = float(np.mean(Ts_panel[:-1]))
-            swing_n = float(Ts_panel.max() - Ts_panel.min())
-            Rp = refined["Tp"]
-            time_residual_K = max(
-                abs(peak_n - float(Rp.max())),
-                abs(mean_n - float(np.mean(Rp[:-1]))),
-                abs(swing_n - float(Rp.max() - Rp.min())),
-            )
+            def _pms(Tp):
+                return (float(Tp.max()), float(np.mean(Tp[:-1])),
+                        float(Tp.max() - Tp.min()))
+            p1, m1, s1 = _pms(Ts_panel)
+            p2, m2, s2 = _pms(g2["Tp"])
+            p4, m4, s4 = _pms(g4["Tp"])
+            r12 = max(abs(p1 - p2), abs(m1 - m2), abs(s1 - s2))
+            r24 = max(abs(p2 - p4), abs(m2 - m4), abs(s2 - s4))
+            time_residual_K = max(r12, r24, forcing_resid_K)
             time_discretization_converged = bool(
                 periodic_converged and time_residual_K < time_tol_K)
     else:

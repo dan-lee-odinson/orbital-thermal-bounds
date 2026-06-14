@@ -44,6 +44,8 @@ oriented away from the Sun, so direct flux falls on its back face. The model is
 therefore the environment seen by the *cold* side.
 """
 
+import warnings
+
 import numpy as np
 
 from . import _validate as _v
@@ -287,6 +289,69 @@ def sink_profile(
     return u, T
 
 
+def analytic_albedo_orbit_mean(beta_deg: float) -> float:
+    """Exact orbit average of the subpoint albedo factor max(0, cos(beta) cos(u)).
+
+    <max(0, cos(beta) cos(u))>_u = cos(beta) / pi  for beta in [0, 90] deg.
+
+    Closed form, independent of any time/quadrature grid. Used to certify the
+    environmental forcing quadrature against discrete-sampling aliases: the 3- and
+    6-sample orbit means of max(0, cos u) are BOTH exactly 1/3, while this exact
+    mean is 1/pi ~ 0.3183, so a single N->2N doubling can be exactly aliased
+    (audit r6 P1).
+    """
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    return float(np.cos(np.radians(beta_deg)) / np.pi)
+
+
+def sink_fourth_power_mean(
+    view_factor: float,
+    beta_deg: float,
+    *,
+    emissivity: float = 0.91,
+    solar_absorptivity: float = 0.20,
+    earth_ir: float = EARTH_IR_FLUX,
+    albedo: float = EARTH_ALBEDO,
+    solar_constant: float = SOLAR_CONSTANT,
+    t_space: float = T_SPACE_K,
+) -> float:
+    """Exact continuous orbit mean of T_s_eff^4, K^4, for the subpoint model.
+
+    T_s_eff^4 is affine in the albedo factor (the IR and deep-space terms are
+    constant over the orbit), so its orbit mean follows from
+    :func:`analytic_albedo_orbit_mean` in closed form -- grid-free, hence immune
+    to the discrete-quadrature alias (audit r6 P1)."""
+    if not 0.0 < emissivity <= 1.0:
+        raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    _v.in_range("view_factor", view_factor, 0.0, 1.0)
+    alb_mean = analytic_albedo_orbit_mean(beta_deg)
+    q_ir = earth_ir * view_factor
+    q_alb_mean = albedo * solar_constant * view_factor * alb_mean
+    return float((q_ir + (solar_absorptivity / emissivity) * q_alb_mean) / SIGMA_SB
+                 + t_space**4)
+
+
+def analytic_orbit_averaged_sink(
+    altitude_km: float,
+    beta_deg: float,
+    tilt_deg: float = 0.0,
+    *,
+    assume_sun_shielded: bool,
+    **kwargs,
+) -> float:
+    """Exact radiatively-weighted orbit-average sink (<T_s_eff^4>)^(1/4), K.
+
+    Grid-free closed form (see :func:`sink_fourth_power_mean`), so it cannot be
+    fooled by the coarse-quadrature alias that biases a discrete mean at small n
+    (audit r6 P1)."""
+    _require_shielding(assume_sun_shielded)
+    _v.positive("altitude_km", altitude_km)
+    _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
+    _v.finite("tilt_deg", tilt_deg)
+    vf = env.sphere_view_factor(altitude_km, tilt_deg)
+    return float(sink_fourth_power_mean(vf, beta_deg, **kwargs) ** 0.25)
+
+
 def orbit_averaged_sink(
     altitude_km: float,
     beta_deg: float,
@@ -305,4 +370,19 @@ def orbit_averaged_sink(
                         assume_sun_shielded=assume_sun_shielded, **kwargs)
     # Drop the duplicated 360deg endpoint so it is not double-counted (consistent
     # with transient.averaging_bias, which also slices [:-1]). Audit item 7.
-    return float(np.mean(T[:-1] ** 4) ** 0.25)
+    avg = float(np.mean(T[:-1] ** 4) ** 0.25)
+    # Small-n guard (audit r6 P1): the discrete T^4 mean can be aliased by the
+    # albedo forcing at coarse n (e.g. effective 3- and 6-sample grids both hit
+    # 1/3 vs the exact 1/pi). Compare to the grid-free closed form and warn so a
+    # coarse call cannot silently return a biased average.
+    exact = analytic_orbit_averaged_sink(
+        altitude_km, beta_deg, tilt_deg, assume_sun_shielded=assume_sun_shielded,
+        **kwargs)
+    if abs(avg - exact) > 1e-2:
+        warnings.warn(
+            f"orbit_averaged_sink at n={n} differs from the exact orbit mean by "
+            f"{abs(avg - exact):.3g} K; the grid is too coarse to resolve the "
+            f"albedo forcing -- increase n (or use analytic_orbit_averaged_sink)",
+            RuntimeWarning,
+        )
+    return avg

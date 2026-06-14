@@ -128,6 +128,23 @@ class TestOrbitAverage:
         assert avg == pytest.approx(excl, rel=1e-12)
         assert abs(avg - incl) > 1e-3      # the duplicate really did bias it
 
+    def test_analytic_orbit_mean_matches_high_resolution(self):
+        # Audit r6 P1: the grid-free closed form equals a high-resolution discrete
+        # mean and is immune to the small-n quadrature alias.
+        exact = sink.analytic_orbit_averaged_sink(550, 0.0, tilt_deg=0,
+                                                  assume_sun_shielded=True)
+        _, T = sink.sink_profile(550, 0.0, tilt_deg=0, n=20001, assume_sun_shielded=True)
+        hi = float(np.mean(T[:-1] ** 4) ** 0.25)
+        assert exact == pytest.approx(hi, abs=1e-3)
+        assert sink.analytic_albedo_orbit_mean(0.0) == pytest.approx(1.0 / np.pi, rel=1e-12)
+        assert sink.analytic_albedo_orbit_mean(90.0) == pytest.approx(0.0, abs=1e-12)
+
+    def test_orbit_averaged_sink_warns_on_aliasing_small_n(self):
+        # Effective 3-point grid (n=4 includes the duplicated endpoint) is aliased;
+        # orbit_averaged_sink must warn it is too coarse (audit r6 P1).
+        with pytest.warns(RuntimeWarning):
+            sink.orbit_averaged_sink(550, 0.0, tilt_deg=0, n=4, assume_sun_shielded=True)
+
     def test_subpoint_approx_average_equals_floor_at_terminator(self):
         # APPROXIMATION BEHAVIOR, not physics: because the subpoint albedo
         # approximation nulls all albedo at beta = 90, the orbit-averaged sink

@@ -412,3 +412,36 @@ class TestTemporalResolution:
                                  return_diagnostics=True, check_time_resolution=True)
         assert d["periodic_converged"] is True
         assert d["time_discretization_converged"] is False
+
+    def test_forcing_quadrature_alias_n3_n6_not_certified(self):
+        # Audit r6 P1 regression: a single N->2N doubling can be EXACTLY aliased --
+        # the 3- and 6-sample orbit means of max(0,cos u) are both 1/3 vs the
+        # continuous 1/pi. The auditor's high-inertia case (steps=3, t0 at the
+        # 3-point fixed point) was certified ~0.12 K high. It must now be refused.
+        with pytest.raises(RuntimeError):
+            tr.averaging_bias(550, 0, Q_LOAD, 1e10, tilt_deg=0,
+                              assume_sun_shielded=True,
+                              t0_guess=347.3648378530917,
+                              n_orbits=1, steps_per_orbit=3)
+        _, _, _, d = tr.simulate(550, 0, Q_LOAD, 1e10, tilt_deg=0,
+                                 assume_sun_shielded=True,
+                                 t0_guess=347.3648378530917,
+                                 n_orbits=1, steps_per_orbit=3,
+                                 return_diagnostics=True, check_time_resolution=True)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False
+
+    def test_forcing_certificate_detects_n3_bias_directly(self):
+        # The grid-free forcing certificate alone flags the ~0.12 K bias of the
+        # 3-point grid, independent of the 4N convergence cap (audit r6 P1).
+        import numpy as np
+        from orbital_thermal import sink as sk, environment as env
+        t, T, Ts = tr.simulate(550, 0, Q_LOAD, 1e10, tilt_deg=0,
+                               assume_sun_shielded=True,
+                               t0_guess=347.3648378530917,
+                               n_orbits=1, steps_per_orbit=3)
+        vf = env.sphere_view_factor(550, 0.0)
+        exact4 = sk.sink_fourth_power_mean(vf, 0.0, emissivity=EPS)
+        disc4 = float(np.mean(Ts[:-1] ** 4))
+        resid = abs(disc4 - exact4) / (4.0 * float(np.mean(T[:-1])) ** 3)
+        assert resid == pytest.approx(0.1202, abs=2e-3)
