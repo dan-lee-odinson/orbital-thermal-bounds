@@ -63,6 +63,12 @@ class TestCorrectionTable:
         assert deltas[0] == pytest.approx(1.94, abs=0.05)      # beta = 0
         assert deltas[-1] == pytest.approx(6.35, abs=0.05)     # beta = 90 (default)
 
+    def test_accepts_one_shot_generator(self):
+        # Audit r7 P3: betas is materialized once, so a one-shot generator is not
+        # consumed by validation before the calculation loop (previously -> []).
+        rows = ev.correction_table_vs_beta(b for b in (0.0, 45.0, 90.0))
+        assert [r["beta_deg"] for r in rows] == [0.0, 45.0, 90.0]
+
     def test_beta90_row_matches_default_recomputation(self):
         rows = ev.correction_table_vs_beta()
         beta90 = next(r for r in rows if r["beta_deg"] == 90)

@@ -134,7 +134,11 @@ class TestConvergence:
         assert set(d) == {"converged", "orbits_used", "closure_error_K", "tol_K",
                           "energy_residual_W_m2", "energy_residual_K", "energy_tol_K",
                           "periodic_converged", "time_discretization_converged",
-                          "time_residual_K", "time_tol_K"}
+                          "time_residual_K", "time_tol_K",
+                          "forcing_residual_K", "n_to_2n_residual_K",
+                          "two_n_to_4n_residual_K", "n_to_4n_residual_K",
+                          "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                          "refined_orbits_used"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -388,6 +392,22 @@ class TestTemporalResolution:
                               assume_sun_shielded=True, **SIM)
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
+
+    def test_temporal_diagnostics_expose_components(self):
+        # Audit r7 P3: the temporal certificate's components are individually
+        # exposed (not only the aggregate max) so a borderline/failed certificate
+        # can be audited without re-running private logic.
+        _, _, _, d = tr.simulate(550, 30, Q_LOAD, 8000.0, assume_sun_shielded=True,
+                                 n_orbits=60, steps_per_orbit=720,
+                                 return_diagnostics=True, check_time_resolution=True)
+        for k in ("forcing_residual_K", "n_to_2n_residual_K", "two_n_to_4n_residual_K",
+                  "n_to_4n_residual_K", "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                  "refined_orbits_used"):
+            assert k in d and d[k] is not None, k
+        comps = [d["forcing_residual_K"], d["n_to_2n_residual_K"],
+                 d["two_n_to_4n_residual_K"], d["n_to_4n_residual_K"],
+                 d["pointwise_n_to_4n_K"], d["pointwise_2n_to_4n_K"]]
+        assert d["time_residual_K"] == pytest.approx(max(comps), rel=1e-12)
 
     def test_high_inertia_aliasing_is_not_falsely_certified(self):
         # Audit r5 P1 regression: at very high thermal inertia a one-orbit refined

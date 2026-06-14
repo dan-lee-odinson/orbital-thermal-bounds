@@ -106,11 +106,20 @@ def simulate(
 
     Temporal resolution (``check_time_resolution``, default False): periodic
     closure + energy balance do not certify that ``steps_per_orbit`` resolves the
-    intra-orbit forcing. When enabled, a second solution is converged at 2x
-    resolution to ITS OWN periodic fixed point and the two periodic orbits'
-    peak/mean/swing must agree within ``time_tol_K`` (audit r5 P1). Comparing
-    converged N- vs 2N-step fixed points (not one refined orbit from the coarse
-    state) is what catches coarse-quadrature bias at high thermal inertia.
+    intra-orbit forcing. When enabled, the N-, 2N-, and 4N-step solutions are each
+    converged to their OWN periodic fixed points and the returned N-grid profile is
+    BOUNDED directly, all within ``time_tol_K`` (audit r5/r6/r7 P1):
+
+    * a grid-free forcing-quadrature certificate (the subpoint albedo has the exact
+      orbit mean cos(beta)/pi, giving a closed form for <T_sink^4>);
+    * POINTWISE errors of the returned N orbit and of 2N, each interpolated onto
+      the 4N phase grid -- bounding the full periodic waveform, including peak
+      timing, not just peak/mean/swing; and
+    * the direct N->4N (and 2N->4N, N->2N) peak/mean/swing summaries.
+
+    One N->2N doubling alone is insufficient: it can be exactly aliased by the
+    orbital forcing, and adjacent summaries are not a bound on the returned
+    profile.
 
     ``assume_sun_shielded`` is REQUIRED (no default) and is forwarded to the one
     effective-sink equation (sink.sink_temperature_series); see that function.
@@ -122,8 +131,11 @@ def simulate(
     The diagnostics dict distinguishes three convergence notions:
 
     * ``periodic_converged`` -- periodic closure AND energy balance both met;
-    * ``time_discretization_converged`` -- the step-doubling check passed (None
-      when ``check_time_resolution`` is False);
+    * ``time_discretization_converged`` -- the temporal-resolution certificate
+      passed (None when ``check_time_resolution`` is False); its components are
+      exposed as ``forcing_residual_K``, ``n_to_2n_residual_K``,
+      ``two_n_to_4n_residual_K``, ``n_to_4n_residual_K``, ``pointwise_n_to_4n_K``,
+      ``pointwise_2n_to_4n_K``, and ``refined_orbits_used``;
     * ``converged`` -- the COMBINED flag: ``periodic_converged`` AND, when
       ``check_time_resolution`` is True, ``time_discretization_converged``.
 
@@ -329,11 +341,11 @@ def simulate(
     converged = periodic_converged and (
         not check_time_resolution or bool(time_discretization_converged))
     if check_time_resolution and periodic_converged and not time_discretization_converged:
-        msg = (f"transient did not resolve the intra-orbit forcing: step-doubling "
-               f"residual {time_residual_K} K vs tol {time_tol_K:.1e} K at "
-               f"{steps_per_orbit} steps/orbit; increase steps_per_orbit (and "
-               f"n_orbits/max_orbits so the 2x grid also reaches periodic steady "
-               f"state)")
+        msg = (f"transient did not resolve the intra-orbit forcing: "
+               f"temporal-resolution residual {time_residual_K} K vs tol "
+               f"{time_tol_K:.1e} K at {steps_per_orbit} steps/orbit; increase "
+               f"steps_per_orbit (and n_orbits/max_orbits so the 2N and 4N grids "
+               f"also reach periodic steady state)")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
         warnings.warn(msg, RuntimeWarning)
@@ -351,6 +363,13 @@ def simulate(
             "time_discretization_converged": time_discretization_converged,
             "time_residual_K": time_residual_K,
             "time_tol_K": float(time_tol_K),
+            "forcing_residual_K": forcing_residual_K,
+            "n_to_2n_residual_K": n_to_2n_residual_K,
+            "two_n_to_4n_residual_K": two_n_to_4n_residual_K,
+            "n_to_4n_residual_K": n_to_4n_residual_K,
+            "pointwise_n_to_4n_K": pointwise_n_to_4n_K,
+            "pointwise_2n_to_4n_K": pointwise_2n_to_4n_K,
+            "refined_orbits_used": refined_orbits_used,
         }
         return ts, Ts_panel, Ts_sink, diagnostics
     return ts, Ts_panel, Ts_sink
@@ -542,7 +561,7 @@ def averaging_bias(
             f"(closure {diag['closure_error_K']:.2e} K vs tol {diag['tol_K']:.1e} K; "
             f"energy dT_eq {diag['energy_residual_K']:.2e} K vs tol "
             f"{diag['energy_tol_K']:.1e} K), time_discretization_converged="
-            f"{diag['time_discretization_converged']} (step-doubling residual "
+            f"{diag['time_discretization_converged']} (temporal-resolution residual "
             f"{diag['time_residual_K']} K vs tol {diag['time_tol_K']:.1e} K). The "
             "Jensen/peak metrics would be invalid. Increase n_orbits/max_orbits and/or "
             "steps_per_orbit, or pass require_convergence=False to inspect diagnostics."
@@ -574,4 +593,11 @@ def averaging_bias(
         "time_discretization_converged": diag["time_discretization_converged"],
         "time_residual_K": diag["time_residual_K"],
         "time_tol_K": diag["time_tol_K"],
+        "forcing_residual_K": diag["forcing_residual_K"],
+        "n_to_2n_residual_K": diag["n_to_2n_residual_K"],
+        "two_n_to_4n_residual_K": diag["two_n_to_4n_residual_K"],
+        "n_to_4n_residual_K": diag["n_to_4n_residual_K"],
+        "pointwise_n_to_4n_K": diag["pointwise_n_to_4n_K"],
+        "pointwise_2n_to_4n_K": diag["pointwise_2n_to_4n_K"],
+        "refined_orbits_used": diag["refined_orbits_used"],
     }

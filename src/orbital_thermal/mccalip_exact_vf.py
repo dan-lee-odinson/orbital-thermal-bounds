@@ -99,7 +99,8 @@ def correction_table_vs_beta(betas=DEFAULT_BETAS, overrides=None, n=72):
     monotonically toward the edge-on default (beta = 90 deg), where it is +6.35 K.
     """
     _v.positive_int("n", n)
-    for _b in betas:
+    betas = tuple(betas)  # materialize: a one-shot generator must not be consumed
+    for _b in betas:      # by validation before the calculation loop (audit r7 P3)
         _v.in_range("beta_deg", _b, 0.0, 90.0)
     base = dict(overrides or {})
     rows = []
