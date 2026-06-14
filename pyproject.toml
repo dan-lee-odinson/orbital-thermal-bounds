@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbital-thermal"
-version = "0.8.2"
+version = "0.8.3"
 description = "Executable reference implementation of the orbital-thermal-bounds radiator model (Lee-Odinson, 2026)"
 authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
 readme = "README.md"
