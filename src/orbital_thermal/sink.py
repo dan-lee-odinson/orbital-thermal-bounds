@@ -308,6 +308,7 @@ def sink_fourth_power_mean(
     view_factor: float,
     beta_deg: float,
     *,
+    assume_sun_shielded: bool,
     emissivity: float = 0.91,
     solar_absorptivity: float = 0.20,
     earth_ir: float = EARTH_IR_FLUX,
@@ -320,10 +321,25 @@ def sink_fourth_power_mean(
     T_s_eff^4 is affine in the albedo factor (the IR and deep-space terms are
     constant over the orbit), so its orbit mean follows from
     :func:`analytic_albedo_orbit_mean` in closed form -- grid-free, hence immune
-    to the discrete-quadrature alias (audit r6 P1)."""
+    to the discrete-quadrature alias (audit r6 P1).
+
+    Applies the same optical/environment validation and the required
+    ``assume_sun_shielded`` contract as :func:`sink_temperature_series`, since it
+    models the identical (direct-solar-omitting) environment (audit r7 P2)."""
     if not 0.0 < emissivity <= 1.0:
         raise ValueError(f"emissivity must be in (0, 1], got {emissivity}")
+    if not 0.0 <= solar_absorptivity <= 1.0:
+        raise ValueError(f"solar_absorptivity must be in [0, 1], got {solar_absorptivity}")
+    if not 0.0 <= albedo <= 1.0:
+        raise ValueError(f"albedo must be in [0, 1], got {albedo}")
+    if not (np.isfinite(earth_ir) and earth_ir >= 0.0):
+        raise ValueError(f"earth_ir must be finite and >= 0, got {earth_ir}")
+    if not (np.isfinite(solar_constant) and solar_constant >= 0.0):
+        raise ValueError(f"solar_constant must be finite and >= 0, got {solar_constant}")
+    if not (np.isfinite(t_space) and t_space >= 0.0):
+        raise ValueError(f"t_space must be finite and >= 0 K, got {t_space}")
     _v.in_range("view_factor", view_factor, 0.0, 1.0)
+    _require_shielding(assume_sun_shielded)
     alb_mean = analytic_albedo_orbit_mean(beta_deg)
     q_ir = earth_ir * view_factor
     q_alb_mean = albedo * solar_constant * view_factor * alb_mean
@@ -349,7 +365,8 @@ def analytic_orbit_averaged_sink(
     _v.in_range("beta_deg", beta_deg, 0.0, 90.0)
     _v.finite("tilt_deg", tilt_deg)
     vf = env.sphere_view_factor(altitude_km, tilt_deg)
-    return float(sink_fourth_power_mean(vf, beta_deg, **kwargs) ** 0.25)
+    return float(sink_fourth_power_mean(
+        vf, beta_deg, assume_sun_shielded=assume_sun_shielded, **kwargs) ** 0.25)
 
 
 def orbit_averaged_sink(

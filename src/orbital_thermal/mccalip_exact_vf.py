@@ -57,6 +57,8 @@ def equilibrium_temperature_with_view_factors(overrides, vf_side_a, vf_side_b):
     ``calculate_thermal(...)['eqTempK']`` to floating-point roundoff -- so any
     temperature change comes from the view factors alone.
     """
+    _v.in_range("vf_side_a", vf_side_a, 0.0, 1.0)
+    _v.in_range("vf_side_b", vf_side_b, 0.0, 1.0)
     s = mc._state(overrides)
     area = mc.calculate_orbital(s)["_arrayAreaM2"]
     S = mc.CONST["SOLAR_IRRADIANCE_W_M2"]
@@ -97,7 +99,8 @@ def correction_table_vs_beta(betas=DEFAULT_BETAS, overrides=None, n=72):
     monotonically toward the edge-on default (beta = 90 deg), where it is +6.35 K.
     """
     _v.positive_int("n", n)
-    for _b in betas:
+    betas = tuple(betas)  # materialize: a one-shot generator must not be consumed
+    for _b in betas:      # by validation before the calculation loop (audit r7 P3)
         _v.in_range("beta_deg", _b, 0.0, 90.0)
     base = dict(overrides or {})
     rows = []

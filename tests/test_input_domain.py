@@ -153,3 +153,38 @@ class TestRemainingPublicAPIs:
             fluids.critical_margin(NAN)
         with pytest.raises(ValueError):
             fluids.critical_margin(INF)
+
+
+class TestRoundSevenValidation:
+    """Audit r7 P2: validation for the new grid-free sink helper, the headline
+    arbitrary-view-factor helper, and the fluids phase API."""
+
+    def test_sink_fourth_power_mean_environment_and_shielding(self):
+        from orbital_thermal import sink as sk
+        with pytest.raises(ValueError):
+            sk.sink_fourth_power_mean(0.5, 0, assume_sun_shielded=True, earth_ir=-1000.0)
+        with pytest.raises(ValueError):
+            sk.sink_fourth_power_mean(0.5, 0, assume_sun_shielded=True, albedo=NAN)
+        with pytest.raises(ValueError):
+            sk.sink_fourth_power_mean(0.5, 0, assume_sun_shielded=True, t_space=NAN)
+        with pytest.raises(TypeError):
+            sk.sink_fourth_power_mean(0.5, 0, emissivity=0.91)   # shielding required
+        with pytest.raises(ValueError):
+            sk.analytic_orbit_averaged_sink(550, 0, assume_sun_shielded=True, earth_ir=-1000.0)
+
+    def test_equilibrium_temperature_with_view_factors_range(self):
+        from orbital_thermal import mccalip_exact_vf as mx
+        with pytest.raises(ValueError):
+            mx.equilibrium_temperature_with_view_factors({}, -1.0, 0.2)
+        with pytest.raises(ValueError):
+            mx.equilibrium_temperature_with_view_factors({}, 0.2, 2.0)
+        with pytest.raises(ValueError):
+            mx.equilibrium_temperature_with_view_factors({}, NAN, 0.2)
+
+    def test_fluids_phase_state_rejects_invalid_T_P(self):
+        pytest.importorskip("CoolProp")
+        from orbital_thermal import fluids
+        with pytest.raises(ValueError):
+            fluids.phase_state(NAN, 1e5)
+        with pytest.raises(ValueError):
+            fluids.phase_state(300.0, -1.0)

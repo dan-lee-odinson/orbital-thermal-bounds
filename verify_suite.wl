@@ -76,6 +76,6 @@ stat[a_, y_] := a/(1 - a + a y) + 1/(1 - y) - 4/y;
   (* expected: {0.764507787..., 0.780776406...} — table values 0.765, 0.781 *)
 
 (* W9 — Theorem 1 consequence example, exact *)
-With[{Qc = 10^6*3/297, sig = 5670374419*10^-17},  (* = 5.670374419*10^-8 *)
+With[{Qc = 10^6*3/297, sig = 5670374419184429*10^-23},  (* = 5.670374419184429*10^-8 full binary64 SI sigma (audit r7 P3) *)
   {Qc, Qc/(sig (3^4 - (27/10)^4))}] // N
   (* expected: {10101.01, 6.395*10^9}  (m^2) *)

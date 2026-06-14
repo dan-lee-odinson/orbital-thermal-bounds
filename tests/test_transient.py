@@ -134,7 +134,11 @@ class TestConvergence:
         assert set(d) == {"converged", "orbits_used", "closure_error_K", "tol_K",
                           "energy_residual_W_m2", "energy_residual_K", "energy_tol_K",
                           "periodic_converged", "time_discretization_converged",
-                          "time_residual_K", "time_tol_K"}
+                          "time_residual_K", "time_tol_K",
+                          "forcing_residual_K", "n_to_2n_residual_K",
+                          "two_n_to_4n_residual_K", "n_to_4n_residual_K",
+                          "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                          "refined_orbits_used"}
         assert d["converged"] is True
         assert d["closure_error_K"] < d["tol_K"]
         assert d["energy_residual_W_m2"] < 1e-1          # ~0 net flux at periodic SS
@@ -389,6 +393,22 @@ class TestTemporalResolution:
         assert b["time_discretization_converged"] is True
         assert b["time_residual_K"] < b["time_tol_K"]
 
+    def test_temporal_diagnostics_expose_components(self):
+        # Audit r7 P3: the temporal certificate's components are individually
+        # exposed (not only the aggregate max) so a borderline/failed certificate
+        # can be audited without re-running private logic.
+        _, _, _, d = tr.simulate(550, 30, Q_LOAD, 8000.0, assume_sun_shielded=True,
+                                 n_orbits=60, steps_per_orbit=720,
+                                 return_diagnostics=True, check_time_resolution=True)
+        for k in ("forcing_residual_K", "n_to_2n_residual_K", "two_n_to_4n_residual_K",
+                  "n_to_4n_residual_K", "pointwise_n_to_4n_K", "pointwise_2n_to_4n_K",
+                  "refined_orbits_used"):
+            assert k in d and d[k] is not None, k
+        comps = [d["forcing_residual_K"], d["n_to_2n_residual_K"],
+                 d["two_n_to_4n_residual_K"], d["n_to_4n_residual_K"],
+                 d["pointwise_n_to_4n_K"], d["pointwise_2n_to_4n_K"]]
+        assert d["time_residual_K"] == pytest.approx(max(comps), rel=1e-12)
+
     def test_high_inertia_aliasing_is_not_falsely_certified(self):
         # Audit r5 P1 regression: at very high thermal inertia a one-orbit refined
         # trajectory launched from the coarse periodic state barely moves and falsely
@@ -431,6 +451,25 @@ class TestTemporalResolution:
         assert d["periodic_converged"] is True
         assert d["time_discretization_converged"] is False
 
+    def test_pointwise_drift_below_summary_tol_is_rejected(self):
+        # Audit r7 P1 regression: adjacent-grid summary deltas can each be < tol
+        # while the cumulative N->4N drift and the pointwise waveform error exceed
+        # it. The C=2000, N=33 case was certified at time_residual 0.00801 K but its
+        # pointwise error vs a fine reference is ~0.095 K. It must now be refused.
+        with pytest.raises(RuntimeError):
+            tr.averaging_bias(550, 0, Q_LOAD, 2000.0, tilt_deg=0,
+                              assume_sun_shielded=True, t0_guess=347.2446,
+                              n_orbits=150, steps_per_orbit=33)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            _, _, _, d = tr.simulate(550, 0, Q_LOAD, 2000.0, tilt_deg=0,
+                                     assume_sun_shielded=True, t0_guess=347.2446,
+                                     n_orbits=150, steps_per_orbit=33,
+                                     return_diagnostics=True, check_time_resolution=True)
+        assert d["periodic_converged"] is True
+        assert d["time_discretization_converged"] is False
+        assert d["time_residual_K"] > d["time_tol_K"]
+
     def test_forcing_certificate_detects_n3_bias_directly(self):
         # The grid-free forcing certificate alone flags the ~0.12 K bias of the
         # 3-point grid, independent of the 4N convergence cap (audit r6 P1).
@@ -441,7 +480,7 @@ class TestTemporalResolution:
                                t0_guess=347.3648378530917,
                                n_orbits=1, steps_per_orbit=3)
         vf = env.sphere_view_factor(550, 0.0)
-        exact4 = sk.sink_fourth_power_mean(vf, 0.0, emissivity=EPS)
+        exact4 = sk.sink_fourth_power_mean(vf, 0.0, assume_sun_shielded=True, emissivity=EPS)
         disc4 = float(np.mean(Ts[:-1] ** 4))
         resid = abs(disc4 - exact4) / (4.0 * float(np.mean(T[:-1])) ** 3)
         assert resid == pytest.approx(0.1202, abs=2e-3)

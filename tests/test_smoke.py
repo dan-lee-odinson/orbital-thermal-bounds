@@ -92,3 +92,6 @@ def test_standalone_verify_suites_lock_full_precision_sigma():
         text = (root / rel).read_text()
         assert "5.670374419184429e-8" in text, rel
         assert "sigma = 5.670374419e-8" not in text, rel
+    wl = (root / "verify_suite.wl").read_text()
+    assert "5670374419184429*10^-23" in wl
+    assert "5670374419*10^-17" not in wl
