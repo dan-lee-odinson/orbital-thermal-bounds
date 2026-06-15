@@ -209,7 +209,7 @@ On June 9–10, 2026, SpaceX announced AI1, its first orbital data-center satell
 
 What it shows, briefly: treating the reported 110 m² of radiators as double-sided panel planform (the reading SpaceX itself states — "radiating both sides, orientated knife-edge to the sun"), the implied radiator surface temperature is about 337 K at the 120 kW sustained load and about 353 K if the 150 kW peak runs continuously. The alternative total-emitting-area reading requires 391–412 K, which strongly disfavors the subcritical ammonia loop secondary coverage describes as likely. An illustrative combined stress case (emissivity 0.91 → 0.80, effective sink 220 → 260 K) removes about 40 kW of fixed-temperature capacity. The reduced-order model does not rule the design out; margin, the engineering interior, and the economics remain open.
 
-Every reported figure traces to a quoted source, and every radiator-model calculation and displayed value is asserted by `companion/verify_ai1.py`. The paper passed four rounds of adversarial technical review by GPT-5.5 with independent Wolfram verification; the revision history is in the response letters.
+Every reported figure traces to a quoted source, and every radiator-model calculation and displayed value is asserted by `companion/verify_ai1.py`. The paper passed four rounds of adversarial technical review with independent Wolfram verification; the revision history is in the response letters.
 
 ### How to cite the companion paper
 
