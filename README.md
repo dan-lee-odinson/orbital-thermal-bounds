@@ -9,10 +9,43 @@
 *Machine-verified thermodynamic bounds for orbital data-center thermal architecture, plus an audited Python simulation package that extends the analytic results to time-dependent, environment-coupled radiator behavior.* This repository contains three things: the **bounds preprint** and its proofs, the **AI1 design-point companion paper**, and the **`orbital_thermal` package** — a reduced-order radiator model whose headline result is a quantified correction to a published peer model.
 
 **Bounds preprint:** DOI [10.5281/zenodo.20650893](https://doi.org/10.5281/zenodo.20650893)  
-**AI1 companion paper:** DOI [10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)  
-**Edge-On Geometry preprint** DOI [10.5281/zenodo.20695719](https://doi.org/10.5281/zenodo.20695719) 
+**AI1 companion paper:** DOI [10.5281/zenodo.20670771](https://doi.org/10.5281/zenodo.20670771)  
+**Edge-On Geometry preprint** DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720) 
 
 **Author:** Dan Lee-Odinson ([ORCID 0009-0009-9504-0796](https://orcid.org/0009-0009-9504-0796)) | dan.lee.odinson@gmail.com
+
+> **Scope.** This package provides mathematical, computational, software, and cross-model
+> verification for a **reduced-order, one-node** radiator model. It is **not validated
+> against flown hardware** and is **not** intended for flight design, certification, or
+> safety-critical decisions. See [`docs/VERIFICATION_AND_VALIDATION.md`](docs/VERIFICATION_AND_VALIDATION.md).
+
+### Key results
+
+- **+6.35 K** correction to a public radiator model at its default edge-on geometry — McCalip's coded equilibrium **335.75 K → 342.10 K** with the exact Earth view factor — decomposed into **+5.77 K** model-form geometry and **+0.58 K** a floating-point branch artifact ([paper three](https://doi.org/10.5281/zenodo.20695720)).
+- Exact tilted-plate-to-sphere edge-on Earth view factor **0.257773** per face at 550 km.
+- A certified orbit-coupled **transient** solver: at periodic steady state ⟨T⁴⟩ = T_steady⁴, so a steady averaged-sink sizing under-predicts the orbital **peak** (up to several kelvin), not the mean.
+
+### Install
+
+```bash
+pip install -e ".[fluids]"   # editable dev install; "[fluids]" adds the optional CoolProp coolant screen
+```
+
+Stable release: download the wheel from the [v1.0.0 release](https://github.com/dan-lee-odinson/orbital-thermal-bounds/releases) and `pip install orbital_thermal-1.0.0-py3-none-any.whl`. Full instructions: **[Wiki → Installation](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Installation)**.
+
+### My role
+
+This work was produced through a **human-directed, multi-model AI workflow** that I orchestrated and for which I take responsibility: derivation and implementation, literature-armed review, and an eight-round adversarial software review with independent computer-algebra verification. This is machine-executable verification and adversarial *technical* review — **not** formal human scholarly peer review. See [Provenance](#provenance).
+
+### Contents
+
+- [What this is](#what-this-is)
+- [The `orbital_thermal` package](#the-orbital_thermal-package)
+- [Repository layout](#repository-layout)
+- [Running the verification suites](#running-the-verification-suites)
+- [Paper three: the edge-on view-factor correction](#paper-three-the-edge-on-view-factor-correction)
+- [Companion paper: The AI1 Design Point](#companion-paper-the-ai1-design-point)
+- [Provenance](#provenance) · [How to cite](#how-to-cite) · [License](#license)
 
 ## Documentation
 
@@ -216,7 +249,7 @@ python verify_paper3.py     # decomposition, Tables 1-4, the periodic identity
 
 On June 9–10, 2026, SpaceX announced AI1, its first orbital data-center satellite. The companion paper in `companion/` applies this repository's thermodynamic bounds to the announced design and establishes its coherence within the gray-body radiator model, under one specific reading of the reported figures.
 
-**Archived version:** Zenodo DOI [10.5281/zenodo.20670772](https://doi.org/10.5281/zenodo.20670772)
+**Archived version:** Zenodo DOI [10.5281/zenodo.20670771](https://doi.org/10.5281/zenodo.20670771)
 
 What it shows, briefly: treating the reported 110 m² of radiators as double-sided panel planform (the reading SpaceX itself states — "radiating both sides, orientated knife-edge to the sun"), the implied radiator surface temperature is about 337 K at the 120 kW sustained load and about 353 K if the 150 kW peak runs continuously. The alternative total-emitting-area reading requires 391–412 K, which strongly disfavors the subcritical ammonia loop secondary coverage describes as likely. An illustrative combined stress case (emissivity 0.91 → 0.80, effective sink 220 → 260 K) removes about 40 kW of fixed-temperature capacity. The reduced-order model does not rule the design out; margin, the engineering interior, and the economics remain open.
 
@@ -224,7 +257,7 @@ Every reported figure traces to a quoted source, and every radiator-model calcul
 
 ### How to cite the companion paper
 
-> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. https://doi.org/10.5281/zenodo.20670772
+> Lee-Odinson, D. (2026). *The AI1 design point: A bounds-based analysis of SpaceX's orbital data-center satellite* (Revision 4) [Preprint]. Zenodo. https://doi.org/10.5281/zenodo.20670771
 
 ```bibtex
 @misc{leeodinson2026ai1,
@@ -234,8 +267,8 @@ Every reported figure traces to a quoted source, and every radiator-model calcul
   month        = jun,
   publisher    = {Zenodo},
   version      = {v1},
-  doi          = {10.5281/zenodo.20670772},
-  url          = {https://doi.org/10.5281/zenodo.20670772},
+  doi          = {10.5281/zenodo.20670771},
+  url          = {https://doi.org/10.5281/zenodo.20670771},
   note         = {Preprint}
 }
 ```
