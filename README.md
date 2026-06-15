@@ -28,6 +28,9 @@ The design implication: within the model, orbital thermal management is a temper
 
 The **`orbital_thermal` package** (below) turns these static bounds into an executable, time-dependent model — and in doing so produces a new, independently verified result.
 
+## My role: 
+I selected and scoped the research questions, established acceptance criteria, directed the multi-model workflow, evaluated competing outputs, made revision and release decisions, integrated the papers and software, and take responsibility for the published results. AI systems were used for derivation support, drafting, implementation, research assistance, adversarial review, and computational verification.
+
 ---
 
 ## The `orbital_thermal` package
