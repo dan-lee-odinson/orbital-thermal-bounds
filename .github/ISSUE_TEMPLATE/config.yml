@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation (Wiki)
+    url: https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki
+    about: Installation, running the simulation, API reference, and troubleshooting.
+  - name: Security / supply-chain report
+    url: https://github.com/dan-lee-odinson/orbital-thermal-bounds/security/policy
+    about: For repository, dependency, package, or supply-chain security concerns.

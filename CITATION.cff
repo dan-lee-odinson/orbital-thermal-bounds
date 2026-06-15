@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "orbital-thermal: a reduced-order orbital data-center radiator model"
+abstract: >-
+  An audit-closed Python package for reduced-order orbital data-center radiator
+  modeling. It implements the analytic thermodynamic bounds of the companion
+  preprints as executable functions and extends them to time-dependent,
+  environment-coupled behavior (an orbit-varying effective sink and a one-node
+  transient solver with a convergence certificate). Its headline result is an
+  exact-view-factor correction to a public radiator model. The package supports
+  mathematical, software, and cross-model verification; it is not validated
+  against flown hardware.
+type: software
+authors:
+  - family-names: "Lee-Odinson"
+    given-names: "Dan"
+    orcid: "https://orcid.org/0009-0009-9504-0796"
+version: "1.0.0"
+date-released: "2026-06-14"
+repository-code: "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
+url: "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
+license: MIT
+keywords:
+  - orbital thermal modeling
+  - radiator analysis
+  - space data centers
+  - view factor
+  - reduced-order model
+  - reproducible research
+  - Python
+# Add the software archive DOI here once the v1.0.0 GitHub Release is archived on Zenodo:
+# doi: "10.5281/zenodo.XXXXXXX"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.20650893"
+    description: "Companion preprint: Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers"
+  - type: doi
+    value: "10.5281/zenodo.20670771"
+    description: "Companion preprint: The AI1 Design Point"
+  - type: doi
+    value: "10.5281/zenodo.20695720"
+    description: "Companion preprint: Edge-On Geometry Raises a Public Orbital Data-Center Radiator Model's Coded Equilibrium Temperature by 6.35 K"
