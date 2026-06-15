@@ -29,7 +29,7 @@ keywords:
   - reproducible research
   - Python
 # Add the software archive DOI here once the v1.0.0 GitHub Release is archived on Zenodo:
-# doi: "10.5281/zenodo.XXXXXXX"
+doi: "10.5281/zenodo.20709241"
 identifiers:
   - type: doi
     value: "10.5281/zenodo.20650893"
