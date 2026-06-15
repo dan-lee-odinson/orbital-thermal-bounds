@@ -43,7 +43,9 @@ Correction                            +6.349684255349 K
 Exact edge-on per-face view factor     0.257772825310
 ```
 
-This is a headline contribution, not a caveat: his replicated result is reproduced to floating-point roundoff, and the shift comes entirely from the view factor. The correction is positive at every β and grows monotonically toward the edge-on default.
+This is a headline contribution, not a caveat: his replicated result is reproduced to floating-point roundoff, and the shift comes entirely from the view factor. The +6.35 K is the correction to the public code *as executed*; it decomposes into **+5.77 K** of model-form geometry (relative to the model's intended 5%-of-nadir floor) and **+0.58 K** of a floating-point `cos(90°)` branch artifact in the orbit average. The correction is positive at every sampled β and largest at the edge-on default.
+
+This result, its decomposition, and an orbit-coupled transient extension are written up as a standalone preprint (paper three) in this repository: **[`orbital-thermal-edge-on-correction.pdf`](orbital-thermal-edge-on-correction.pdf)**, DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720). Its numbers are reproduced by [`verify_paper3.py`](verify_paper3.py) against `orbital-thermal==1.0.0`.
 
 ### Install
 
@@ -124,10 +126,12 @@ The package passed an adversarial review cycle conducted by GPT-5.5 with indepen
 | `scripts/` | Plotting and helper scripts (figures, ammonia table, wheel-license check) |
 | `results/` | Generated figures and the ammonia property table |
 | `docs/` | McCalip replication and ammonia-model notes |
-| `orbital-thermal-preprint.pdf` / `.tex` | The bounds preprint and LaTeX source |
+| `orbital-thermal-preprint.pdf` / `.tex` | The bounds preprint (paper one) and LaTeX source |
+| `orbital-thermal-edge-on-correction.pdf` / `.tex` | The edge-on view-factor correction preprint (paper three) and source |
 | `orbital-thermal-resolution-proof-v3.md` | Audited proof document with full revision history |
-| `verify_suite.py` / `verify_suite.wl` | Independent Python and Wolfram verification suites |
-| `companion/` | The AI1 design-point paper, source, and verification suite |
+| `verify_suite.py` / `verify_suite.wl` | Independent Python and Wolfram verification suites (paper one) |
+| `verify_paper3.py` | Paper-three verification script (view-factor decomposition, balances, transient bias) |
+| `companion/` | The AI1 design-point paper (paper two), source, and verification suite |
 | `LICENSING.md` | Per-component license map |
 
 ## Running the verification suites
@@ -161,6 +165,36 @@ This work was produced through an iterative, adversarial workflow across multipl
   version      = {v3},
   doi          = {10.5281/zenodo.20650893},
   url          = {https://doi.org/10.5281/zenodo.20650893},
+  note         = {Preprint}
+}
+```
+
+## Paper three: The edge-on view-factor correction
+
+A standalone preprint that builds on the package's headline result. It reproduces Andrew McCalip's public "Space Datacenters" radiator model to floating-point roundoff, then replaces only its approximate Earth view factor with the exact tilted-plate-to-sphere value at the model's own default (β = 90°, 550 km) edge-on geometry. The exact per-face view factor there is 0.25777; the public code produces an orbit-averaged 0.02118 (its intended 5% floor is 0.04237, halved by a `cos(90°)` floating-point branch), so the corrected equilibrium rises **335.75 K → 342.10 K (+6.35 K)** — decomposed as **+5.77 K** geometry and **+0.58 K** implementation artifact. The paper also extends the static balance to an orbit-coupled one-node transient model and quantifies the averaging-load bias (mean ≤ steady by Jensen; peak excess up to several kelvin). It is offered as cross-model verification, not validation against a flown radiator.
+
+**Archived version:** Zenodo DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720)
+
+Reproduce its numbers (requires the installed package):
+
+```bash
+python verify_paper3.py     # decomposition, Tables 1-4, the periodic identity
+```
+
+### How to cite paper three
+
+> Lee-Odinson, D. (2026). *Edge-On Geometry Raises a Public Orbital Data-Center Radiator Model's Coded Equilibrium Temperature by 6.35 K: An Exact Earth View-Factor Correction, Its Decomposition, and a Verified Orbit-Coupled Transient Extension.* Zenodo. https://doi.org/10.5281/zenodo.20695720
+
+```bibtex
+@misc{leeodinson2026edgeon,
+  author       = {Lee-Odinson, Dan},
+  title        = {Edge-On Geometry Raises a Public Orbital Data-Center
+                  Radiator Model's Coded Equilibrium Temperature by 6.35 K},
+  year         = {2026},
+  month        = jun,
+  publisher    = {Zenodo},
+  doi          = {10.5281/zenodo.20695720},
+  url          = {https://doi.org/10.5281/zenodo.20695720},
   note         = {Preprint}
 }
 ```
