@@ -7,14 +7,20 @@ transcribed from the page-cited provenance record
 expected results are the white paper's own printed values (Thermal Management,
 p. 9 of "Why we should train AI in space", v1.03, September 2024).
 
-Milestone A2 implements the AS-WRITTEN balance only: it reproduces the paper's
-633.08 W/m^2 net rejection. The spectral-separation alternative (Milestone A3)
-reuses the same :mod:`orbital_thermal.spectral_radiation` building blocks with a
-different long-wave absorptivity; it is intentionally not exposed here yet.
+Two cases are exposed:
 
-The input constants below mirror the YAML record. Per the repository's
-oracle-freeze policy, these published values are never edited to make a test
-pass; a mismatch means the code is wrong, not the paper.
+  * ``starcloud_published_balance`` (Milestone A2) -- the AS-WRITTEN balance,
+    reproducing the paper's 633.08 W/m^2 net rejection. A single absorptivity
+    (0.09) is applied to both the solar/albedo and Earth-IR bands.
+  * ``starcloud_spectral_balance`` (Milestone A3) -- a SPECTRALLY-SEPARATED
+    sensitivity case: the long-wave (Earth-IR) absorptivity is set equal to the
+    thermal emissivity per Kirchhoff's law (0.92), giving ~584.76 W/m^2. This
+    is an alternative radiative-property treatment, NOT a claim that the
+    published design is wrong.
+
+The published input constants below mirror the YAML record. Per the
+repository's oracle-freeze policy, these published values are never edited to
+make a test pass; a mismatch means the code is wrong, not the paper.
 
 This module is pure-Python (no numpy / CoolProp) and is imported explicitly,
 following the ``orbital_thermal.fluids`` convention -- it is not yet part of the
@@ -22,7 +28,7 @@ top-level package API.
 """
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import spectral_radiation as sr
 
@@ -41,7 +47,7 @@ class RadiatorCaseInputs:
     Per-field provenance status tags live in the YAML record; here every value
     is the source's published number unless a comment says otherwise. Earth
     albedo and Earth IR carry separate absorptivities so the same dataclass can
-    express both the as-written case (both 0.09) and a spectral case (A3).
+    express both the as-written case (both 0.09) and the spectral case (A3).
     """
 
     name: str
@@ -74,6 +80,38 @@ STARCLOUD_2024_PUBLISHED = RadiatorCaseInputs(
     emitting_faces=2,
     sunlit_faces=1,
     source="Lumen Orbit/Starcloud 2024 white paper v1.03, p.9",
+)
+
+
+def kirchhoff_spectral_case(
+    case: RadiatorCaseInputs, name: str | None = None, source: str | None = None
+) -> RadiatorCaseInputs:
+    """Return a copy of ``case`` with the long-wave absorptivity Kirchhoff-set.
+
+    For a gray surface, the absorptivity in a band equals the emissivity in that
+    band. The published case forces the Earth-IR (long-wave) absorptivity to the
+    SOLAR (short-wave) value; this helper instead sets it equal to the panel's
+    thermal emissivity -- the spectrally-separated screening interpretation. The
+    short-wave absorptivity (direct sun + Earth albedo) is unchanged.
+    """
+    return replace(
+        case,
+        absorptivity_earth_ir=case.emissivity_thermal,
+        name=name or f"{case.name}_spectral_separation",
+        source=source or (
+            "Spectral-separation interpretation (Kirchhoff: alpha_IR = "
+            "emissivity); alternative treatment, not the white paper's claim. "
+            f"Short-wave inputs from: {case.source}"
+        ),
+    )
+
+
+#: Spectrally-separated alternative to the published Starcloud case: identical
+#: to STARCLOUD_2024_PUBLISHED except the Earth-IR absorptivity is 0.92
+#: (= emissivity), not 0.09. Tagged ``corrected`` in the YAML record.
+STARCLOUD_2024_SPECTRAL = kirchhoff_spectral_case(
+    STARCLOUD_2024_PUBLISHED,
+    name="starcloud_2024_spectral_separation",
 )
 
 
@@ -160,3 +198,16 @@ def starcloud_published_balance(sigma: float = SIGMA_WHITEPAPER) -> HeatBalanceR
     ~0.05 W/m^2 shift from the SI-derived constant.
     """
     return radiator_heat_balance(STARCLOUD_2024_PUBLISHED, sigma=sigma)
+
+
+def starcloud_spectral_balance(sigma: float = SIGMA_WHITEPAPER) -> HeatBalanceResult:
+    """Spectrally-separated alternative: alpha_IR = emissivity = 0.92.
+
+    Milestone A3. Reproduces ~584.76 W/m^2 net. Only the Earth-IR absorptivity
+    changes from the published case (0.09 -> 0.92); the solar/albedo absorptivity
+    and every other input are the white paper's published values. This is a
+    SENSITIVITY case showing that wavelength-dependent coating properties
+    materially change the result -- NOT a claim that the published design is
+    invalid.
+    """
+    return radiator_heat_balance(STARCLOUD_2024_SPECTRAL, sigma=sigma)
