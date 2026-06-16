@@ -20,7 +20,7 @@ dependencies = ["numpy>=1.24"]
 license-files = ["LICENSE-MIT"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "CoolProp==7.2.0", "matplotlib>=3.7"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "CoolProp==7.2.0", "matplotlib>=3.7"]
 fluids = ["CoolProp==7.2.0"]
 
 [project.urls]
@@ -33,3 +33,27 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build", "dist", "external_models"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# Standalone verification scripts and figure scripts use a deliberate dense,
+# single-file style (aligned asserts, semicolon groupings, late imports after a
+# version guard). Tests carry intentionally long assertion lines. These are
+# report-only style choices, not defects, so they are silenced to keep the lint
+# signal focused on the library code under src/.
+"tests/**" = ["E501"]
+"verify_suite.py" = ["E501", "E702"]
+"verify_paper3.py" = ["E402", "E501", "E702"]
+"companion/verify_ai1.py" = ["E501", "E702"]
+"scripts/plot_*.py" = ["E501", "E702"]
+
+[tool.coverage.run]
+source = ["orbital_thermal"]
+branch = true
