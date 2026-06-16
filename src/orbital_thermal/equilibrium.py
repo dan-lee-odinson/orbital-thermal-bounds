@@ -2,7 +2,7 @@
 
 These two functions mirror the ``T_req`` and ``cap`` definitions asserted
 block-by-block in ``companion/verify_ai1.py`` for "The AI1 Design Point"
-(doi:10.5281/zenodo.20670772). They are each other's inverses, and the
+(doi:10.5281/zenodo.20670771). They are each other's inverses, and the
 smoke tests assert that round trip explicitly.
 
 Units: SI throughout. ``area`` is emitting area in m^2.

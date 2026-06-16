@@ -26,7 +26,7 @@ fluids = ["CoolProp==7.2.0"]
 [project.urls]
 Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 "Theory preprint" = "https://doi.org/10.5281/zenodo.20650893"
-"AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670772"
+"AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670771"
 
 [tool.setuptools.packages.find]
 where = ["src"]

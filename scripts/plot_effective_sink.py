@@ -14,7 +14,7 @@ import numpy as np
 from orbital_thermal import sink
 
 ALT = 550.0          # km
-PAPER_SINK = 220.0   # K, constant assumption in doi:10.5281/zenodo.20670772
+PAPER_SINK = 220.0   # K, constant assumption in doi:10.5281/zenodo.20670771
 BETAS = [0.0, 30.0, 60.0, 90.0]
 OUT = Path("results/figures/effective_sink_vs_orbit.png")
 

@@ -1,6 +1,6 @@
 """Ammonia property verification against the companion paper's NIST anchors.
 
-The companion paper (doi:10.5281/zenodo.20670772) quotes these values from
+The companion paper (doi:10.5281/zenodo.20670771) quotes these values from
 the NIST Chemistry WebBook (SRD 69) and explicitly EXCLUDES them from its
 assertion suite's verification scope. This file closes that gap: CoolProp's
 HEOS backend computes the same quantities independently, and agreement

@@ -5,7 +5,7 @@ the orbital_thermal package:
 
   Theory:    "Thermodynamic Bounds and Mass-Trade Criteria for Heat
              Rejection in Orbital Data Centers" (doi:10.5281/zenodo.20650893)
-  Companion: "The AI1 Design Point" (doi:10.5281/zenodo.20670772)
+  Companion: "The AI1 Design Point" (doi:10.5281/zenodo.20670771)
 
 Tolerance policy (documented, not incidental):
   * Exact algebraic identities -> rel=1e-12.

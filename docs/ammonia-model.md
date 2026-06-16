@@ -3,7 +3,7 @@
 ## What this is
 
 Executable thermophysical-property calculations supporting the coolant
-screen in "The AI1 Design Point" (doi:10.5281/zenodo.20670772). The paper
+screen in "The AI1 Design Point" (doi:10.5281/zenodo.20670771). The paper
 quotes ammonia properties as NIST Chemistry WebBook (SRD 69) reference
 values and excludes them from its assertion suite's verification scope.
 The `orbital_thermal.fluids` module computes the same quantities with
