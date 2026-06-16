@@ -11,11 +11,13 @@ Run from the repository root:  python scripts/plot_edge_on_geometry.py
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Circle, FancyArrowPatch, Rectangle
 
-from orbital_thermal import environment as env, mccalip_replication as mc
+from orbital_thermal import environment as env
+from orbital_thermal import mccalip_replication as mc
 
 ALT = 550.0
 OUT = Path("results/figures/edge_on_geometry.png")

@@ -23,7 +23,7 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(8.5, 5.2))
 
     colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(BETAS)))
-    for beta, c in zip(BETAS, colors):
+    for beta, c in zip(BETAS, colors, strict=False):
         u, T = sink.sink_profile(ALT, beta, tilt_deg=0.0, assume_sun_shielded=True)
         ax.plot(u, T, color=c, lw=2.2, label=f"beta = {beta:.0f} deg")
 

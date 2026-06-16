@@ -30,10 +30,10 @@ import warnings
 
 import numpy as np
 
-from .constants import SIGMA_SB
+from . import _validate as _v
 from . import environment as env
 from . import sink as sink_mod
-from . import _validate as _v
+from .constants import SIGMA_SB
 
 
 def steady_state_temperature(q_load: float, t_sink: float, emissivity: float = 0.91) -> float:
@@ -290,7 +290,7 @@ def simulate(
             f"tau={tau0:.3g} s at the zero-sink equilibrium ({T_stab:.1f} K); "
             f"explicit integration may be unstable -- increase steps_per_orbit or "
             f"areal_heat_capacity",
-            RuntimeWarning,
+            RuntimeWarning, stacklevel=2,
         )
 
     main = _converge(steps_per_orbit)
@@ -309,7 +309,7 @@ def simulate(
                f"raise max_orbits/n_orbits")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
-        warnings.warn(msg, RuntimeWarning)
+        warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
     # Temporal-accuracy gate (audit r5/r6/r7 P1): periodic closure + energy balance
     # do not certify that the timestep resolves the intra-orbit forcing, and ADJACENT
@@ -392,7 +392,7 @@ def simulate(
                f"steady state)")
         if raise_on_nonconvergence:
             raise RuntimeError(msg)
-        warnings.warn(msg, RuntimeWarning)
+        warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
     if return_diagnostics:
         diagnostics = {

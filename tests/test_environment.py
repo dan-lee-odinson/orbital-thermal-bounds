@@ -10,7 +10,6 @@ import pytest
 
 from orbital_thermal import environment as env
 
-
 # ---------------------------------------------------------------------------
 # Orbit geometry
 # ---------------------------------------------------------------------------
@@ -63,7 +62,7 @@ class TestEclipse:
 
     def test_eclipse_monotonic_decreasing_in_beta(self):
         fracs = [env.eclipse_fraction(550.0, b) for b in range(0, 70, 5)]
-        assert all(a >= b - 1e-12 for a, b in zip(fracs, fracs[1:]))
+        assert all(a >= b - 1e-12 for a, b in zip(fracs, fracs[1:], strict=False))
 
     def test_duration_matches_fraction_times_period(self):
         f = env.eclipse_fraction(550.0, 30.0)
@@ -134,7 +133,7 @@ class TestViewFactor:
 
     def test_monotonic_decreasing_in_tilt(self):
         vals = [env.sphere_view_factor(550.0, t) for t in range(0, 181, 10)]
-        assert all(a >= b - 1e-12 for a, b in zip(vals, vals[1:]))
+        assert all(a >= b - 1e-12 for a, b in zip(vals, vals[1:], strict=False))
 
     def test_tilt_out_of_range_rejected(self):
         with pytest.raises(ValueError):

@@ -143,7 +143,8 @@ def calculate_orbital(s):
     nre = s["nreCost"] * 1e6
     total = base + ops + gpu + nre
     energy_mwh = d["TARGET_POWER_MW"] * total_hours
-    array_per_sat = CONST["STARLINK_ARRAY_M2"] * (s["satellitePowerKW"] / CONST["STARLINK_POWER_KW"])
+    array_per_sat = (CONST["STARLINK_ARRAY_M2"]
+                     * (s["satellitePowerKW"] / CONST["STARLINK_POWER_KW"]))
     array_area_m2 = sat_count * array_per_sat
     return {
         "satelliteCount": sat_count,

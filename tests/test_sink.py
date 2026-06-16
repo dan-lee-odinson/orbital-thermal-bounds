@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from orbital_thermal import sink
 from orbital_thermal import environment as env
+from orbital_thermal import sink
 from orbital_thermal.constants import SIGMA_SB
 
 
@@ -47,7 +47,7 @@ class TestEffectiveSink:
             night = sink.orbital_effective_sink_temperature(550, beta, 180, tilt_deg=0, assume_sun_shielded=True)
             return noon - night
         swings = [swing(b) for b in (0, 30, 60, 90)]
-        assert all(a >= b - 1e-9 for a, b in zip(swings, swings[1:]))
+        assert all(a >= b - 1e-9 for a, b in zip(swings, swings[1:], strict=False))
         # NB swings[-1] == 0 is subpoint-approximation behavior, not physics
         # (see TestPhysicalAlbedoFacts); the trend toward smaller swing is real.
         assert swings[-1] == pytest.approx(0.0, abs=1e-9)

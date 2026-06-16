@@ -15,8 +15,8 @@ authors:
   - family-names: "Lee-Odinson"
     given-names: "Dan"
     orcid: "https://orcid.org/0009-0009-9504-0796"
-version: "1.0.0"
-date-released: "2026-06-14"
+version: "1.0.1"
+date-released: "2026-06-16"
 repository-code: "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 url: "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 license: MIT

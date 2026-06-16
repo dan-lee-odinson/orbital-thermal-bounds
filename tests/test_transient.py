@@ -10,8 +10,8 @@ import warnings
 import numpy as np
 import pytest
 
-from orbital_thermal import transient as tr
 from orbital_thermal import sink as sink_mod
+from orbital_thermal import transient as tr
 from orbital_thermal.constants import SIGMA_SB
 
 EPS = 0.91
@@ -529,7 +529,9 @@ class TestTemporalResolution:
         # The grid-free forcing certificate alone flags the ~0.12 K bias of the
         # 3-point grid, independent of the 4N convergence cap (audit r6 P1).
         import numpy as np
-        from orbital_thermal import sink as sk, environment as env
+
+        from orbital_thermal import environment as env
+        from orbital_thermal import sink as sk
         t, T, Ts = tr.simulate(550, 0, Q_LOAD, 1e10, tilt_deg=0,
                                assume_sun_shielded=True,
                                t0_guess=347.3648378530917,

@@ -10,9 +10,9 @@ Units: SI throughout. ``area`` is emitting area in m^2.
 
 import math
 
+from . import _validate as _v
 from .constants import SIGMA_SB
 from .radiation import _check
-from . import _validate as _v
 
 
 def equilibrium_temperature(

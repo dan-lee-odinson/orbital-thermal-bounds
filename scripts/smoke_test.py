@@ -14,7 +14,7 @@ from orbital_thermal import mccalip_exact_vf as mx
 from orbital_thermal import mccalip_replication as mc
 
 v = version("orbital-thermal")
-assert v == "1.0.0", f"expected orbital-thermal 1.0.0, got {v}"
+assert v == "1.0.1", f"expected orbital-thermal 1.0.1, got {v}"
 
 # AI1 primary operating point: 120 kW / 220 m^2 / eps 0.91 / 220 K sink -> 337.1 K.
 T = equilibrium_temperature(120e3, 220.0, 0.91, 220.0)

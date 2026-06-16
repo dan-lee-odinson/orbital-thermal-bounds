@@ -10,9 +10,8 @@ Conventions: temperatures in kelvin, ``eta`` is heat-engine efficiency in
 
 import math
 
-from .constants import SIGMA_SB
 from . import _validate as _v
-
+from .constants import SIGMA_SB
 
 # --------------------------------------------------------------------------
 # Theorem 1 -- sink-temperature Carnot is unattainable at finite area

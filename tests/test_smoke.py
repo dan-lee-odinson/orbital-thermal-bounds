@@ -64,8 +64,9 @@ def test_rejects_nonphysical_inputs():
 def test_version_is_single_sourced():
     # __version__ must come from the installed package metadata (pyproject),
     # not a hardcoded string that can drift (audit item 11a).
-    import orbital_thermal
     from importlib.metadata import version
+
+    import orbital_thermal
     assert orbital_thermal.__version__ == version("orbital-thermal")
 
 
@@ -74,6 +75,7 @@ def test_sigma_sb_is_binary64_si_derived():
     # exact 2019-SI defining constants -- not the truncated CODATA-printed value
     # (audit re-review P2-c).
     import math
+
     from orbital_thermal.constants import SIGMA_SB
     kB, h, c = 1.380649e-23, 6.62607015e-34, 299792458.0
     sigma_si = 2 * math.pi**5 * kB**4 / (15 * h**3 * c**2)

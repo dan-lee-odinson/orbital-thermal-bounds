@@ -6,7 +6,8 @@ public boundaries rather than silently returning NaN, a coarse value, or hanging
 
 import pytest
 
-from orbital_thermal import bounds, environment as env
+from orbital_thermal import bounds
+from orbital_thermal import environment as env
 from orbital_thermal import equilibrium as eq
 from orbital_thermal import radiation as rad
 from orbital_thermal import sink as sk

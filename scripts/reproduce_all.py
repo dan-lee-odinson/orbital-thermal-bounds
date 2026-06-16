@@ -75,7 +75,7 @@ def check_version() -> None:
     except Exception:
         print("!  orbital-thermal is not installed. Run: pip install -e .")
         return
-    flag = "" if v == "1.0.0" else "   (verify_paper3.py is pinned to 1.0.0)"
+    flag = "" if v == "1.0.1" else "   (verify_paper3.py is pinned to 1.0.1)"
     print(f"   orbital-thermal == {v}{flag}")
 
 
