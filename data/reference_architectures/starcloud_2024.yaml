@@ -1,0 +1,332 @@
+# Starcloud 2024 white-paper reference architecture — source & provenance record
+#
+# Repo target path: data/reference_architectures/starcloud_2024.yaml
+# Workstream:        Phase A (Starcloud reference architecture), Milestone A1
+# Status:            DRAFT for review — no code consumes this yet.
+#
+# Purpose
+# -------
+# A machine-readable, page-cited extraction of the thermal inputs, equations, and
+# results in the Starcloud (formerly Lumen Orbit) 2024 white paper, plus the
+# implementation brief's spectral-separation alternative. Every value carries a
+# provenance status so that published source data, derived quantities, and
+# modeller-introduced alternatives never blur together.
+#
+# This file is data only. The published heat balance is REPRODUCED in code at
+# Milestone A2; the spectral case at A3. Nothing here changes existing results.
+
+schema_version: 1
+record_id: starcloud_2024_whitepaper
+extracted_by: "Claude (Cowork) — verified against source full text"
+extracted_on: "2026-06-16"
+
+# ---------------------------------------------------------------------------
+# Source
+# ---------------------------------------------------------------------------
+source:
+  title: "Why we should train AI in space"
+  organization: "Lumen Orbit (renamed Starcloud, Inc. in 2025)"
+  authors:
+    - "Ezra Feilden, PhD"
+    - "Adi Oltean"
+    - "Philip Johnston"
+  document_type: "white paper"
+  version: "v1.03"
+  date: "2024-09"
+  url_primary: "https://starcloudinc.github.io/wp.pdf"
+  url_mirror: "https://lumenorbit.github.io/wp.pdf"
+  retrieved: "2026-06-16"
+  total_pages: 13
+  thermal_section: "Physical Architecture -> Thermal Management (pp. 8-9)"
+  # The paper prints the Stefan-Boltzmann constant ROUNDED to 5.67e-8. Reproducing
+  # its displayed values (770.48, 633.08 W/m^2) requires the same rounded constant;
+  # the full CODATA value (5.670374419e-8) shifts results by ~0.05 W/m^2. This sets
+  # the documented numerical tolerance for Milestone A2 (see verification below).
+  stefan_boltzmann_used_in_source_W_m2_K4: 5.67e-8
+  license_note: >
+    Source text is third-party copyright (Starcloud/Lumen Orbit). This record stores
+    only extracted numerical inputs, equations, and short factual descriptions for
+    reproduction and comparison (analysis/commentary). Do not vendor the PDF or long
+    verbatim passages into the MIT-licensed package.
+
+# ---------------------------------------------------------------------------
+# Provenance legend — every input/output below carries one of these tags
+# ---------------------------------------------------------------------------
+provenance_legend:
+  published: "Stated explicitly in the source white paper (page-cited)."
+  computed_in_source: "A numeric result the source computes and prints from its own inputs."
+  derived: "Computed in THIS record from published inputs; not printed in the source."
+  corrected: "Alternative interpretation proposed in the implementation brief, not the source's claim."
+  assumed: "Introduced by the brief or modeller; not in the source."
+  parametric: "Intended to be swept, not a fixed value."
+
+# ---------------------------------------------------------------------------
+# Published thermal inputs (the as-written case)
+# ---------------------------------------------------------------------------
+inputs:
+  - name: radiator_inlet_temperature
+    symbol: T_in
+    value: 308.15
+    units: K
+    display: "35 C"
+    status: published
+    source_page: 9
+    locator: "Thermal Management — 'an inlet temperature of 35C'"
+
+  - name: radiator_outlet_temperature
+    symbol: T_out
+    value: 278.15
+    units: K
+    display: "5 C"
+    status: published
+    source_page: 9
+    locator: "Thermal Management — 'outlet temperature of 5C'"
+
+  - name: radiator_mean_temperature
+    symbol: T_rad
+    value: 293.15
+    units: K
+    display: "20 C"
+    status: published
+    source_page: 9
+    locator: "Thermal Management — 'average radiator temperature of around 20C'; used in P_emitted"
+
+  - name: emissivity_thermal
+    symbol: epsilon
+    value: 0.92
+    units: dimensionless
+    status: published
+    source_page: 9
+    locator: "P_emitted equation; 'Assuming an emissivity of 0.92' (ref 21: NASA NTRS 19840015630)"
+
+  - name: absorptivity_solar
+    symbol: alpha_solar
+    value: 0.09
+    units: dimensionless
+    status: published
+    source_page: 9
+    locator: "P_absorbed_sun and P_absorbed_from_Earth; 'an absorptivity of 0.09' (ref 21)"
+
+  - name: absorptivity_earth_ir
+    symbol: alpha_earth_ir
+    value: 0.09
+    units: dimensionless
+    status: published
+    source_page: 9
+    locator: >
+      Source applies the SAME alpha=0.09 to both Earth albedo and Earth blackbody IR
+      inside alpha*F*(Al*S + sigma*T_earth^4). This single-absorptivity treatment is
+      exactly what the spectral-separation case (below) stress-tests.
+
+  - name: earth_view_factor
+    symbol: F
+    value: 0.25
+    units: dimensionless
+    status: published
+    source_page: 9
+    locator: "P_absorbed_from_Earth; 'a view factor of 0.25'"
+
+  - name: earth_albedo
+    symbol: Al
+    value: 0.30
+    units: dimensionless
+    status: published
+    source_page: 9
+    locator: "P_absorbed_from_Earth; \"Earth's albedo of 0.3\""
+
+  - name: solar_irradiance
+    symbol: S
+    value: 1366.0
+    units: W/m^2
+    status: published
+    source_page: 9
+    locator: "P_absorbed_from_Earth / P_absorbed_sun; 'solar irradiance of 1366 W/m2'"
+
+  - name: earth_effective_temperature
+    symbol: T_earth
+    value: 253.15
+    units: K
+    display: "-20 C"
+    status: published
+    source_page: 9
+    locator: "Written as (273.15 - 20); \"Earth's blackbody temperature of -20C\""
+
+  - name: emitting_faces
+    value: 2
+    units: count
+    status: published
+    source_page: 9
+    locator: "'2 * 385.24 = 770.48 W (from both sides of the plate)'"
+
+  - name: sunlit_faces
+    value: 1
+    units: count
+    status: published
+    source_page: 8
+    locator: "'positioned in-line with the solar arrays ... with one side exposed to sunlight'"
+
+# ---------------------------------------------------------------------------
+# Spectral-separation alternative (implementation brief, NOT the source's claim)
+# ---------------------------------------------------------------------------
+spectral_separation_inputs:
+  rationale: >
+    For a spectrally selective radiator coating, absorptivity to reflected SOLAR
+    (short-wave) and to Earth's THERMAL-IR (long-wave) are generally different. A
+    Kirchhoff-consistent screening interpretation sets thermal-IR absorptivity equal
+    to thermal emissivity. This is a sensitivity case, NOT a claim the paper is wrong.
+  inputs:
+    - name: absorptivity_solar
+      value: 0.09
+      units: dimensionless
+      status: published
+      note: "Unchanged from source (applies to direct sun and Earth albedo)."
+    - name: absorptivity_earth_ir
+      value: 0.92
+      units: dimensionless
+      status: corrected
+      note: "Set alpha_IR = emissivity = 0.92 (Kirchhoff). Replaces source's 0.09 for the IR term only."
+
+# ---------------------------------------------------------------------------
+# Equations as written in the source (page 9)
+# ---------------------------------------------------------------------------
+equations_as_written:
+  emitted_per_side: "P = epsilon * sigma * T_rad^4            # one side"
+  emitted_two_sided: "q_emit = 2 * epsilon * sigma * T_rad^4"
+  solar_absorbed: "q_sun = alpha_solar * S                     # one sunlit side"
+  earth_absorbed_published: "q_earth = alpha * F * (Al*S + sigma*T_earth^4)   # single alpha=0.09"
+  net_rejection: "q_net = q_emit - q_sun - q_earth"
+  earth_albedo_separated: "q_albedo = alpha_solar * F * Al * S"
+  earth_ir_separated: "q_earth_ir = alpha_earth_ir * F * sigma * T_earth^4"
+  net_rejection_separated: "q_net = q_emit - q_sun - (q_albedo + q_earth_ir)"
+
+# ---------------------------------------------------------------------------
+# Expected outputs (reproduction targets) — verified 2026-06-16 with rounded sigma
+# ---------------------------------------------------------------------------
+expected_outputs:
+  published_balance:
+    emitted_one_side_W_m2: {value: 385.24, status: computed_in_source, source_page: 9}
+    emitted_two_sided_W_m2: {value: 770.48, status: computed_in_source, source_page: 9}
+    solar_absorbed_W_m2: {value: 122.94, status: computed_in_source, source_page: 9}
+    earth_absorbed_W_m2: {value: 14.46, status: computed_in_source, source_page: 9}
+    net_rejection_W_m2: {value: 633.08, status: computed_in_source, source_page: 9}
+
+  spectral_separation:
+    earth_albedo_absorbed_W_m2: {value: 9.22, status: corrected}
+    earth_ir_absorbed_W_m2: {value: 53.56, status: corrected}
+    earth_combined_W_m2: {value: 62.78, status: corrected}
+    net_rejection_W_m2: {value: 584.76, status: corrected}
+
+  area_checks:
+    # Required planform area = heat_load / net_rejection. NOT printed in the source.
+    # 120 kW is the source's per-rack power density (p.11, GB200 NVL72); 150 kW is a
+    # forward projection (assumed). Area results are derived in this record.
+    heat_load_120kW_status: published    # p.11, "power density of 120 kW per rack"
+    heat_load_150kW_status: assumed      # forward projection, not in source
+    cases:
+      - {heat_load_kW: 120, basis: published_net, net_W_m2: 633.08, area_m2: 189.55, status: derived}
+      - {heat_load_kW: 150, basis: published_net, net_W_m2: 633.08, area_m2: 236.94, status: derived}
+      - {heat_load_kW: 120, basis: spectral_net, net_W_m2: 584.76, area_m2: 205.21, status: derived}
+      - {heat_load_kW: 150, basis: spectral_net, net_W_m2: 584.76, area_m2: 256.52, status: derived}
+
+  cross_check_statement_page_3:
+    text: "'A 1m x 1m black plate kept at 20C will radiate about 838 watts ... (radiating from both sides)'"
+    value_W: 838
+    status: published
+    source_page: 3
+    note: >
+      This uses an effective emissivity ~1 (black plate): 2*sigma*293.15^4 ~= 837.5 W.
+      It is NOT the same as the p.9 epsilon=0.92 result (770.48 W). Kept as a separate,
+      labelled cross-check so the two are never conflated.
+
+# ---------------------------------------------------------------------------
+# Numerical tolerance (for Milestone A2 / A3 verification)
+# ---------------------------------------------------------------------------
+verification:
+  reproduced_on: "2026-06-16"
+  method: "Independent recomputation from inputs above."
+  with_rounded_sigma_5p67e-8:
+    emitted_two_sided_W_m2: 770.48
+    earth_absorbed_W_m2: 14.46
+    solar_absorbed_W_m2: 122.94
+    net_published_W_m2: 633.08
+    net_spectral_W_m2: 584.76
+    areas_m2: [189.55, 236.94, 205.21, 256.52]
+    result: "Exact match to source-printed values and brief targets."
+  with_codata_sigma_5p670374419e-8:
+    emitted_two_sided_W_m2: 770.53
+    net_published_W_m2: 633.13
+    net_spectral_W_m2: 584.81
+    result: "Differs by ~0.05 W/m^2 from source — attributable solely to the rounded constant."
+  recommended_tolerance:
+    absolute_W_m2: 0.1
+    note: "Covers the rounded-sigma discrepancy with margin; tighten to 0.01 when matching the rounded constant explicitly."
+
+# ---------------------------------------------------------------------------
+# Qualitative architecture (descriptive, for the comparison narrative — pp. 8-10)
+# ---------------------------------------------------------------------------
+architecture_qualitative:
+  status: published
+  orbit: "Low-Earth dawn-dusk sun-synchronous orbit (SSO); near-continuous illumination (p.10)"
+  radiator_placement: "In-line with solar arrays, one side exposed to direct sunlight (p.8)"
+  cooling_loops: "Several cooling loops; two-phase systems 'where practical' to cut mass flow / pumping losses (p.8)"
+  chip_cooling: "Direct-to-chip liquid cooling or two-phase immersion cooling (p.8)"
+  inert_atmosphere_option: "Modules may be pressurized with inert atmosphere for forced-convective cooling of non-liquid-cooled parts (p.8)"
+  modularity: "Replaceable, dockable compute containers; shared structural spine carrying power/network/cooling (pp.5-6, 8)"
+  radiator_scale: "Lightweight deployable radiators, 'by far the largest radiators deployed in space' (p.8)"
+  heat_pump_note: "Workable without heat pumps; heat pumps could raise radiator T and dramatically increase W/m^2 via T^4, at added power cost (p.9)"
+
+# ---------------------------------------------------------------------------
+# Unknowns that MUST remain unknown (brief section 6) — never invent these
+# ---------------------------------------------------------------------------
+unknowns:
+  status: unknown_or_parametric
+  items:
+    - coolant_identity
+    - coolant_saturation_temperature
+    - coolant_pressure
+    - mass_flow_rate
+    - pump_efficiency
+    - pump_power
+    - pipe_diameter
+    - pipe_length
+    - pressure_drop
+    - heat_exchanger_effectiveness
+    - radiator_areal_density
+    - radiator_total_mass
+    - coolant_inventory
+    - chip_to_radiator_temperature_drop
+    - heat_pump_cop
+    - failure_tolerance
+    - two_phase_loop_control_method
+    - thermal_expansion_and_deployment_constraints
+  handling: "Represent as unknown, parametric, sensitivity range, or future-data requirement. Do not assign point values."
+
+# ---------------------------------------------------------------------------
+# Scope language (must accompany any public output — brief section 15)
+# ---------------------------------------------------------------------------
+scope_language:
+  reproduction: >
+    This analysis reproduces and stress-tests a public concept-level thermal balance.
+    It does not evaluate Starcloud's private engineering design, detailed loop
+    architecture, deployable-radiator mass, controls, or hardware performance.
+  spectral_case: >
+    The spectral-separation case is an alternative radiative-property treatment, not a
+    claim that the published design is invalid.
+  comparison: >
+    The comparison identifies temperature-area tradeoffs under public assumptions; it
+    does not establish total-system superiority.
+  forbidden_phrasings:
+    - "Starcloud is wrong"
+    - "AI1 is better"
+    - "Starcloud is more efficient"
+    - "This disproves the white paper"
+    - "The architecture is infeasible"
+
+# ---------------------------------------------------------------------------
+# Open items for maintainer review before Milestone A2
+# ---------------------------------------------------------------------------
+review_notes:
+  - "Confirm 150 kW heat-load case should be tagged 'assumed' (forward projection), not published."
+  - "Confirm the page-3 '838 W' black-plate figure is kept only as a labelled cross-check, separate from the epsilon=0.92 balance."
+  - "Confirm recommended absolute tolerance of 0.1 W/m^2 for A2 (or tighten to 0.01 with the rounded constant)."
+  - "Decide final key naming to match existing repo data conventions (snake_case here; align with any existing YAML schema in the repo)."
