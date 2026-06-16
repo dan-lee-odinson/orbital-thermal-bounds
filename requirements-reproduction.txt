@@ -1,0 +1,17 @@
+# Frozen environment for reproducing orbital-thermal-bounds v1.0.0.
+#
+# Usage:
+#   python -m venv .venv && source .venv/bin/activate
+#   pip install -r requirements-reproduction.txt
+#   pip install -e .          # or: pip install ./orbital_thermal-1.0.0-py3-none-any.whl
+#   python scripts/reproduce_all.py
+#
+# Python 3.10-3.12 (the CI matrix). The versions below are the exact set verified
+# on 2026-06-15. CoolProp is pinned by the project itself; it and matplotlib are
+# only needed for the ammonia table and the figures respectively. The
+# orbital-thermal package is installed separately (editable tree or release
+# wheel), so it is intentionally not listed here.
+numpy==2.2.6
+CoolProp==7.2.0
+matplotlib==3.10.9
+pytest==9.1.0
