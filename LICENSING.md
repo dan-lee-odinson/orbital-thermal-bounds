@@ -21,7 +21,7 @@ declares **MIT** and ships only the software license (`LICENSE-MIT`).
 - `results/figures/`, `results/tables/`
 
 This matches the published preprints (doi:10.5281/zenodo.20650893 and
-doi:10.5281/zenodo.20670772).
+doi:10.5281/zenodo.20670771).
 
 ## Vendored third-party -- upstream MIT
 

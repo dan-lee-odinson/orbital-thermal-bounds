@@ -2,7 +2,7 @@
 orbital-thermal-bounds radiator model.
 
 Theory preprint:  doi:10.5281/zenodo.20650893
-AI1 companion:    doi:10.5281/zenodo.20670772
+AI1 companion:    doi:10.5281/zenodo.20670771
 
 Note: the top-level ``effective_sink_temperature`` (from :mod:`radiation`) is the
 generic lumped view-factor sink T_s^eff = F^(1/4) T_s. The orbit-resolved,

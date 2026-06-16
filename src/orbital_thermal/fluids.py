@@ -1,7 +1,7 @@
 """Executable thermophysical-property checks for the AI1 coolant screen.
 
 Computes the ammonia properties that the companion paper ("The AI1 Design
-Point", doi:10.5281/zenodo.20670772) quotes as NIST Chemistry WebBook
+Point", doi:10.5281/zenodo.20670771) quotes as NIST Chemistry WebBook
 reference values: critical point, saturation pressures at the modeled
 radiator-surface temperatures, and phase state. With this module the
 properties are CALCULATED rather than transcribed, upgrading the paper's
