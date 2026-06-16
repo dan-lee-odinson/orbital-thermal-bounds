@@ -2,27 +2,30 @@
 
 Recomputes the headline view-factor decomposition, the three equilibrium balances,
 the sampled beta-correction table (Table 3), the periodic fourth-power identity,
-and the displayed transient-bias rows (Table 4) from orbital-thermal==1.0.0. The
+and the displayed transient-bias rows (Table 4) from orbital-thermal==1.0.1. The
 McCalip Node-oracle freeze and the broader package claims are verified separately
 by the package test suite.
 
 Run from the repository root:  python verify_paper3.py
 Expected final line: "All paper-3 assertions pass."
 """
-from importlib.metadata import version
 import math
+from importlib.metadata import version
+
 import numpy as np
 
-# Pinned for archival reproduction. orbital-thermal v1.0.0 corresponds to repo
-# commit 322fc44db8dc175450ac2e9eb918fe3a1758b2b1 (tag v1.0.0).
-REQUIRED_VERSION = "1.0.0"
+# Pinned for archival reproduction. v1.0.1 is a lint-only cleanup, numerically
+# identical to the v1.0.0 audit-closed release; both reproduce the values below.
+REQUIRED_VERSION = "1.0.1"
 _installed = version("orbital-thermal")
 assert _installed == REQUIRED_VERSION, (
     f"verify_paper3.py is pinned to orbital-thermal=={REQUIRED_VERSION}; "
     f"found {_installed}. Install the pinned release to reproduce.")
 
-from orbital_thermal import (mccalip_replication as mc, mccalip_exact_vf as mx,
-                             environment as env, transient as tr)
+from orbital_thermal import environment as env
+from orbital_thermal import mccalip_exact_vf as mx
+from orbital_thermal import mccalip_replication as mc
+from orbital_thermal import transient as tr
 from orbital_thermal.constants import SIGMA_SB
 
 ALT, EPS = 550.0, 0.91

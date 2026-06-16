@@ -11,6 +11,9 @@ attitude-aware sink is :func:`orbital_thermal.sink.orbital_effective_sink_temper
 different signatures and contracts; see audit re-review P2-9.
 """
 
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
 from .bounds import (
     carnot_cop_cooling,
     conversion_area_penalty,
@@ -31,8 +34,6 @@ from .radiation import (
     net_flux,
     required_area,
 )
-
-from importlib.metadata import PackageNotFoundError, version as _version
 
 try:
     __version__ = _version("orbital-thermal")

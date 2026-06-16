@@ -41,7 +41,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" numpy
       - name: Run tests with coverage
-        run: pytest --cov=orbital_thermal --cov-report=term-missing --cov-report=xml
+        run: pytest --cov=orbital_thermal --cov-report=term-missing --cov-report=xml --cov-fail-under=90
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:

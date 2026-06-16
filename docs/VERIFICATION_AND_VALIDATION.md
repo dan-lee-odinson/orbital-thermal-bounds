@@ -33,7 +33,7 @@ AI-assisted adversarial technical review with independent computer-algebra check
 | Ammonia coolant screen | CoolProp 7.2.0 (pinned) | Property regression vs pinned backend | Property-source verified | Not a loop/pressure design model |
 | AI1 design-point analysis | Public reported parameters | Reproducible reduced-order analysis | **Not hardware validated** | Private design data unavailable |
 
-Each row's evidence is reproducible from the repository at release `v1.0.0`; see the
+Each row's evidence is reproducible from the repository at release `v1.0.1`; see the
 verification scripts and the test suite.
 
 ## Applicability

@@ -7,6 +7,24 @@ All notable changes to this project are documented here. The format follows
 Scope note: entries describe the **software package** (`orbital_thermal`) and the
 repository. The three preprints have their own Zenodo DOIs (see the README).
 
+## [1.0.1] — 2026-06-16
+
+Maintenance release. No functional, numerical, or API changes; every published
+number and all 259 tests are identical to 1.0.0.
+
+### Changed
+- Resolved all Ruff lint findings in the library, tests, and verification
+  scripts (import ordering, explicit `zip(..., strict=False)`, `warnings.warn`
+  `stacklevel`, one wrapped long line, one unused test variable). Behavior is
+  unchanged; the cleanup is style-only.
+- Enriched package metadata: added the Zenodo software-archive DOI and the full
+  set of project URLs (documentation, changelog, issues, all three preprints),
+  plus PyPI keywords and trove classifiers.
+- First release published to PyPI (`pip install orbital-thermal`) via GitHub
+  Actions Trusted Publishing.
+
+[1.0.1]: https://github.com/dan-lee-odinson/orbital-thermal-bounds/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-06-14
 
 First stable, audit-closed release of the `orbital_thermal` reduced-order radiator

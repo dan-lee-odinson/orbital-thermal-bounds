@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orbital-thermal"
-version = "1.0.0"
+version = "1.0.1"
 description = "Executable reference implementation of the orbital-thermal-bounds radiator model (Lee-Odinson, 2026)"
 authors = [{ name = "Dan Lee-Odinson", email = "dan.lee.odinson@gmail.com" }]
 readme = "README.md"
@@ -15,6 +15,24 @@ license = "MIT"
 # extras add CoolProp (the [fluids] ammonia checks) and matplotlib (figure
 # scripts); both are also pulled in by [dev].
 dependencies = ["numpy>=1.24"]
+keywords = [
+    "orbital thermal modeling",
+    "radiator analysis",
+    "space data centers",
+    "view factor",
+    "reduced-order model",
+    "reproducible research",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
 # PEP 639: SPDX license expression above; ship only the software license. The
 # CC BY 4.0 docs license is a separate component (see LICENSING.md).
 license-files = ["LICENSE-MIT"]
@@ -24,9 +42,15 @@ dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "CoolProp==7.2.0", "matplotlib
 fluids = ["CoolProp==7.2.0"]
 
 [project.urls]
+Homepage = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
 Repository = "https://github.com/dan-lee-odinson/orbital-thermal-bounds"
+Documentation = "https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki"
+Changelog = "https://github.com/dan-lee-odinson/orbital-thermal-bounds/blob/main/CHANGELOG.md"
+Issues = "https://github.com/dan-lee-odinson/orbital-thermal-bounds/issues"
+"Software archive (Zenodo)" = "https://doi.org/10.5281/zenodo.20709241"
 "Theory preprint" = "https://doi.org/10.5281/zenodo.20650893"
 "AI1 companion preprint" = "https://doi.org/10.5281/zenodo.20670771"
+"Edge-on correction preprint" = "https://doi.org/10.5281/zenodo.20695720"
 
 [tool.setuptools.packages.find]
 where = ["src"]

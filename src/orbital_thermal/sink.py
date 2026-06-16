@@ -49,9 +49,8 @@ import warnings
 import numpy as np
 
 from . import _validate as _v
-
-from .constants import SIGMA_SB
 from . import environment as env
+from .constants import SIGMA_SB
 
 #: Default deep-space background temperature, K (CMB).
 T_SPACE_K: float = 2.7255
@@ -417,6 +416,6 @@ def orbit_averaged_sink(
             f"orbit_averaged_sink at n={n} differs from the exact orbit mean by "
             f"{abs(avg - exact):.3g} K; the grid is too coarse to resolve the "
             f"albedo forcing -- increase n (or use analytic_orbit_averaged_sink)",
-            RuntimeWarning,
+            RuntimeWarning, stacklevel=2,
         )
     return avg

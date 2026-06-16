@@ -2,7 +2,7 @@
 
 # Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers
 [![tests](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml)
-![version](https://img.shields.io/badge/version-1.0.0-blue)
+![version](https://img.shields.io/badge/version-1.0.1-blue)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![license](https://img.shields.io/badge/code-MIT-green)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20709241.svg)](https://doi.org/10.5281/zenodo.20709241)
@@ -32,7 +32,7 @@
 pip install -e ".[fluids]"   # editable dev install; "[fluids]" adds the optional CoolProp coolant screen
 ```
 
-Stable release: download the wheel from the [v1.0.0 release](https://github.com/dan-lee-odinson/orbital-thermal-bounds/releases) and `pip install orbital_thermal-1.0.0-py3-none-any.whl`. Full instructions: **[Wiki → Installation](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Installation)**.
+Stable releases are published to PyPI: `pip install orbital-thermal`. PyPI always holds the stable release; the GitHub `main` branch may contain later development. You can also download a wheel from the [Releases page](https://github.com/dan-lee-odinson/orbital-thermal-bounds/releases). Full instructions: **[Wiki → Installation](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Installation)**.
 
 ### My role
 
@@ -92,7 +92,7 @@ Exact edge-on per-face view factor     0.257772825310
 
 This is a headline contribution, not a caveat: his replicated result is reproduced to floating-point roundoff, and the shift comes entirely from the view factor. The +6.35 K is the correction to the public code *as executed*; it decomposes into **+5.77 K** of model-form geometry (relative to the model's intended 5%-of-nadir floor) and **+0.58 K** of a floating-point `cos(90°)` branch artifact in the orbit average. The correction is positive at every sampled β and largest at the edge-on default.
 
-This result, its decomposition, and an orbit-coupled transient extension are written up as a standalone preprint (paper three) in this repository: **[`orbital-thermal-edge-on-correction.pdf`](orbital-thermal-edge-on-correction.pdf)**, DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720). Its numbers are reproduced by [`verify_paper3.py`](verify_paper3.py) against `orbital-thermal==1.0.0`.
+This result, its decomposition, and an orbit-coupled transient extension are written up as a standalone preprint (paper three) in this repository: **[`orbital-thermal-edge-on-correction.pdf`](orbital-thermal-edge-on-correction.pdf)**, DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720). Its numbers are reproduced by [`verify_paper3.py`](verify_paper3.py) against `orbital-thermal==1.0.1`.
 
 ### Install
 

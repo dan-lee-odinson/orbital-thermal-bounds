@@ -23,9 +23,9 @@ which reproduces his number exactly when fed his own view factors).
 
 import math
 
+from . import _validate as _v
 from . import environment as env
 from . import mccalip_replication as mc
-from . import _validate as _v
 
 
 def exact_per_face_view_factors(altitude_km, beta_deg, n=72):

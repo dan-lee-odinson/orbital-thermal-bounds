@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from orbital_thermal import mccalip_replication as mc
 from orbital_thermal import environment as env
+from orbital_thermal import mccalip_replication as mc
 from orbital_thermal.constants import SIGMA_SB
 
 ORACLE_PATH = (Path(__file__).resolve().parents[1]
@@ -80,7 +80,7 @@ class TestVerificationGap:
         assert mc.SIGMA == pytest.approx(SIGMA_SB, rel=1e-3)
 
     def test_tilted_vf_approximation_departs_from_exact(self):
-        alt, tilt = 550.0, 90.0
+        alt = 550.0
         approx = mc._tilted_vf_from_cos(alt, 0.0)
         exact = env.sphere_view_factor(alt, 90.0)
         assert abs(approx - exact) > 0.10

@@ -165,7 +165,7 @@ def sphere_view_factor(altitude_km: float, tilt_deg: float) -> float:
     cand = {abs(np.pi / 2 - g), np.pi / 2 + g}
     knots = sorted({0.0, theta} | {k for k in cand if 0.0 < k < theta})
     total = 0.0
-    for lo, hi in zip(knots[:-1], knots[1:]):
+    for lo, hi in zip(knots[:-1], knots[1:], strict=False):
         mid, half = 0.5 * (hi + lo), 0.5 * (hi - lo)
         nodes = mid + half * _GL_X
         vals = np.array([_vf_ring(p, cg, sg) for p in nodes])

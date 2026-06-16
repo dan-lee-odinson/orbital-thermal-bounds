@@ -25,7 +25,7 @@ def main() -> None:
     colors = plt.cm.plasma(np.linspace(0.15, 0.8, len(CAPACITIES)))
 
     steady = None
-    for C, c in zip(CAPACITIES, colors):
+    for C, c in zip(CAPACITIES, colors, strict=False):
         t, T, Ts = tr.simulate(ALT, BETA, Q_LOAD, C, tilt_deg=0.0, assume_sun_shielded=True,
                                n_orbits=40, steps_per_orbit=1440)
         b = tr.averaging_bias(ALT, BETA, Q_LOAD, C, tilt_deg=0.0, assume_sun_shielded=True,

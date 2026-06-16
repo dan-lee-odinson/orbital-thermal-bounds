@@ -22,4 +22,4 @@ Please do not open a public issue for a sensitive security report.
 
 ## Supported versions
 
-Security-relevant fixes target the latest release (currently `v1.0.0`) and `main`.
+Security-relevant fixes target the latest release (currently `v1.0.1`) and `main`.
