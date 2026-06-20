@@ -136,25 +136,37 @@ def harmonized_environment(
 class HarmonizedBalance:
     """Harmonized per-planform heat balance for one architecture at one beta.
 
-    ``earth_albedo_absorbed_W_m2`` and ``direct_solar_absorbed_W_m2`` are
-    ``None`` when they would require an unpublished absorptivity (AI1). Earth IR
-    and emission never need the short-wave absorptivity, so
-    ``net_excluding_albedo_W_m2`` is always available; ``net_rejection_W_m2`` is
-    ``None`` when any required absorbed term is unpublished.
+    Two policies govern what is REPORTABLE:
+
+    * **No-invention.** An unpublished short-wave absorptivity (AI1) leaves the
+      albedo and any direct-solar term unresolved at EVERY beta -- including
+      beta = 90 deg. ``net_excluding_albedo_W_m2`` (which needs only emissivity)
+      stays available.
+    * **Model-limitation precedence.** Where the absorptivity IS known, the raw
+      sub-point-model albedo is still computed and exposed as
+      ``earth_albedo_model_W_m2`` / ``net_rejection_model_W_m2`` (useful for
+      figures), but it is NOT reportable as a validated load wherever the
+      sub-point albedo model nulls (``albedo_model_limited``, e.g. beta -> 90).
+      There, the reportable ``earth_albedo_absorbed_W_m2`` and
+      ``net_rejection_W_m2`` are ``None`` -- a model-limited 0.0 is never
+      published as a physical environmental load.
     """
 
     architecture: str
     beta_deg: float
     radiator_temperature_K: float
     emissivity: float
-    solar_absorptivity: object          # float or NOT_PUBLISHED
+    solar_absorptivity: object           # float or NOT_PUBLISHED
     sunlit_faces: int
     emitted_W_m2: float
-    direct_solar_absorbed_W_m2: object  # float or None
-    earth_albedo_absorbed_W_m2: object  # float or None
+    direct_solar_absorbed_W_m2: object   # float or None (None if sunlit & unpublished alpha)
     earth_ir_absorbed_W_m2: float
-    net_excluding_albedo_W_m2: object   # float or None
-    net_rejection_W_m2: object          # float or None
+    earth_albedo_absorbed_W_m2: object   # REPORTABLE: None if unpublished alpha OR model-limited
+    earth_albedo_model_W_m2: object      # raw sub-point-model albedo (None iff unpublished alpha)
+    albedo_model_limited: bool
+    net_excluding_albedo_W_m2: object    # float or None (None if direct unresolved)
+    net_rejection_W_m2: object           # REPORTABLE full net: None if albedo not reportable
+    net_rejection_model_W_m2: object     # full net using the raw model albedo (for figures)
     notes: str
 
 
@@ -177,7 +189,8 @@ def harmonized_balance(
     emitted = sr.emitted_flux(radiator_temperature_K, emissivity, SIGMA_SB, faces=2)
     earth_ir = emissivity * e.view_factor * e.earth_ir_flux_W_m2
 
-    # Direct solar: zero if shielded, regardless of absorptivity; otherwise needs it.
+    # Direct solar: zero if shielded, regardless of absorptivity; otherwise it
+    # needs the (short-wave) solar absorptivity.
     if sunlit_faces == 0:
         direct = 0.0
     elif solar_absorptivity is NOT_PUBLISHED:
@@ -185,22 +198,28 @@ def harmonized_balance(
     else:
         direct = sr.solar_absorbed_flux(solar_absorptivity, e.solar_constant_W_m2, sunlit_faces)
 
-    # Albedo (reflected sunlight): zero where the orbit-mean albedo collapses
-    # (the albedo-limited regime, e.g. beta->90 where cos(beta) ~ 1e-17),
-    # regardless of absorptivity; otherwise it needs the short-wave value.
-    if e.albedo_model_limited:
-        albedo = 0.0
-    elif solar_absorptivity is NOT_PUBLISHED:
+    # Albedo (reflected sunlight). The no-invention policy comes FIRST: an
+    # unpublished short-wave absorptivity leaves albedo unresolved at every beta,
+    # including beta = 90 deg. Where the absorptivity is known we compute the raw
+    # sub-point-model albedo (exposed for figures), but it is NOT reportable where
+    # the model nulls (albedo_model_limited) -- a model artifact is never published
+    # as a physical zero load.
+    if solar_absorptivity is NOT_PUBLISHED:
+        albedo_model = None
         albedo = None
     else:
-        albedo = (
+        albedo_model = (
             sr.earth_albedo_absorbed_flux(
                 solar_absorptivity, e.view_factor, e.earth_albedo, e.solar_constant_W_m2
             )
             * e.albedo_factor_mean
         )
+        albedo = None if e.albedo_model_limited else albedo_model
 
     net_excl = None if direct is None else emitted - direct - earth_ir
+    net_model = (
+        None if (net_excl is None or albedo_model is None) else net_excl - albedo_model
+    )
     net = None if (net_excl is None or albedo is None) else net_excl - albedo
 
     return HarmonizedBalance(
@@ -212,10 +231,13 @@ def harmonized_balance(
         sunlit_faces=sunlit_faces,
         emitted_W_m2=emitted,
         direct_solar_absorbed_W_m2=direct,
-        earth_albedo_absorbed_W_m2=albedo,
         earth_ir_absorbed_W_m2=earth_ir,
+        earth_albedo_absorbed_W_m2=albedo,
+        earth_albedo_model_W_m2=albedo_model,
+        albedo_model_limited=e.albedo_model_limited,
         net_excluding_albedo_W_m2=net_excl,
         net_rejection_W_m2=net,
+        net_rejection_model_W_m2=net_model,
         notes=notes,
     )
 

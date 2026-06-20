@@ -24,6 +24,7 @@ from orbital_thermal.architecture_comparison import AI1_DESIGN_POINT
 from orbital_thermal.constants import SIGMA_SB
 from orbital_thermal.harmonized_comparison import (
     HARMONIZED_TILT_DEG,
+    ai1_harmonized_balance,
     harmonized_environment,
     starcloud_harmonized_balance,
 )
@@ -121,17 +122,20 @@ def plot3(outdir):
 
 
 def plot4(outdir):
-    cases = ["Published", "Spectral", "Harmonized\nshielded b90", "Harmonized\nsunlit b90"]
+    cases = ["Published", "Spectral", "Harmonized shielded\n(b90, model-limited*)",
+             "Harmonized sunlit\n(b90, model-limited*)"]
     h0 = starcloud_harmonized_balance(90, sunlit_faces=0, warn=False)
     h1 = starcloud_harmonized_balance(90, sunlit_faces=1, warn=False)
+    # At beta=90 the harmonized albedo is model-limited (reportable None); use the
+    # raw *_model fields for display and flag them with an asterisk in the caption.
     solar = [PUB.direct_solar_absorbed_W_m2, SPEC.direct_solar_absorbed_W_m2, 0.0,
              h1.direct_solar_absorbed_W_m2]
     albedo = [PUB.earth_albedo_absorbed_W_m2, SPEC.earth_albedo_absorbed_W_m2,
-              h0.earth_albedo_absorbed_W_m2, h1.earth_albedo_absorbed_W_m2]
+              h0.earth_albedo_model_W_m2, h1.earth_albedo_model_W_m2]
     ir = [PUB.earth_ir_absorbed_W_m2, SPEC.earth_ir_absorbed_W_m2,
           h0.earth_ir_absorbed_W_m2, h1.earth_ir_absorbed_W_m2]
-    net = [PUB.net_rejection_W_m2, SPEC.net_rejection_W_m2, h0.net_rejection_W_m2,
-           h1.net_rejection_W_m2]
+    net = [PUB.net_rejection_W_m2, SPEC.net_rejection_W_m2, h0.net_rejection_model_W_m2,
+           h1.net_rejection_model_W_m2]
     x = np.arange(len(cases))
     w = 0.2
     fig, ax = plt.subplots(figsize=(8, 4.6))
@@ -145,16 +149,19 @@ def plot4(outdir):
     ax.set_title("Plot 4 - Environmental-load decomposition (radiator at 20 C)")
     ax.legend(fontsize=8)
     ax.grid(alpha=0.3, axis="y")
+    ax.text(0.0, -0.22, "* beta=90 harmonized albedo is model-limited (sub-point model "
+            "nulls); raw model values shown, not reportable as a physical load.",
+            transform=ax.transAxes, fontsize=7, color="#555555")
     _save(fig, outdir, "plot4_load_decomposition.png")
 
 
 def plot5(outdir):
     h0 = starcloud_harmonized_balance(90, sunlit_faces=0, warn=False)
     h1 = starcloud_harmonized_balance(90, sunlit_faces=1, warn=False)
-    labels = ["Published\n633.08", "Spectral\n584.76", "Harmonized\nsunlit b90",
-              "Harmonized\nshielded b90"]
-    nets = [PUB.net_rejection_W_m2, SPEC.net_rejection_W_m2, h1.net_rejection_W_m2,
-            h0.net_rejection_W_m2]
+    labels = ["Published\n633.08", "Spectral\n584.76",
+              "Harmonized sunlit\n(b90, model*)", "Harmonized shielded\n(b90, model*)"]
+    nets = [PUB.net_rejection_W_m2, SPEC.net_rejection_W_m2,
+            h1.net_rejection_model_W_m2, h0.net_rejection_model_W_m2]
     fig, ax = plt.subplots(figsize=(7.5, 4.6))
     bars = ax.bar(labels, nets, color=[COL["pub"], COL["spec"], COL["harm"], "#8c564b"])
     for b, v in zip(bars, nets, strict=False):
@@ -162,7 +169,57 @@ def plot5(outdir):
     ax.set_ylabel("Net rejection per planform at 20 C (W/m^2)")
     ax.set_title("Plot 5 - As-published vs harmonized (Starcloud, 293.15 K)")
     ax.grid(alpha=0.3, axis="y")
+    ax.text(0.0, -0.16, "* beta=90 harmonized net uses the raw model albedo "
+            "(model-limited; reportable net is None at the endpoint).",
+            transform=ax.transAxes, fontsize=7, color="#555555")
     _save(fig, outdir, "plot5_published_vs_harmonized.png")
+
+
+def plot6(outdir):
+    """Beta sweep: Earth albedo (model) and IR vs beta, and net rejection vs beta.
+
+    The dawn-dusk endpoint (beta=90) is marked as a model-limited point: the
+    sub-point albedo model nulls there, so the reportable albedo/net are None and
+    only the raw model values are shown. AI1 has no published solar absorptivity,
+    so it is shown only as net-excluding-albedo (no full-net curve).
+    """
+    betas = np.arange(0, 91, 5)
+    sc0 = [starcloud_harmonized_balance(b, sunlit_faces=0, warn=False) for b in betas]
+    sc1 = [starcloud_harmonized_balance(b, sunlit_faces=1, warn=False) for b in betas]
+    ai = [ai1_harmonized_balance(b, warn=False) for b in betas]
+
+    fig, (axu, axl) = plt.subplots(2, 1, figsize=(7.2, 7.0), sharex=True)
+
+    # Upper: Starcloud albedo (raw model) and Earth IR vs beta.
+    axu.plot(betas, [x.earth_albedo_model_W_m2 for x in sc0], color=COL["spec"],
+             marker="o", ms=3, label="Earth albedo (raw sub-point model)")
+    axu.plot(betas, [x.earth_ir_absorbed_W_m2 for x in sc0], color="#9467bd",
+             marker="s", ms=3, label="Earth IR absorbed")
+    axu.axvline(90, color="gray", ls=":", lw=1)
+    axu.set_ylabel("Absorbed flux per planform (W/m^2)")
+    axu.set_title("Plot 6 - Starcloud environmental load and net rejection vs beta")
+    axu.legend(fontsize=8)
+    axu.grid(alpha=0.3)
+
+    # Lower: net rejection vs beta (raw model net for Starcloud; AI1 net-excl-albedo).
+    axl.plot(betas, [x.net_rejection_model_W_m2 for x in sc0], color=COL["harm"],
+             marker="o", ms=3, label="Starcloud shielded (model net)")
+    axl.plot(betas, [x.net_rejection_model_W_m2 for x in sc1], color="#8c564b",
+             marker="^", ms=3, label="Starcloud one-side sunlit (model net)")
+    axl.plot(betas, [x.net_excluding_albedo_W_m2 for x in ai], color=COL["ai1"],
+             ls="--", marker="x", ms=3, label="AI1 net excl. albedo (alpha_s unpublished)")
+    axl.axvline(90, color="gray", ls=":", lw=1)
+    axl.text(0.97, 0.40, "beta=90 model-limited\n(reportable albedo/net = None)",
+             transform=axl.transAxes, ha="right", va="center", fontsize=7,
+             color="#555555")
+    axl.set_xlabel("Beta angle (deg)")
+    axl.set_ylabel("Net rejection per planform (W/m^2)")
+    axl.legend(fontsize=8)
+    axl.grid(alpha=0.3)
+    fig.text(0.01, 0.005, "Note: the high-beta albedo decline is a property of the "
+             "reduced-order sub-point model, NOT validated disk-integrated behavior.",
+             fontsize=7, color="#555555")
+    _save(fig, outdir, "plot6_beta_sweep.png")
 
 
 def _save(fig, outdir, name):
@@ -184,6 +241,7 @@ def main():
     plot3(outdir)
     plot4(outdir)
     plot5(outdir)
+    plot6(outdir)
     print("done.")
 
 
