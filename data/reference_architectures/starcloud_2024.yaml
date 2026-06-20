@@ -1,8 +1,9 @@
 # Starcloud 2024 white-paper reference architecture — source & provenance record
 #
 # Repo target path: data/reference_architectures/starcloud_2024.yaml
-# Workstream:        Phase A (Starcloud reference architecture), Milestone A1
-# Status:            DRAFT for review — no code consumes this yet.
+# Workstream:        Phase A (Starcloud reference architecture) — COMPLETE (A1-A6, merged)
+# Status:            Active — consumed by orbital_thermal.reference_architectures
+#                    (STARCLOUD_2024_PUBLISHED) and the A2-A5 test suite.
 #
 # Purpose
 # -------
@@ -12,8 +13,10 @@
 # provenance status so that published source data, derived quantities, and
 # modeller-introduced alternatives never blur together.
 #
-# This file is data only. The published heat balance is REPRODUCED in code at
-# Milestone A2; the spectral case at A3. Nothing here changes existing results.
+# This file is data only. The published heat balance is reproduced in code
+# (Milestone A2, 633.08 W/m^2); the spectral case at A3 (584.76 W/m^2); the
+# harmonized comparison at A5. Changing a value here changes nothing in the
+# frozen A2/A3/A4 results unless the code constants are changed to match.
 
 schema_version: 1
 record_id: starcloud_2024_whitepaper

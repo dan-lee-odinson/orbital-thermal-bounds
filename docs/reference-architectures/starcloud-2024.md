@@ -17,6 +17,17 @@ work without separate human review and approval.
 `orbital_thermal.architecture_comparison`, `orbital_thermal.harmonized_comparison`
 **Tests:** `tests/test_starcloud_*.py`
 
+**Value types used below** (kept distinct throughout):
+
+- **source-published** — printed in the white paper (Table A, Table B).
+- **derived** — computed here from published inputs, not printed in the source (e.g.
+  required areas).
+- **corrected / spectral** — the alternative radiative-property treatment (Table C); an
+  interpretation, not the source's claim.
+- **harmonized / modelled** — produced by the project's reduced-order orbital model
+  (Section 5); some quantities are `None`/model-limited and never reported as physical
+  loads.
+
 ---
 
 ## 1. White-paper architecture summary
@@ -135,8 +146,11 @@ the long-wave absorptivity is treated separately.*
 
 ## 5. Harmonized model
 
-To compare AI1 and Starcloud like-for-like, both are placed under **one** orbital
-environment and one set of conventions (`orbital_thermal.harmonized_comparison`):
+To compare AI1 and Starcloud under **shared environmental conventions**, both are placed
+under **one** orbital environment (`orbital_thermal.harmonized_comparison`). This is a
+**harmonized-environment comparison, not a fully like-for-like one**: each architecture
+*retains its own published operating temperature and optical properties* — only the
+orbital environment and radiative conventions are shared. The conventions:
 
 - Exact Earth view factor from `environment.sphere_view_factor`. At the default
   geometry (550 km, radiator edge-on to nadir, tilt = 90°) this is **F = 0.258** —
@@ -155,22 +169,44 @@ Two solar-exposure scenarios are produced, both labelled:
 | **Shielded / edge-on** | `sunlit_faces = 0` | `sunlit_faces = 0` |
 | **Architecture-specific** | one-side-sunlit only as a parametric sensitivity (AI1 publishes no α_solar) | `sunlit_faces = 1`, published α_solar = 0.09 |
 
-A **β = 0–90° sweep** is supported; β = 90° is the stated dawn-dusk SSO endpoint.
+A **β = 0–90° sweep** is supported (see Plot 6 below); β = 90° is the stated dawn-dusk
+SSO endpoint.
+
+**Three independent attitude/geometry inputs** (not yet derived from one fully coupled
+spacecraft attitude/orbit model — do not read `tilt = 90°` as establishing both
+Earth-facing and Sun-facing geometry at once):
+
+- `tilt_deg` — radiator orientation relative to nadir, sets the **Earth view factor**;
+- `sunlit_faces` — separately sets **direct-solar exposure** (0 = shielded, 1 = one face sunlit);
+- `β` — drives the reduced-order **orbit-mean albedo factor** `cos(β)/π`.
 
 > **Model limitation (surfaced, not hidden).** The package's sub-point albedo model
-> returns ~0 at β = 90°, so the harmonized orbit-mean albedo vanishes there for both
-> architectures regardless of absorptivity — a known limitation (the true
-> disk-integrated albedo at a terminator orbit is nonzero), emitted as a
-> `RuntimeWarning`. The **published** Starcloud environmental load (9.22 + 5.24 =
-> 14.46 W/m²) is preserved alongside the sweep (`published_starcloud_environment()`)
-> so the β = 90° null never erases it.
+> nulls at β = 90°, so the orbit-mean albedo factor → 0 there. The **no-invention
+> policy takes precedence over this limitation**: where the short-wave absorptivity is
+> unpublished (AI1), albedo and full net stay `None` at *every* β, including 90°. Where
+> the absorptivity is known (Starcloud), the raw sub-point value is retained in
+> `*_model` fields for figures, but the **reportable** albedo and full net are `None`
+> at β = 90° — a model-limited 0.0 is never published as a physical load. A
+> `RuntimeWarning` is emitted, and the **published** Starcloud environmental load
+> (9.22 + 5.24 = 14.46 W/m²) is preserved alongside the sweep
+> (`published_starcloud_environment()`).
 
-Representative harmonized Starcloud results at 293.15 K (per planform):
+Representative harmonized Starcloud results at 293.15 K (per planform). At β = 90° the
+albedo is model-limited, so the reportable albedo and net are `None`; the **raw model**
+values are shown for reference. Away from the endpoint they are reportable (see Plot 6).
 
-| Case | Direct solar | Earth albedo | Earth IR | Net |
+| Case (β = 90°) | Direct solar | Earth albedo | Earth IR | Net |
 |---|---:|---:|---:|---:|
-| Harmonized shielded, β = 90° | 0.00 | 0.00 | 56.20 | **714.32** |
-| Harmonized sunlit, β = 90° | 122.49 | 0.00 | 56.20 | **591.83** |
+| Harmonized shielded | 0.00 | `None` (model ~0.00) | 56.20 | `None` (model **714.32**) |
+| Harmonized sunlit | 122.49 | `None` (model ~0.00) | 56.20 | `None` (model **591.83**) |
+
+![Beta sweep](figures/plot6_beta_sweep.png)
+
+*Plot 6 — Starcloud Earth albedo (raw sub-point model) and Earth IR vs β (top), and net
+rejection vs β (bottom): Starcloud shielded and one-side-sunlit (raw model net), and AI1
+shown only as `net_excluding_albedo` (no full-net curve without a published α_solar).
+β = 90° is marked model-limited. The high-β albedo decline is a property of the
+reduced-order sub-point model, not validated disk-integrated behavior.*
 
 ![As-published vs harmonized](figures/plot5_published_vs_harmonized.png)
 
@@ -208,8 +244,10 @@ invented number.
 
 The temperature–area trade, as published: AI1 rejects 120 kW in **110 m²** because it
 runs hot (337 K); Starcloud needs **189.55 m²** because it runs cool (293 K). Under the
-harmonized environment the same ordering holds (AI1's higher operating temperature
-gives a higher net flux), now without the convention mismatch.
+harmonized environment, AI1's higher *published operating temperature* produces a higher
+modeled net rejection per unit planform. **This is a net-flux ordering at the
+architectures' respective published operating temperatures — not an ordering of
+total-system performance, mass, parasitic power, reliability, or lifecycle cost.**
 
 ![Net rejection vs radiator temperature](figures/plot1_net_vs_temperature.png)
 
@@ -290,7 +328,7 @@ python -m pytest tests/test_starcloud_published_balance.py \
                  tests/test_starcloud_ai1_published_comparison.py \
                  tests/test_starcloud_ai1_harmonized.py -q
 
-# Regenerate the five figures into docs/reference-architectures/figures/
+# Regenerate the six figures into docs/reference-architectures/figures/
 python scripts/plot_starcloud.py
 ```
 
@@ -312,7 +350,8 @@ h.starcloud_harmonized_balance(90, sunlit_faces=1)   # harmonized, one-side sunl
 
 > Ezra Feilden, Adi Oltean, Philip Johnston. *Why we should train AI in space.*
 > Lumen Orbit (now Starcloud, Inc.), White Paper v1.03, September 2024.
-> <https://starcloudinc.github.io/wp.pdf> (mirror: <https://lumenorbit.github.io/wp.pdf>),
+> [Starcloud PDF](https://starcloudinc.github.io/wp.pdf)
+> (legacy mirror: [Lumen Orbit PDF](https://lumenorbit.github.io/wp.pdf)),
 > retrieved 2026-06-16. Thermal Management, pp. 8–9.
 
 AI1 design point: *The AI1 Design Point*, DOI
@@ -322,6 +361,3 @@ DOI [10.5281/zenodo.20695720](https://doi.org/10.5281/zenodo.20695720).
 Source white-paper text is third-party copyright (Starcloud/Lumen Orbit); only
 extracted numerical inputs and short factual descriptions are stored here for
 reproduction and commentary. Project code is MIT-licensed.
-
-> A Wiki page (*Reference Architecture — Starcloud 2024*) should be added only after
-> this repository documentation is reviewed and stable.
