@@ -1,0 +1,54 @@
+site_name: orbital-thermal-bounds
+site_description: >-
+  Reduced-order, environment-coupled radiator model and machine-verified
+  thermodynamic bounds for heat rejection in orbital data centers.
+site_url: https://dan-lee-odinson.github.io/orbital-thermal-bounds/
+repo_url: https://github.com/dan-lee-odinson/orbital-thermal-bounds
+repo_name: dan-lee-odinson/orbital-thermal-bounds
+edit_uri: edit/main/docs/
+copyright: Docs CC BY 4.0 · Code MIT — Dan Lee-Odinson
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+# Nav is auto-generated from the docs/ tree for now. To curate ordering/labels
+# later, uncomment and edit, e.g.:
+# nav:
+#   - Home: index.md
+#   - Reference architectures:
+#       - Starcloud 2024: reference-architectures/starcloud-2024.md

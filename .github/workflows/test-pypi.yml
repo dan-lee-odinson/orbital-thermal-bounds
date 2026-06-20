@@ -1,0 +1,32 @@
+name: test-pypi
+
+# Manual release-candidate dry run: build the distribution and publish it to
+# Test-PyPI via Trusted Publishing (OIDC, no token). Run this before cutting a
+# real release to validate the build and the publish path end to end.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testpypi:
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/orbital-thermal
+    permissions:
+      id-token: write          # required for Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Publish to Test-PyPI (Trusted Publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
