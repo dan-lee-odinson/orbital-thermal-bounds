@@ -12,7 +12,7 @@ superior.
 **Status:** Phase A complete (Milestones A1–A6). No preprint is produced from this
 work without separate human review and approval.
 
-**Provenance record:** [`data/reference_architectures/starcloud_2024.yaml`](../../data/reference_architectures/starcloud_2024.yaml)
+**Provenance record:** [`data/reference_architectures/starcloud_2024.yaml`](https://github.com/dan-lee-odinson/orbital-thermal-bounds/blob/main/data/reference_architectures/starcloud_2024.yaml)
 **Code:** `orbital_thermal.spectral_radiation`, `orbital_thermal.reference_architectures`,
 `orbital_thermal.architecture_comparison`, `orbital_thermal.harmonized_comparison`
 **Tests:** `tests/test_starcloud_*.py`
