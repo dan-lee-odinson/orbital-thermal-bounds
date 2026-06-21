@@ -65,3 +65,51 @@ python companion/verify_ai1.py
 The frozen McCalip oracle is checked by the package suite and the CI `oracle-freeze`
 job (which fails closed when `ORACLE_REQUIRE_EXTERNAL=1` and the upstream source
 cannot be attested).
+
+## Evidence types and risk-proportional verification
+
+Automated execution (the test suite, `reproduce_all.py`, the CI gates) establishes
+**software verification** and **reproducibility** — it confirms the code computes the
+stated equations and that results regenerate from pinned inputs. It does **not**, by
+itself, establish that the underlying physical assumptions or governing equations are
+correct. Passing tests written against a model cannot validate the model.
+
+Accordingly, evidence for a technical claim is classified into four categories:
+
+- **a. Source / authoritative reference** — a primary source, standard, or peer
+  literature that states the input, equation, or result.
+- **b. Independent derivation** — the governing relation is re-derived from first
+  principles, independent of the implementation.
+- **c. Executable reproduction / numerical comparison** — the result is reproduced by
+  code, by an independent implementation, or by numerical comparison (tests, oracles,
+  cross-checks).
+- **d. Qualified external human review** — review by a qualified human subject-matter
+  reviewer, recorded with its scope and limitations.
+
+**Cross-model review** (one model auditing another's work — as in this project's
+Claude-builds / GPT-audits workflow) is a valuable but **distinct** activity: it strengthens
+error detection and supports category **c**, but it is **not** category **d**, and is
+recorded separately. Two AI systems agreeing counts as a *single* category, never as
+external human review.
+
+**Not every claim requires every category.** Verification effort is **proportional to
+the consequence and the uncertainty of the claim**: a load-bearing or novel result that
+drives a conclusion warrants more categories (ideally at least one of {a, b} plus c, and
+d where the stakes justify it); a routine intermediate calculation may rest on c alone.
+
+## Working verification records (not validation)
+
+The repository contains **working verification records** under the top-level
+[`verification/`](https://github.com/dan-lee-odinson/orbital-thermal-bounds/tree/main/verification)
+directory (version-controlled, but excluded from this documentation site):
+
+- a **technical-mastery ledger** tracking, per central result, what is identified,
+  explained (in the director's own words), derived, reproduced, stress-tested, and
+  externally reviewed; and
+- **review records** for major milestones, cross-model reviews, and releases.
+
+These records are version-controlled and public through the repository, but they are
+**deliberately excluded from this documentation site**. They routinely contain `TODO`
+and `pending` items. **Their presence in the repository does not indicate validation or
+acceptance of the associated technical claims.** A conclusion is summarized in this
+published documentation only after its evidence and recorded status justify it.
