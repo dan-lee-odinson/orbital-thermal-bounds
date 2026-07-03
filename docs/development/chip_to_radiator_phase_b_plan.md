@@ -1,9 +1,10 @@
 # Phase B, Stage 1 - Chip-to-Radiator Implementation Plan (B0)
 
-> **Status: proposed, forward-looking, provisional, and subject to revision.** This is the
-> B0 planning deliverable - a *design-intent specification*, not implemented code and not a
-> record of validated results. No milestone past B0 is approved for implementation. **B1 is
-> blocked** until a cross-model re-review of this plan finds no unresolved blocker.
+> **Status: B0 APPROVED (2026-07-02, commit `1a9c433`); B1 may proceed.** This is the B0
+> planning deliverable - a *design-intent specification*, not implemented code and not a record
+> of validated results. It was approved after an initial adversarial review and three
+> cross-model re-reviews (see the B0 review record). Approval of the design intent is **not** a
+> validation of any physical result; implementation is verified within each milestone.
 
 > **Revision 1 (2026-06-21).** Responded to the first B0 adversarial review (3 blockers,
 > 6 majors, 1 verified factual error).
@@ -580,8 +581,8 @@ on a dedicated compressible/near-critical treatment (4.2).
 B0 (revised) is complete when this plan and the updated ledger are committed, the review record
 carries the finding-response matrices and the revision commit hash, and the plan is **returned
 for cross-model review.** The second re-review confirmed 2.1 and 2.3 closed and passed both
-source checks, leaving a single narrow blocker (the C2 loophole), now closed in Revision 3;
-Revision 3 returns for a **short confirmation re-review** of that one closure. **B1 remains
-blocked until a re-review finds no unresolved blocker.** Director-authored explanations and
+source checks, leaving a single narrow blocker (the C2 loophole), closed in Revision 3. The
+**confirmation re-review approved B0** (2026-07-02, commit `1a9c433`); **B1 is unblocked.**
+Director-authored explanations and
 independent derivations in the ledger remain `TODO` until actually completed and approved; they
 are not inferred from existing tests.

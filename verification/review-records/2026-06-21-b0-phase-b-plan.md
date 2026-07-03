@@ -7,15 +7,14 @@ formal cross-model review, or release. Not required for routine development.
 > not indicate validation or acceptance of the associated technical claims.
 # Review Record: B0 - Phase B, Stage 1 implementation plan
 ## Record Metadata
-- **Record status:** original review + two re-reviews completed; **revision 3 submitted; third
-  (confirmation) re-review pending**
-- **Date:** 2026-06-21 (updated 2026-07-02)
+- **Record status:** **CLOSED - B0 approved; B1 unblocked** (original review + three re-reviews
+  completed)
+- **Date:** 2026-06-21 (closed 2026-07-02)
 - **Reviewed commit (original):** `c462840` (`main`)
 - **Revision 1:** delivered as a draft and re-reviewed; **not merged** to `main`
   (superseded by Revision 2).
 - **Revision 2 commit:** `5740909` (`main`) - reviewed by the second re-review.
-- **Revision 3 commit:** `<fill with the chore/b0-revision-3 merge commit hash after push>`
-- **Branch:** `chore/b0-revision-3`
+- **Revision 3 commit:** `1a9c433` (`main`) - reviewed by the third (confirmation) re-review.
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B0)
 - **Disposition (original, retained):** **not ready / changes required**
@@ -23,8 +22,11 @@ formal cross-model review, or release. Not required for routine development.
   two remaining blockers + one required limitation.
 - **Disposition (re-review 2, retained):** **changes required** - 2.1 and 2.3 closed, both
   source checks passed; one remaining blocker (C2 loophole) + one major + one minor.
-- **Disposition (current):** revision 3 submitted; **B1 remains blocked** until a confirmation
-  re-review finds no unresolved blocker.
+- **Disposition (re-review 3 / confirmation):** **approve B0 - B1 may proceed.** All three
+  scoped items (C2 closure, Section 5 -> 4.1a reference, C1 clarification) confirmed closed; no
+  remaining blocker. Deferred limitations (CO2 ranked use; total-system-mass) are roadmap
+  limitations, not B0 blockers.
+- **Final disposition:** **B0 APPROVED at commit `1a9c433`. B1 is unblocked.**
 
 ## Review Basis
 The B0 deliverable was reviewed against the Phase B roadmap
