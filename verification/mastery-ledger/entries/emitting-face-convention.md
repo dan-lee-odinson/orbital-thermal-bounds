@@ -26,13 +26,15 @@ convention must be fixed and consistent between Phase A and Phase B.
 The rejection law uses the **emitting** area `A`:
 
 ```
-A_emitting = 2 * A_planform     (two-sided flat panel, equal sinks on both faces)
+A_emitting = 2 * A_planform     (two-sided flat panel: total emitting-area bookkeeping)
 A = Q / (epsilon * sigma * (T^4 - T_sink^4))     [m^2, emitting]
 ```
 
 - `A_planform` one-sided projected area [m^2]; `A_emitting` total radiating area [m^2]
-- the factor 2 applies to a flat two-sided panel **whose two faces see the same effective
-  sink**; otherwise rejection is summed per face (see Phase B plan Section 4.4)
+- `2 x planform` is a **total emitting-area bookkeeping convention** and always counts area
+  correctly. **Equal per-face sinks** are required only to collapse both faces into a single
+  shared effective-sink law; if the faces see different sinks, rejection is summed **per face**
+  (Phase B plan Section 4.4), not collapsed into one `T_sink` (re-review 2 finding 3).
 
 ## Assumptions
 Both faces radiate to the **same** effective sink with the same emissivity (review F3: this is
