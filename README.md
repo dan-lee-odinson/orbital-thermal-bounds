@@ -38,6 +38,15 @@ This repository is part of the Orbital Thermal Bounds research program: a DOI-ar
 - Exact tilted-plate-to-sphere edge-on Earth view factor **0.257773** per face at 550 km.
 - A certified orbit-coupled **transient** solver: at periodic steady state ⟨T⁴⟩ = T_steady⁴, so a steady averaged-sink sizing under-predicts the orbital **peak** (up to several kelvin), not the mean.
 
+## Current Status
+
+- Phase A radiator-boundary model: archived and released.
+- B0 Phase B plan: approved after adversarial review.
+- B0.5 visual notebook: merged.
+- B1 property/correlation registry: completed.
+- B2/B3/B4 chip-to-radiator path: in progress.
+- Biswas/Suncatcher reference case: planned / intake in progress.
+
 ### Install
 
 ```bash
