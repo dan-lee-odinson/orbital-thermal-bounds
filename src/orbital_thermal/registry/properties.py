@@ -18,6 +18,7 @@ from __future__ import annotations
 from .provenance import (
     Domain,
     PropertyEntry,
+    PropertyKind,
     Provenance,
     Source,
     Status,
@@ -47,13 +48,37 @@ def _coolprop_prop(
         quantity=quantity,
         provenance=Provenance.DERIVED,
         status=Status.RESOLVED,
+        kind=PropertyKind.REFERENCE_ANCHOR,
         value=value,
         units=units,
         domain=_LIQUID_BAND,
         source=_NIST,
         backend=_COOLPROP,
         version=_COOLPROP_VERSION,
-        applicability=f"{_REF_STATE}; per-state evaluation via orbital_thermal.fluids in B3",
+        applicability=f"reference anchor at {_REF_STATE}; use the *.property_backend entry "
+        "for ranked per-state values",
+    )
+
+
+def _backend_eval(material: str) -> PropertyEntry:
+    """The rank-eligible per-state property-evaluation entry for a coolant: it names the
+    backend and required inputs; the actual per-state call happens in B3 via fluids."""
+    return PropertyEntry(
+        id=f"coolant.{material}.property_backend",
+        name=f"{material.capitalize()} per-state property evaluation",
+        material=material,
+        quantity="transport_properties(T,P)",
+        provenance=Provenance.DERIVED,
+        status=Status.RESOLVED,
+        kind=PropertyKind.BACKEND_EVALUATION,
+        value=None,
+        units="SI",
+        domain=_LIQUID_BAND,
+        source=_NIST,
+        backend=_COOLPROP,
+        version=_COOLPROP_VERSION,
+        applicability="per-state subcooled/compressed-liquid evaluation via "
+        "orbital_thermal.fluids (B3); required inputs T, P",
     )
 
 
@@ -83,6 +108,7 @@ _AMMONIA = [
         version=_COOLPROP_VERSION,
         applicability="phase-margin anchor (B0 4.2); paper NIST anchor ~405.5 K",
     ),
+    _backend_eval("ammonia"),
 ]
 
 # Water: DERIVED from CoolProp 7.2.0 at 300 K saturated liquid (Q=0).
@@ -95,6 +121,7 @@ _WATER = [
                    "water", "thermal_conductivity", 0.60944, "W/m/K"),
     _coolprop_prop("coolant.water.viscosity", "Water dynamic viscosity", "water",
                    "dynamic_viscosity", 8.5375135e-04, "Pa*s"),
+    _backend_eval("water"),
 ]
 
 # Propylene-glycol / water (PGW): the incompressible-mixture backend exists

@@ -14,6 +14,7 @@ import pytest
 from orbital_thermal import registry
 from orbital_thermal.registry import (
     NotRankEligibleError,
+    PropertyKind,
     Provenance,
     Status,
     assert_in_domain,
@@ -64,9 +65,10 @@ class TestNoInventionIntegrity:
             assert isinstance(e.status, Status)
 
     def test_resolved_property_has_a_value(self):
-        # a RESOLVED *property* must carry a value (no silent None passing as resolved)
+        # a RESOLVED operational/reference property must carry a value; a backend-evaluation
+        # entry legitimately has none (it names a per-state capability, not a scalar)
         for e in registry.PROPERTIES:
-            if e.status is Status.RESOLVED:
+            if e.status is Status.RESOLVED and e.kind is not PropertyKind.BACKEND_EVALUATION:
                 assert e.value is not None, e.id
 
     def test_non_resolved_is_never_rank_eligible(self):
@@ -104,8 +106,8 @@ class TestRankEligibilityEnforcement:
     @pytest.mark.parametrize(
         "entry_id",
         [
-            "coolant.ammonia.density",
-            "coolant.water.density",
+            "coolant.ammonia.property_backend",
+            "coolant.water.property_backend",
             "solid.aluminum.thermal_conductivity",
             "solid.copper.thermal_conductivity",
             "friction.laminar",
@@ -120,6 +122,46 @@ class TestRankEligibilityEnforcement:
         assert_in_domain(c, Re=1500.0)  # ok
         with pytest.raises(NotRankEligibleError):
             assert_in_domain(c, Re=5000.0)  # laminar corr used in turbulent range
+
+
+class TestReferenceAnchorVsBackend:
+    """F1 (spot-review): single-state coolant literals are cross-check anchors, not
+    operational loop values; per-state use must go through the backend-evaluation entry."""
+
+    @pytest.mark.parametrize(
+        "entry_id",
+        [
+            "coolant.ammonia.density",
+            "coolant.ammonia.viscosity",
+            "coolant.water.density",
+            "coolant.water.thermal_conductivity",
+        ],
+    )
+    def test_reference_anchor_not_rank_eligible(self, entry_id):
+        e = registry.get(entry_id)
+        assert e.kind is PropertyKind.REFERENCE_ANCHOR
+        assert e.value is not None  # keeps its value for the CoolProp cross-check
+        assert not e.rank_eligible  # but may not be used as a ranked operational value
+        with pytest.raises(NotRankEligibleError):
+            assert_rank_eligible(e, context="B3 loop property")
+
+    @pytest.mark.parametrize(
+        "entry_id",
+        ["coolant.ammonia.property_backend", "coolant.water.property_backend"],
+    )
+    def test_backend_evaluation_is_rank_eligible(self, entry_id):
+        e = registry.get(entry_id)
+        assert e.kind is PropertyKind.BACKEND_EVALUATION
+        assert e.value is None
+        assert e.rank_eligible
+        assert_rank_eligible(e)  # must not raise
+
+
+@pytest.mark.parametrize("entry", registry.blocked_entries(), ids=lambda e: e.id)
+def test_every_blocked_entry_raises(entry):
+    """F2 (spot-review): exhaustive -- every non-rank-eligible entry is actually blocked."""
+    with pytest.raises(NotRankEligibleError):
+        assert_rank_eligible(entry)
 
 
 class TestExecutableCorrelations:
