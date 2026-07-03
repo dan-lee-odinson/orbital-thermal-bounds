@@ -41,3 +41,14 @@ Category-**d** qualified external *human* review is `pending` for every entry be
 
 Added per Phase B milestone as new central claims are introduced
 (see [`../../docs/development/phase-b-roadmap.md`](../../docs/development/phase-b-roadmap.md)).
+
+Category-**d** qualified external *human* review is `pending` for every entry below; the
+"cross-model review" column records optional GPT spot-check coverage, which is **not**
+category d. A mandatory cross-model review is required at the major milestones (B4/B6/B8);
+intermediate milestones (B1/B2/B3) carry a completion report with an optional spot-check.
+
+| Entry | Result | Status | Director explanation | Independent derivation (b) | Cross-model review (not d) |
+|---|---|---|---|---|---|
+| [solid-thermal-network](entries/solid-thermal-network.md) | Junction-to-cold-plate solid resistance network (conduction + Yovanovich spreading + contact) | `reproduced` | TODO (director) | TODO | not yet run |
+| [single-phase-pumped-loop](entries/single-phase-pumped-loop.md) | Single-phase loop hydraulics, film coefficient, pump energy, per-segment phase margins | `reproduced` | TODO (director) | TODO | not yet run |
+

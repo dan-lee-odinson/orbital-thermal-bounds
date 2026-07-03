@@ -129,3 +129,83 @@ def provenance(fluid: str = DEFAULT_FLUID) -> dict[str, str]:
         "fluid": fluid,
         "eos_bibtex_key": get_BibTeXKey(fluid, "EOS"),
     }
+
+
+# --- per-state transport properties (fulfils the B1 property_backend; used by B3) ---
+
+
+def density(T: float, P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Density at (T [K], P [Pa]), kg/m^3."""
+    _v.positive("T", T)
+    _v.positive("P", P)
+    return PropsSI("D", "T", T, "P", P, fluid)
+
+
+def specific_heat(T: float, P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Isobaric specific heat cp at (T, P), J/kg/K."""
+    _v.positive("T", T)
+    _v.positive("P", P)
+    return PropsSI("C", "T", T, "P", P, fluid)
+
+
+def thermal_conductivity(T: float, P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Thermal conductivity at (T, P), W/m/K."""
+    _v.positive("T", T)
+    _v.positive("P", P)
+    return PropsSI("L", "T", T, "P", P, fluid)
+
+
+def dynamic_viscosity(T: float, P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Dynamic viscosity at (T, P), Pa*s."""
+    _v.positive("T", T)
+    _v.positive("P", P)
+    return PropsSI("V", "T", T, "P", P, fluid)
+
+
+def prandtl(T: float, P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Prandtl number Pr = cp * mu / k at (T, P) [-]."""
+    return (
+        specific_heat(T, P, fluid)
+        * dynamic_viscosity(T, P, fluid)
+        / thermal_conductivity(T, P, fluid)
+    )
+
+
+def triple_temperature(fluid: str = DEFAULT_FLUID) -> float:
+    """Triple-point temperature, K (lower bound for the liquid; a freeze proxy)."""
+    return PropsSI("T_triple", fluid)
+
+
+def transport_properties(T: float, P: float, fluid: str = DEFAULT_FLUID) -> dict[str, float]:
+    """All per-state properties the pumped-loop model needs, at (T, P)."""
+    return {
+        "density": density(T, P, fluid),
+        "specific_heat": specific_heat(T, P, fluid),
+        "thermal_conductivity": thermal_conductivity(T, P, fluid),
+        "dynamic_viscosity": dynamic_viscosity(T, P, fluid),
+        "prandtl": prandtl(T, P, fluid),
+    }
+
+
+def single_phase_liquid_margins(T: float, P: float, fluid: str = DEFAULT_FLUID) -> dict[str, float]:
+    """Margins that keep a coolant a subcooled single-phase liquid at (T, P).
+
+    - ``subcooling_Pa`` = P - P_sat(T) (must be > 0: loop pressure exceeds saturation);
+    - ``freeze_margin_K`` = T - T_triple;
+    - ``critical_margin_K`` = T_crit - T.
+
+    ``ok`` is True iff all three are positive. Above the critical temperature the
+    saturation curve does not exist and ``subcooling_Pa`` is ``-inf``.
+    """
+    _v.positive("T", T)
+    _v.positive("P", P)
+    t_crit = critical_temperature(fluid)
+    crit = t_crit - T
+    freeze = T - triple_temperature(fluid)
+    subcool = float("-inf") if T >= t_crit else P - saturation_pressure(T, fluid)
+    return {
+        "subcooling_Pa": subcool,
+        "freeze_margin_K": freeze,
+        "critical_margin_K": crit,
+        "ok": bool(subcool > 0 and freeze > 0 and crit > 0),
+    }
