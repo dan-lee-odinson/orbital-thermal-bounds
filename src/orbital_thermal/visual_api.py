@@ -50,6 +50,7 @@ from . import radiation as rad
 from . import reference_architectures as refarch
 from . import sink as sink_mod
 from . import transient as tr
+from .constants import ZERO_CELSIUS
 
 # ---------------------------------------------------------------------------
 # Provenance / label vocabularies (from docs/development/chip_to_radiator_phase_b_plan.md
@@ -205,13 +206,15 @@ def equilibrium_point(
     the net flux per emitting face via :func:`orbital_thermal.radiation.net_flux`.
     ``emitting_area_m2`` is the TWO-SIDED emitting area (= 2 x planform for a
     bifacial panel with equal per-face sinks); ``T_sink_K`` is the lumped
-    effective sink T_s^eff.
+    effective sink T_s^eff. The 2 x planform collapse is valid only for equal
+    per-face sinks; if the two faces see unequal sinks, rejection must be summed
+    per face rather than folded into one shared effective-sink law.
     """
     T = eq.equilibrium_temperature(Q_W, emitting_area_m2, emissivity, T_sink_K)
     net = rad.net_flux(T, emissivity, T_sink_K)
     return {
         "equilibrium_temperature_K": float(T),
-        "equilibrium_temperature_C": float(T - 273.15),
+        "equilibrium_temperature_C": float(T - ZERO_CELSIUS),
         "net_flux_per_emitting_m2_W_m2": float(net),
         "planform_area_m2": float(emitting_area_m2 / 2.0),
         "meta": _meta(
@@ -246,7 +249,8 @@ def required_area_point(
 
     Wraps :func:`orbital_thermal.radiation.required_area` (Lemma 1 area law). The
     planform area is the emitting area halved (two-sided panel, equal per-face
-    sinks).
+    sinks). If the two faces see unequal sinks, rejection must be summed per face
+    rather than collapsed into one shared effective-sink law.
     """
     a_emit = rad.required_area(Q_W, radiator_temperature_K, emissivity, T_sink_K)
     return {
@@ -419,6 +423,30 @@ def earth_view_factor_curve(
 # Beta-angle / effective-sink sweeps (notebook section 5)
 # ---------------------------------------------------------------------------
 
+def _beta_sink_row(altitude_km, beta_deg, tilt_deg, *, assume_sun_shielded,
+                   emissivity, solar_absorptivity):
+    """Shared per-beta sink computation for the beta sweeps.
+
+    Returns the grid-free radiatively-weighted orbit-mean effective sink
+    (:func:`orbital_thermal.sink.analytic_orbit_averaged_sink`) plus the
+    subpoint-albedo limitation flags. Both :func:`effective_sink_sweep` and
+    :func:`beta_sweep` build their rows on top of this so the sink/limitation
+    logic lives in one place.
+    """
+    b = float(beta_deg)
+    alb_mean = sink_mod.analytic_albedo_orbit_mean(b)
+    s = sink_mod.analytic_orbit_averaged_sink(
+        altitude_km, b, tilt_deg, assume_sun_shielded=assume_sun_shielded,
+        emissivity=emissivity, solar_absorptivity=solar_absorptivity)
+    return {
+        "beta_deg": b,
+        "orbit_averaged_sink_K": float(s),
+        "albedo_orbit_mean_factor": float(alb_mean),
+        "albedo_model_limited": bool(alb_mean < _ALBEDO_LIMIT_EPS),
+        "is_beta90_endpoint": bool(b >= 90.0 - 1e-9),
+    }
+
+
 def effective_sink_sweep(
     altitude_km=550.0,
     betas_deg=(0, 15, 30, 45, 60, 75, 90),
@@ -439,22 +467,14 @@ def effective_sink_sweep(
     flags ``albedo_model_limited`` where the subpoint-albedo factor nulls
     (beta -> 90 deg). Direct solar is omitted -- the sun-shielded contract applies.
     """
+    view_factor = float(env.sphere_view_factor(altitude_km, tilt_deg))
     rows = []
     for b in betas_deg:
-        b = float(b)
-        alb_mean = sink_mod.analytic_albedo_orbit_mean(b)
-        limited = alb_mean < _ALBEDO_LIMIT_EPS
-        s = sink_mod.analytic_orbit_averaged_sink(
+        row = _beta_sink_row(
             altitude_km, b, tilt_deg, assume_sun_shielded=assume_sun_shielded,
             emissivity=emissivity, solar_absorptivity=solar_absorptivity)
-        rows.append({
-            "beta_deg": b,
-            "orbit_averaged_sink_K": float(s),
-            "view_factor": float(env.sphere_view_factor(altitude_km, tilt_deg)),
-            "albedo_orbit_mean_factor": float(alb_mean),
-            "albedo_model_limited": bool(limited),
-            "is_beta90_endpoint": bool(b >= 90.0 - 1e-9),
-        })
+        row["view_factor"] = view_factor
+        rows.append(row)
     return {
         "rows": rows,
         "x_label": "Orbit beta angle",
@@ -526,12 +546,10 @@ def beta_sweep(
     """
     rows = []
     for b in betas_deg:
-        b = float(b)
-        alb_mean = sink_mod.analytic_albedo_orbit_mean(b)
-        limited = alb_mean < _ALBEDO_LIMIT_EPS
-        s = sink_mod.analytic_orbit_averaged_sink(
+        base = _beta_sink_row(
             altitude_km, b, tilt_deg, assume_sun_shielded=assume_sun_shielded,
             emissivity=emissivity, solar_absorptivity=solar_absorptivity)
+        s = base["orbit_averaged_sink_K"]
         T_eq = eq.equilibrium_temperature(Q_W, emitting_area_m2, emissivity, s)
         # Explicit domain guard (rather than swallowing the engine's ValueError, which
         # would also mask unrelated bad-input errors): net rejection needs T > sink.
@@ -540,12 +558,12 @@ def beta_sweep(
         else:
             a_req = None  # sink meets/exceeds the target temperature: no finite area
         rows.append({
-            "beta_deg": b,
-            "orbit_averaged_sink_K": float(s),
+            "beta_deg": base["beta_deg"],
+            "orbit_averaged_sink_K": s,
             "equilibrium_temperature_K": float(T_eq),
             "required_emitting_area_m2": a_req,
-            "albedo_model_limited": bool(limited),
-            "is_beta90_endpoint": bool(b >= 90.0 - 1e-9),
+            "albedo_model_limited": base["albedo_model_limited"],
+            "is_beta90_endpoint": base["is_beta90_endpoint"],
         })
     return {
         "rows": rows,
@@ -654,7 +672,10 @@ def mccalip_view_factor_comparison(
     ``altitude_km=None`` uses McCalip's default state altitude (550 km).
     """
     overrides = None if altitude_km is None else {"orbitalAltitudeKm": float(altitude_km)}
-    alt = mc._state(overrides)["orbitalAltitudeKm"]
+    # Resolve the altitude from the public default state (mccalip_exact_vf itself
+    # applies these overrides internally via correction_table_vs_beta).
+    alt = (float(altitude_km) if altitude_km is not None
+           else float(mc.DEFAULT_STATE["orbitalAltitudeKm"]))
     table = mvf.correction_table_vs_beta(tuple(betas_deg), overrides=overrides, n=n)
     rows = []
     for entry in table:
@@ -733,6 +754,11 @@ def transient_orbit_case(
     summary (peak, mean, swing, steady-at-averaged-sink, thermal time constant,
     tau/period) and the engine's convergence diagnostics.
 
+    ``simulate`` is called WITHOUT ``check_time_resolution``, so the summary's
+    ``converged`` reflects periodic closure + energy balance ONLY; the intra-orbit
+    temporal-resolution (step-doubling) gate is not run, and the summary records
+    ``time_resolution_checked = False`` to make that explicit.
+
     Provide the areal heat capacity either directly (``areal_heat_capacity``,
     J/m^2/K) or by naming a representative build
     (``build_name`` in :data:`orbital_thermal.transient.REPRESENTATIVE_BUILDS`,
@@ -766,9 +792,10 @@ def transient_orbit_case(
     warnings = []
     if not diag["converged"]:
         warnings.append(
-            "Transient did NOT reach a certified periodic steady state at these "
-            "settings; peak/mean/swing are not certified. Increase n_orbits and/or "
-            "steps_per_orbit (see diagnostics)."
+            "Transient did NOT reach periodic steady state (periodic closure + energy "
+            "balance) at these settings; peak/mean/swing are not certified. Increase "
+            "n_orbits and/or steps_per_orbit (see diagnostics). Note: the intra-orbit "
+            "temporal-resolution gate is not run here (time_resolution_checked=False)."
         )
     return {
         "t_s": t.tolist(),
@@ -789,6 +816,10 @@ def transient_orbit_case(
             "converged": bool(diag["converged"]),
             "periodic_converged": bool(diag["periodic_converged"]),
             "orbits_used": int(diag["orbits_used"]),
+            # simulate() is called WITHOUT check_time_resolution, so `converged`
+            # reflects periodic closure + energy balance only -- the intra-orbit
+            # temporal-resolution (step-doubling) gate was NOT run.
+            "time_resolution_checked": False,
         },
         "x_label": "Time into final orbit",
         "y_label": "Temperature",

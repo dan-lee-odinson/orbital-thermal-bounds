@@ -298,6 +298,17 @@ class TestTransient:
         with pytest.raises(ValueError):
             v.transient_orbit_case(550.0, 0.0, 545.0)
 
+    def test_reports_temporal_resolution_gate_not_run(self):
+        # simulate() is called without check_time_resolution, so the summary must
+        # say so explicitly rather than implying the temporal gate certified it.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            r = v.transient_orbit_case(
+                550.0, 0.0, 545.0, areal_heat_capacity=8000.0,
+                n_orbits=40, steps_per_orbit=360)
+        assert r["summary"]["time_resolution_checked"] is False
+        assert "periodic_converged" in r["summary"]
+
 
 # ---------------------------------------------------------------------------
 # Reference-case table
