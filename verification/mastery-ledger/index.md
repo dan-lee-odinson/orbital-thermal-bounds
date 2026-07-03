@@ -19,20 +19,23 @@ Category-**d** qualified external *human* review is `pending` for every entry be
 | Entry | Result | Status | Director explanation | Independent derivation (b) | Cross-model review (not d) |
 |---|---|---|---|---|---|
 | [radiative-equilibrium-and-net-rejection](entries/radiative-equilibrium-and-net-rejection.md) | Gray-body equilibrium temperature and net rejection (area law) | `reproduced` | TODO (director) | TODO | partial (audit) |
-| [emitting-face-convention](entries/emitting-face-convention.md) | Two-sided emitting area vs one-sided planform | `reproduced` | TODO (director) | n/a (convention) | not flagged |
-| [earth-view-factors](entries/earth-view-factors.md) | Exact tilted-plate-to-sphere Earth view factor | `reproduced` | TODO (director) | TODO | audit (paper three) |
+| [emitting-face-convention](entries/emitting-face-convention.md) | Two-sided emitting area; valid only with equal sinks on both faces | `reproduced` | TODO (director) | n/a (convention) | B0 re-review (equal-sink) |
+| [earth-view-factors](entries/earth-view-factors.md) | Exact tilted-plate-to-sphere Earth view factor (~0.258 vs ~0.021 heuristic floor) | `reproduced` | TODO (director) | TODO | audit + B0 re-review (comparator fix) |
 | [spectral-separation-of-loads](entries/spectral-separation-of-loads.md) | Separation of solar / albedo / Earth-IR absorbed flux | `reproduced` | TODO (director) | TODO | Starcloud review |
 | [beta-angle-albedo-model](entries/beta-angle-albedo-model.md) | Sub-point albedo factor and its documented beta=90 limitation | `reproduced` | TODO (director) | TODO | GPT (beta=90) |
+| [radiator-attitude-and-sun-shielding](entries/radiator-attitude-and-sun-shielding.md) | Direct-solar omission; sun-shielded-face contract | `reproduced` | TODO (director) | n/a (contract) | B0 re-review (F3/F9) |
 | ai1-starcloud-comparison-assumptions | As-published and harmonized comparison assumptions | `identified` | TODO (director) | TODO | GPT (Phase A) |
 | three-quarter-temperature-result | Conditional 3/4 cold-fraction optimum (only if Phase B uses it) | `identified` | TODO (director) | TODO | partial (audit) |
 
-> The **core boundary set** (first five entries) is opened and populated by B0 -- these are
-> the Phase A radiator-boundary results the Phase B plan directly reuses. The remaining two
-> are `identified` placeholders, to be opened later: `ai1-starcloud-comparison-assumptions`
-> when B5/B6 compare against the Starcloud reference, and `three-quarter-temperature-result`
-> only if Phase B uses the cold-fraction optimum. Status `reproduced` reflects executable
-> evidence only; director-authored explanation and independent derivation remain `TODO` and
-> must not be inferred or fabricated.
+> The **core boundary set** (first six entries) is opened and populated by B0 -- the Phase A
+> radiator-boundary results the Phase B plan directly reuses. The `radiator-attitude-and-sun-
+> shielding` entry and the equal-sink condition on `emitting-face-convention` were added in the
+> B0 revision (review F3/F9), and the `earth-view-factors` comparator was corrected then. The
+> remaining two entries are `identified` placeholders, opened later:
+> `ai1-starcloud-comparison-assumptions` at B5/B6, and `three-quarter-temperature-result` only
+> if Phase B uses the cold-fraction optimum. Status `reproduced` reflects executable evidence
+> only; director-authored explanation and independent derivation remain `TODO` and must not be
+> inferred or fabricated.
 
 ## Phase B entries
 

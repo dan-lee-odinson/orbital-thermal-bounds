@@ -7,9 +7,14 @@
 - **Entry id:** `earth-view-factors`
 - **Current status:** `reproduced` (code), cross-checked -- director explanation and
   director-authored independent derivation `TODO`
-- **Last updated:** 2026-06-21
+- **Last updated:** 2026-06-21 (rev 1)
 - **Reviewed at commit:** `abef98e` (branch `main`)
 - **Opened by:** B0 (Phase B core-boundary set)
+- **Correction note (rev 1, review F9):** an earlier draft of this entry stated the exact
+  factor `~0.258` was compared against an approximate `0.25`. That comparator was **wrong**.
+  The repository's `mccalip_exact_vf.py` documents the actual comparison: McCalip's cos-tilt
+  heuristic with a 5%-of-nadir edge-on floor orbit-averages to **~0.021 per face**, versus
+  the exact **~0.258** -- a **~12x underestimate**. Corrected below.
 
 ## Physical question
 What fraction of a tilted flat plate's hemisphere is subtended by the Earth (the view factor
@@ -17,23 +22,37 @@ What fraction of a tilted flat plate's hemisphere is subtended by the Earth (the
 effective sink?
 
 ## Why it matters
-The Earth view factor sets how much planetary IR and albedo the radiator absorbs, which sets
-the effective sink temperature that the Phase B coupled solve rejects against. The edge-on
-("paper three") correction showed that an approximate view factor materially shifts results,
-so Phase B reuses the **exact** closed form, not an approximation.
+The Earth view factor sets how much planetary IR and albedo the radiator absorbs, hence the
+effective sink the Phase B coupled solve rejects against. At McCalip's default geometry
+(beta = 90 deg, 550 km) a sun-tracking bifacial panel is edge-on to Earth, where his heuristic
+floor badly underestimates the true view factor; Phase B therefore reuses the **exact** closed
+form, not the heuristic.
 
 ## Governing relation and variable definitions
-Exact tilted-plate-to-sphere view factor (closed form) as implemented in
-`orbital_thermal.mccalip_exact_vf`. Reference operating point: at 550 km altitude and 90 deg
-tilt (edge-on), `F ~= 0.258`, versus the approximate `0.25` used in the original external
-model.
+The exact tilted-plate-to-sphere view factor is `env.sphere_view_factor(altitude, tilt)`.
+Per-face orbit averages for a sun-tracking bifacial panel are
+`mccalip_exact_vf.exact_per_face_view_factors`. At beta = 90 deg, 550 km:
 
-- `F` plate-to-Earth view factor [-]; altitude [km]; tilt angle [deg]
-- closed-form expression of the differential plate element viewing a sphere
+```
+McCalip cos-tilt heuristic, 5%-of-nadir edge-on floor:  ~0.021 per face (orbit-averaged)
+exact tilted-plate-to-sphere view factor:               ~0.258
+ratio:                                                   ~12x underestimate
+```
+
+Substituting the exact per-face view factor into McCalip's own heat balance:
+
+```
+335.75 K (McCalip, replicated)  ->  342.10 K (exact edge-on VF)   = +6.35 K
+```
+
+- `F` plate-to-Earth view factor [-]; altitude [km]; tilt angle from nadir [deg]
+- only the view factor changes; truncated sigma, rounded deep-space temperature, constants,
+  and orbit sampling are retained, so the +6.35 K shift is attributable to geometry alone
 
 ## Assumptions
 Differential-element (small-plate) idealization; spherical Earth; diffuse exchange; far-field
-geometry. The element view factor stands in for a finite panel.
+geometry; McCalip's 72-point orbit sampling and per-face tilt cosines are retained for the
+comparison.
 
 ## Explanation in the director's own words
 `TODO (director)` -- to be written without model drafting before status advances to
@@ -41,38 +60,44 @@ geometry. The element view factor stands in for a finite panel.
 
 ## Reproduction method
 ```bash
-python -m pytest tests/test_mccalip_exact_vf.py -q   # exact VF unit tests
+python -m pytest tests/test_mccalip_exact_vf.py -q   # exact VF + per-face + correction tests
 python verify_paper3.py                              # view-factor decomposition (paper three)
 python examples/02_edge_on_correction.py             # +6.35 K edge-on correction demo
 ```
-Code: `orbital_thermal.mccalip_exact_vf`. Numerical-vs-symbolic agreement at ~1e-9 is
-recorded in the V&V credibility matrix.
+Code: `orbital_thermal.mccalip_exact_vf` (`exact_per_face_view_factors`,
+`equilibrium_temperature_with_view_factors`, `eqtemp_exact_vf`, `correction_table_vs_beta`),
+built on `environment.sphere_view_factor`. The module reproduces McCalip's number exactly when
+fed his own view factors, isolating the geometry effect.
 
 ## Supporting evidence (by category)
-- **a. source / reference:** Edge-on view-factor correction preprint (paper three,
-  DOI 10.5281/zenodo... see CITATION.cff); standard view-factor literature for the closed form.
+- **a. source / reference:** edge-on view-factor correction preprint (paper three; see
+  `CITATION.cff` for the DOI); standard view-factor literature for the closed form.
 - **b. independent derivation:** the closed form is derived in the preprint; a
   **director-authored** independent re-derivation is `TODO`.
 - **c. executable reproduction:** `tests/test_mccalip_exact_vf.py`, `verify_paper3.py`,
-  `examples/02_edge_on_correction.py`; numerical vs symbolic ~1e-9. Status: present and passing.
+  `examples/02_edge_on_correction.py`; numerical vs symbolic ~1e-9 (V&V matrix). Status:
+  present and passing.
 - **d. qualified external human review:** `pending`.
 - **cross-model review (separate; not category d):** the GPT audit reviewed the edge-on
-  correction and view-factor decomposition during Phase A.
+  correction during Phase A; the **B0 re-review (F9)** caught the mis-stated comparator now
+  corrected here.
 
 ## Sensitivity / limiting cases
-- Tilt 0 deg (facing Earth) vs 90 deg (edge-on) bound the view-factor range; the edge-on case
-  is the one that produced the +6.35 K correction.
-- Altitude sets the angular radius of the Earth; higher orbits reduce `F`.
+- Tilt 0 deg (Earth-facing) vs 90 deg (edge-on) bound the view-factor range; the edge-on case
+  drives the +6.35 K correction and the ~12x heuristic underestimate.
+- Altitude sets the Earth's angular radius; higher orbits reduce `F`.
 
 ## Known uncertainties
-The differential-element idealization neglects finite-panel self-view and gradient across a
-large panel; adequate for screening, not for detailed panel design.
+The differential-element idealization neglects finite-panel self-view and across-panel
+gradients; adequate for screening, not detailed panel design.
 
 ## What evidence would invalidate this result
 - A finite-panel computation diverging from the element view factor beyond model-form error.
-- An error found in the closed-form derivation or its numerical evaluation.
+- An error in the closed-form derivation or its numerical evaluation.
 
 ## Open questions / TODO
-- `TODO (director)`: plain-language explanation of the tilted-plate-to-sphere geometry.
+- `TODO (director)`: plain-language explanation of the tilted-plate-to-sphere geometry and why
+  the edge-on heuristic floor (~0.021) is a ~12x underestimate of the exact ~0.258.
 - `TODO`: record a director-authored or external independent derivation (b).
-- Phase B: confirm the exact VF (not 0.25) feeds the orbital-boundary sink in reported cases.
+- Phase B: confirm the exact per-face view factor (not the heuristic floor) feeds the orbital
+  boundary in reported cases.

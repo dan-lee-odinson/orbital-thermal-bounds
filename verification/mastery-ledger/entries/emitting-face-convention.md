@@ -6,9 +6,12 @@
 
 - **Entry id:** `emitting-face-convention`
 - **Current status:** `reproduced` (code) -- director explanation `TODO`
-- **Last updated:** 2026-06-21
+- **Last updated:** 2026-06-21 (rev 1)
 - **Reviewed at commit:** `abef98e` (branch `main`)
 - **Opened by:** B0 (Phase B core-boundary set)
+- **Rev 1 note (review F3/F9):** added the explicit **equal-sink-on-both-faces** condition and
+  cross-link to `radiator-attitude-and-sun-shielding`; the `2 x planform` convention is valid
+  only under that condition.
 
 ## Physical question
 When a flat-panel radiator rejects heat from both faces, what area enters the rejection law:
@@ -23,16 +26,18 @@ convention must be fixed and consistent between Phase A and Phase B.
 The rejection law uses the **emitting** area `A`:
 
 ```
-A_emitting = 2 * A_planform     (two-sided flat panel)
+A_emitting = 2 * A_planform     (two-sided flat panel, equal sinks on both faces)
 A = Q / (epsilon * sigma * (T^4 - T_sink^4))     [m^2, emitting]
 ```
 
 - `A_planform` one-sided projected area [m^2]; `A_emitting` total radiating area [m^2]
-- the factor 2 applies to a flat two-sided panel radiating from both faces
+- the factor 2 applies to a flat two-sided panel **whose two faces see the same effective
+  sink**; otherwise rejection is summed per face (see Phase B plan Section 4.4)
 
 ## Assumptions
-Both faces radiate to the same effective sink with the same emissivity; edge area is
-neglected; the panel is thin and isothermal across its thickness.
+Both faces radiate to the **same** effective sink with the same emissivity (review F3: this is
+a real condition, not automatic - a bifacial panel in orbit can see different per-face
+environments); edge area neglected; panel thin and isothermal across its thickness.
 
 ## Explanation in the director's own words
 `TODO (director)` -- to be written without model drafting before status advances to
@@ -44,33 +49,37 @@ python -m pytest tests/test_published_results.py -q   # area anchors use the emi
 python examples/01_equilibrium_and_area.py            # worked equilibrium + area
 ```
 Code: `orbital_thermal.radiation.required_area` (and the area handling in
-`orbital_thermal.equilibrium`). Convention is exercised by the published-result area anchors.
+`orbital_thermal.equilibrium`).
 
 ## Supporting evidence (by category)
 - **a. source / reference:** Bounds preprint area-sizing corollaries
   (DOI 10.5281/zenodo.20650893); the two-sided convention is stated with the area law.
 - **b. independent derivation:** n/a -- this is a modelling **convention**, not a derived
-  relation. (What can be checked is *consistency of use*, under c.)
+  relation. (Consistency of use is checked under c.)
 - **c. executable reproduction:** `tests/test_published_results.py` area anchors;
   `examples/01_equilibrium_and_area.py`. Status: present and passing.
 - **d. qualified external human review:** `pending`.
-- **cross-model review (separate; not category d):** the Phase A audit exercised area
-  results; the convention itself was not a flagged item.
+- **cross-model review (separate; not category d):** the Phase A audit exercised area results;
+  the B0 re-review (F3) added the equal-sink condition now recorded here.
 
 ## Sensitivity / limiting cases
-- A single-sided radiator (one face insulated) uses `A_emitting = A_planform`; the model must
-  expose which convention a case uses.
+- A single-sided radiator (one face insulated) uses `A_emitting = A_planform`.
+- **Unequal per-face sinks** (bifacial panel, different Earth/solar exposure per face) break
+  the single `2 x planform` shortcut; rejection must then be summed per face.
 - Mis-applying the factor 2 doubles or halves area and mass -- a guard/labelling check is the
   intended Phase B protection.
 
 ## Known uncertainties
-Real radiators have non-radiating mounting/edge area and face-to-face view obstruction in
-packed arrays; the clean "2 x planform" is an idealization for screening.
+Real radiators have non-radiating mounting/edge area and face-to-face obstruction in packed
+arrays; the clean "2 x planform" is an idealization for screening.
 
 ## What evidence would invalidate this result
-- A case where the two faces see materially different sinks (so the factor 2 is wrong).
+- A case where the two faces see materially different sinks (so the factor 2 is wrong) - now
+  explicitly handled by per-face summation in the Phase B plan.
 - Packed-array geometry where one face is substantially obstructed.
 
 ## Open questions / TODO
-- `TODO (director)`: plain-language explanation of why emitting area, not planform, is correct.
-- Phase B: ensure every case records which area convention it uses (one- vs two-sided).
+- `TODO (director)`: plain-language explanation of why emitting area, not planform, is correct,
+  and when the equal-sink condition holds.
+- Phase B: ensure every case records its area convention (one- vs two-sided) and, for orbital
+  cases, whether per-face sinks are equal.
