@@ -44,6 +44,24 @@ class Status(str, Enum):
     NOT_RANK_ELIGIBLE = "not_rank_eligible"
 
 
+class PropertyKind(str, Enum):
+    """What a property entry *is*, which governs how it may be used in a ranked case:
+
+    - ``OPERATIONAL`` -- a directly usable value (e.g. a near-constant solid conductivity
+      or a true material constant); rank-eligible when resolved and sourced.
+    - ``REFERENCE_ANCHOR`` -- a single reference-state literal kept for cross-check only
+      (e.g. a coolant transport property at one temperature). **Never** rank-eligible as an
+      operational loop property: a ranked case must obtain per-state values via the
+      corresponding backend-evaluation entry, not this static literal.
+    - ``BACKEND_EVALUATION`` -- a per-state property-evaluation capability (backend + required
+      inputs + validity domain), with no single scalar value; rank-eligible when resolved.
+    """
+
+    OPERATIONAL = "operational"
+    REFERENCE_ANCHOR = "reference_anchor"
+    BACKEND_EVALUATION = "backend_evaluation"
+
+
 #: Only a RESOLVED entry may enter a ranked case.
 _RANKABLE_STATUS = frozenset({Status.RESOLVED})
 
@@ -110,6 +128,7 @@ class PropertyEntry:
     quantity: str
     provenance: Provenance
     status: Status
+    kind: PropertyKind = PropertyKind.OPERATIONAL
     value: float | None = None
     units: str = ""
     domain: Domain = field(default_factory=Domain)
@@ -121,7 +140,12 @@ class PropertyEntry:
 
     @property
     def rank_eligible(self) -> bool:
-        return is_rank_eligible(self.provenance, self.status, self.value is not None)
+        # A single-state reference literal is never an operational ranked value; a ranked
+        # case must use the backend-evaluation entry for per-state properties.
+        if self.kind is PropertyKind.REFERENCE_ANCHOR:
+            return False
+        has_value = self.value is not None or self.kind is PropertyKind.BACKEND_EVALUATION
+        return is_rank_eligible(self.provenance, self.status, has_value)
 
 
 @dataclass(frozen=True)

@@ -26,6 +26,7 @@ from .provenance import (
     Domain,
     NotRankEligibleError,
     PropertyEntry,
+    PropertyKind,
     Provenance,
     Source,
     Status,
@@ -38,6 +39,7 @@ from .provenance import (
 __all__ = [
     "Provenance",
     "Status",
+    "PropertyKind",
     "Source",
     "Domain",
     "PropertyEntry",

@@ -27,18 +27,31 @@ def _value(e: object) -> str:
     return f"{v:g}"
 
 
-def _rows(entries: list) -> str:
-    lines = []
-    for e in entries:
-        src = e.source.citation if getattr(e, "source", None) else ""
-        eligible = "yes" if e.rank_eligible else "**no**"
-        lines.append(
-            f"| `{e.id}` | {e.name} | {e.provenance.value} | {e.status.value} "
-            f"| {_value(e)} | {_cell(getattr(e, 'units', ''))} | {_cell(src)} | {eligible} |"
-        )
-    return "\n".join(lines)
+def _row(e: object, kind_col: bool) -> str:
+    src = e.source.citation if getattr(e, "source", None) else ""
+    eligible = "yes" if e.rank_eligible else "**no**"
+    cells = [f"`{e.id}`", e.name]
+    if kind_col:
+        cells.append(e.kind.value)
+    cells += [
+        e.provenance.value,
+        e.status.value,
+        _value(e),
+        _cell(getattr(e, "units", "")),
+        _cell(src),
+        eligible,
+    ]
+    return "| " + " | ".join(cells) + " |"
 
 
+def _rows(entries: list, kind_col: bool = False) -> str:
+    return "\n".join(_row(e, kind_col) for e in entries)
+
+
+PROP_HEADER = (
+    "| ID | Name | Kind | Provenance | Status | Value (SI) | Units | Source | Rank-eligible |"
+)
+PROP_SEP = "|---|---|---|---|---|---|---|---|---|"
 HEADER = "| ID | Name | Provenance | Status | Value (SI) | Units | Source | Rank-eligible |"
 SEP = "|---|---|---|---|---|---|---|---|"
 
@@ -86,9 +99,9 @@ Resolved coolant transport values are **derived** from CoolProp 7.2.0 at the sat
 
 ## Properties (coolants, solids, containment)
 
-{HEADER}
-{SEP}
-{_rows(props)}
+{PROP_HEADER}
+{PROP_SEP}
+{_rows(props, kind_col=True)}
 
 ## Correlations (thermal, hydraulic)
 
