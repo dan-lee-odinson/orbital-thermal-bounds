@@ -7,7 +7,9 @@
 ![license](https://img.shields.io/badge/code-MIT-green)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20709241.svg)](https://doi.org/10.5281/zenodo.20709241)
 
-*Machine-verified thermodynamic bounds for orbital data-center thermal architecture, plus an audited Python simulation package that extends the analytic results to time-dependent, environment-coupled radiator behavior.* This repository contains three things: the **bounds preprint** and its proofs, the **AI1 design-point companion paper**, and the **`orbital_thermal` package** — a reduced-order radiator model whose headline result is a quantified correction to a published peer model.
+Orbital Thermal Bounds is a DOI-archived research and software program for reduced-order thermal feasibility analysis of orbital compute architectures. It began with analytic radiator-area bounds, then added executable radiator simulations, public-model correction/reproduction, visual exploration notebooks, and a Phase B chip-to-radiator architecture-comparison framework.
+
+The project is designed to separate published values, derived results, assumptions, sensitivities, unsupported cases, and future model extensions.
 
 **Bounds preprint:** DOI [10.5281/zenodo.20650893](https://doi.org/10.5281/zenodo.20650893)  
 **AI1 companion paper:** DOI [10.5281/zenodo.20670771](https://doi.org/10.5281/zenodo.20670771)  
