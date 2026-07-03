@@ -7,21 +7,24 @@ formal cross-model review, or release. Not required for routine development.
 > not indicate validation or acceptance of the associated technical claims.
 # Review Record: B0 - Phase B, Stage 1 implementation plan
 ## Record Metadata
-- **Record status:** original review completed; re-review 1 completed; **revision 2 submitted;
-  second re-review pending**
-- **Date:** 2026-06-21
+- **Record status:** original review + two re-reviews completed; **revision 3 submitted; third
+  (confirmation) re-review pending**
+- **Date:** 2026-06-21 (updated 2026-07-02)
 - **Reviewed commit (original):** `c462840` (`main`)
 - **Revision 1:** delivered as a draft and re-reviewed; **not merged** to `main`
   (superseded by Revision 2).
-- **Revision 2 commit:** `<fill with the chore/b0-revision-2 merge commit hash after push>`
-- **Branch:** `chore/b0-revision-2`
+- **Revision 2 commit:** `5740909` (`main`) - reviewed by the second re-review.
+- **Revision 3 commit:** `<fill with the chore/b0-revision-3 merge commit hash after push>`
+- **Branch:** `chore/b0-revision-3`
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B0)
 - **Disposition (original, retained):** **not ready / changes required**
 - **Disposition (re-review 1, retained):** **changes required** - Revision 1 changes cleared,
-  two remaining blockers + one required limitation (see below).
-- **Disposition (current):** revision 2 submitted; **B1 remains blocked** until a second
-  cross-model re-review finds no unresolved blocker.
+  two remaining blockers + one required limitation.
+- **Disposition (re-review 2, retained):** **changes required** - 2.1 and 2.3 closed, both
+  source checks passed; one remaining blocker (C2 loophole) + one major + one minor.
+- **Disposition (current):** revision 3 submitted; **B1 remains blocked** until a confirmation
+  re-review finds no unresolved blocker.
 
 ## Review Basis
 The B0 deliverable was reviewed against the Phase B roadmap
@@ -110,24 +113,47 @@ the plan and cleared the original nine findings, but raised **two remaining bloc
 | 2.2 | blocker | **fixed** | Added a per-case all-face direct-solar contract with three options (C1 fully-shielded bifacial / C2 single cold-face / C3 explicit sunlit-face); C3 needs the deferred direct-solar term; missing `alpha_s` forces a parametric case, never an assumed ranked value; the chosen contract is a ranking-gate input. | plan 4.4a |
 | 2.3 | limitation | **stated (accepted)** | Section 4.8a now states the consequence explicitly: the Stage-1 prescribed-pressure default defers accumulator/thermal-expansion mass, so the objective stays "modeled component mass" and must not be reported as total thermal-system mass until those closures exist. | plan 4.8a |
 
+## Re-review 2 findings (retained) and Revision 3 response
+The second cross-model re-review (of Revision 2, commit `5740909`) confirmed **2.1 closed**
+(solve modes T/A/S are square; pump heat correctly routed to the fluid) and **2.3 closed**, and
+independently **verified both source checks**: the corrected `earth-view-factors` comparator
+matches `mccalip_exact_vf.py` (~0.021 vs ~0.258, +6.35 K), and the attitude entry matches
+`sink.py`. It left one blocker + one major + one minor:
+
+- **RR2-1 [blocker]** C2 could let a **sunlit, thermally coupled backside** be excluded from
+  *both* the emitting-area credit and the absorbed-solar load, underpredicting radiator
+  temperature/area and bypassing the missing-`alpha_s` rule.
+- **RR2-2 [major]** Section 5 residual 1 kept a collapsed `T_j - T_rad = Q_path * R_total` that
+  conflicts with the per-node routing in 4.1a.
+- **RR2-3 [minor]** C1 wording conflated the `2 A_plan` area-bookkeeping convention with the
+  equal-sink simplification.
+
+**Re-review 2 disposition: changes required** (retained above).
+
+| RR2 # | Sev | Disposition | Specific revision | Changed location |
+|---|---|---|---|---|
+| 1 | blocker | **fixed** | C2 is rank-eligible only if the excluded face is outside the thermal control volume (insulated / isolated / shielded / demonstrated no direct-solar deposition). A sunlit, thermally coupled face forces C3 (sourced or parametric `alpha_s`) or a rejected/parametric case; missing `alpha_s` blocks ranking even when the face is not credited as emitting area. | plan 4.4a (C2) |
+| 2 | major | **fixed** | Section 5 residual 1 now defers to the 4.1a per-node R1-R5 and states per-segment heat rates: chip-side resistances carry `Q_chip`; radiator-side rejection carries `Q_rad = Q_compute + Q_pump_boundary + Q_other`; pump heat is never routed through chip-side resistances. | plan 5 (residual 1) |
+| 3 | minor | **fixed** | C1 clarifies `A_emit = 2 A_plan` as a total-emitting-area bookkeeping convention; equal per-face sinks are required only to collapse both faces into one shared effective-sink law, else per-face summation. Mirrored in the `emitting-face-convention` entry. | plan 4.4a (C1); `emitting-face-convention.md` |
+
 ## Unresolved Questions
-Carried to the **second** re-review: whether the node-and-equation determinacy contract (4.1a)
-is correct and complete for all three solve modes; whether the three direct-solar contracts
-(4.4a) cover the intended bifacial geometries; and whether any newly introduced blocker exists.
-CO2 ranked use and the accumulator/total-mass closure remain deferred with consequence.
+Carried to the **third (confirmation) re-review**: whether the tightened C2 (4.4a) fully closes
+the sunlit-coupled-backside loophole without creating a new inconsistency, and whether the
+Section 5 -> 4.1a reference is now unambiguous. CO2 ranked use and the accumulator/total-mass
+closure remain deferred with consequence.
 
 ## Resulting Changes
-Revision 2 of the B0 plan (incorporating all Revision 1 changes plus the re-review closures
-4.1a, 4.4a, 4.8a) and the core-boundary ledger (`earth-view-factors` corrected,
-`emitting-face-convention` updated, `radiator-attitude-and-sun-shielding` added; index updated
-to six core entries). Revision 1 was never merged; Revision 2 supersedes it and is committed on
-`chore/b0-revision-2` (hash recorded above once pushed).
+Revision 2 (commit `5740909`) landed all Revision 1 changes plus the first-re-review closures
+(4.1a, 4.4a, 4.8a). Revision 3 (on `chore/b0-revision-3`) closes the second-re-review blocker
+and its two lower-severity findings: C2 tightened (4.4a), Section 5 residual 1 deferred to 4.1a,
+C1 wording clarified (4.4a and `emitting-face-convention.md`).
 
 ## Follow-Up
 - **Owner:** human director
-- **Required action:** submit Revision 2 for a **second cross-model re-review**; on a clean
-  re-review (no unresolved blocker), set the Revision 2 commit hash and the final disposition.
-- **Re-review required:** yes (second)
+- **Required action:** submit Revision 3 for a **short confirmation re-review** (scoped to the
+  C2 closure and the two lower-severity fixes); on a clean re-review, set the Revision 3 commit
+  hash and mark the final disposition **B0 approved**.
+- **Re-review required:** yes (third, confirmation)
 - **Target milestone:** B0 approval (gates the start of B1)
 
 ## Verification Limitations

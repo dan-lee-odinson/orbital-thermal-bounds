@@ -17,6 +17,14 @@
 > ([`verification/review-records/2026-06-21-b0-phase-b-plan.md`](https://github.com/dan-lee-odinson/orbital-thermal-bounds/tree/main/verification/review-records)).
 > Findings requiring a changed physical or mathematical contract were not closed by
 > documentation alone.
+>
+> **Revision 3 (2026-07-02).** Responds to the **second** re-review, which confirmed 2.1 and
+> 2.3 closed (and passed both source checks) but left **one remaining blocker**: the C2
+> single-cold-face contract could let a sunlit, thermally coupled backside be excluded from
+> *both* emitting area and absorbed solar load. Closed in 4.4a (C2 now requires the excluded
+> face to be outside the thermal control volume, else C3/parametric/rejected). Also addresses
+> two lower-severity findings: the Section 5 transport residual now defers to the 4.1a per-node
+> equations (major), and the C1 area-bookkeeping vs equal-sink wording is clarified (minor).
 
 **Repository:** orbital-thermal-bounds
 **Milestone:** B0 (first milestone governed by the verification workflow)
@@ -259,12 +267,22 @@ radiator that is insufficient on its own: the plan must state, **per case**, wha
 the *other* face. Every reported case must declare exactly one of three contracts:
 
 - **C1 - fully-shielded bifacial.** Both emitting faces receive no direct solar (e.g.,
-  edge-on-to-Sun or externally shaded). Both faces use the shielded effective sink; the
-  two-sided `A_emit = 2 A_plan` convention is valid **only if** both faces also see equal
-  Earth/albedo (cross-checked against `emitting-face-convention`).
+  edge-on-to-Sun or externally shaded). `A_emit = 2 A_plan` is an **emitting-area bookkeeping
+  convention** and remains valid for counting total radiating area regardless; what requires
+  **equal per-face Earth/albedo** is the *shortcut of collapsing both faces into one shared
+  effective-sink law*. If the two faces see different sinks, rejection is summed **per face**
+  (4.4), not collapsed (cross-checked against `emitting-face-convention`).
 - **C2 - single cold-face.** Only the shielded face is in the effective-sink boundary; the
-  other (potentially sunlit) face is **excluded** from the emitting-area claim, so
-  `A_emit = A_plan` (one-sided), not `2 A_plan`.
+  other face is **excluded from the emitting-area claim**, so `A_emit = A_plan` (one-sided),
+  not `2 A_plan`. **C2 is rank-eligible only if that excluded face is also outside the thermal
+  control volume** - insulated, thermally isolated, externally shielded, or otherwise
+  demonstrated to deposit **no** direct-solar heat into the modeled radiator. Excluding a face
+  from the emitting-area credit does **not** by itself remove its absorbed solar: if the
+  excluded face is **sunlit and thermally coupled** to the radiator structure, that solar load
+  still enters the balance, so the case must be treated as **C3** (with sourced or parametric
+  `alpha_s` and incidence geometry) or **rejected / marked parametric** - never ranked. Missing
+  `alpha_s` **blocks ranking for any thermally coupled sunlit face, even when that face is not
+  credited as emitting area** (re-review 2 finding 1).
 - **C3 - explicit sunlit-face.** Direct solar is included per face via a **sourced** solar
   absorptivity `alpha_s` and incidence geometry (`max(0, n . s)`). This requires the
   direct-solar term `sink.py` currently omits, so C3 is a **model extension**
@@ -360,9 +378,13 @@ Interface the B2-B4 implementation must satisfy; internals deferred.
 **Inputs / unknowns / outputs:** per the Section 4.1 taxonomy and the selected solve mode.
 
 **Residual equations (consistency conditions).**
-1. **Transport chain:** `T_j - T_rad = Q_path * R_total`, where `R_total` sums conduction,
-   spreading (mandatory for ranked cases unless 1-D proven, F7), contact, and convective film
-   resistances - imposed as a residual so intermediate temperatures are consistent outputs.
+1. **Transport chain:** the junction-to-radiator temperature relations are the **per-node
+   residuals R1-R5 of Section 4.1a**, not a single collapsed `T_j - T_rad = Q_path * R_total`
+   (re-review 2 finding 2). Different segments carry different heat rates: **chip-side**
+   resistances (conduction, spreading [mandatory for ranked cases unless 1-D proven, F7],
+   contact, and cold-plate film) carry `Q_chip`; the **radiator-side / fluid rejection** carries
+   `Q_rad = Q_compute + Q_pump_boundary + Q_other` per the 4.7 control volume. Pump heat is
+   **never** routed through the chip-side resistances.
 2. **Radiator energy balance:** `Q_rad = Q_compute + Q_pump_boundary + Q_other` (4.7).
 3. **Radiator rejection law:** `Q_rad = sum_faces epsilon * sigma * A_face *
    (T_rad^4 - T_sink_eff,face^4)` (per-face, 4.4).
@@ -518,6 +540,15 @@ on a dedicated compressible/near-critical treatment (4.2).
 
 ## 11. Changes in this revision (summary; full matrix in the review record)
 
+**Revision 3 (second re-review closures):**
+- RR2 finding 1 (blocker) **fixed**: C2 tightened - a sunlit, thermally coupled backside can no
+  longer be excluded from both emitting area and absorbed solar; such a face forces C3 or a
+  parametric/rejected case, and missing `alpha_s` blocks ranking (4.4a).
+- RR2 finding 2 (major) **fixed**: Section 5 transport residual now defers to the 4.1a per-node
+  R1-R5 with explicit per-segment heat rates (chip-side `Q_chip`; rejection `Q_rad`).
+- RR2 finding 3 (minor) **fixed**: C1 clarifies `A_emit = 2 A_plan` as area bookkeeping, with
+  equal-sink required only to collapse both faces into one shared sink law (4.4a).
+
 **Revision 2 (re-review closures):**
 - Re-review 2.1 (blocker) **fixed**: node-and-equation determinacy contract with a per-mode
   5x5 state/residual table and a rank/independence argument (4.1a).
@@ -547,7 +578,10 @@ on a dedicated compressible/near-critical treatment (4.2).
 ## 12. B0 completion and return for re-review
 
 B0 (revised) is complete when this plan and the updated ledger are committed, the review record
-carries the finding-response matrix and the revision commit hash, and the plan is **returned
-for a new cross-model review.** **B1 remains blocked until the re-review finds no unresolved
-blocker.** Director-authored explanations and independent derivations in the ledger remain
-`TODO` until actually completed and approved; they are not inferred from existing tests.
+carries the finding-response matrices and the revision commit hash, and the plan is **returned
+for cross-model review.** The second re-review confirmed 2.1 and 2.3 closed and passed both
+source checks, leaving a single narrow blocker (the C2 loophole), now closed in Revision 3;
+Revision 3 returns for a **short confirmation re-review** of that one closure. **B1 remains
+blocked until a re-review finds no unresolved blocker.** Director-authored explanations and
+independent derivations in the ledger remain `TODO` until actually completed and approved; they
+are not inferred from existing tests.
