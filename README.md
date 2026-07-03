@@ -20,6 +20,18 @@
 > against flown hardware** and is **not** intended for flight design, certification, or
 > safety-critical decisions. See [`docs/VERIFICATION_AND_VALIDATION.md`](docs/VERIFICATION_AND_VALIDATION.md).
 
+## Research Lineage
+
+This repository is part of the Orbital Thermal Bounds research program: a DOI-archived sequence of preprints, software releases, verification records, and reference-case comparisons for reduced-order thermal feasibility analysis of orbital compute architectures.
+
+| Stage | Artifact | Type | DOI / Link | Purpose |
+|---|---|---|---|---|
+| Phase A1 | Thermodynamic Bounds and Mass-Trade Criteria... | Preprint | ... | Foundational bounds |
+| Phase A2 | The AI1 Design Point... | Preprint | ... | Applied design-point analysis |
+| Phase A3 | Edge-On Geometry Raises... | Preprint | ... | View-factor correction |
+| Phase A4 | orbital-thermal package | Software | ... | Executable reduced-order model |
+| Phase B | Chip-to-radiator framework | In progress | docs/development/... | Coupled architecture comparison |
+
 ### Key results
 
 - **+6.35 K** correction to a public radiator model at its default edge-on geometry — McCalip's coded equilibrium **335.75 K → 342.10 K** with the exact Earth view factor — decomposed into **+5.77 K** model-form geometry and **+0.58 K** a floating-point branch artifact ([paper three](https://doi.org/10.5281/zenodo.20695720)).
