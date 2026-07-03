@@ -1,5 +1,7 @@
 **[Wiki](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki)** · **[Installation](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Installation)** · **[Run the Simulation](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Running-the-Simulation)** · **[Verification](https://github.com/dan-lee-odinson/orbital-thermal-bounds/wiki/Reproducing-and-Verifying)**
 
+Software release: DOI 10.5281/zenodo.20709241
+
 # Thermodynamic Bounds and Mass-Trade Criteria for Heat Rejection in Orbital Data Centers
 [![tests](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/dan-lee-odinson/orbital-thermal-bounds/actions/workflows/tests.yml)
 ![version](https://img.shields.io/badge/version-1.0.1-blue)
