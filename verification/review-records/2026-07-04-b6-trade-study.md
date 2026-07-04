@@ -6,14 +6,17 @@
 # Review Record: B6 - Trade-study engine
 
 ## Record Metadata
-- **Record status:** **OPEN - awaiting cross-model review.** The engine is implemented and
-  self-verified (Pareto construction, categories/reasons, reproducibility); the mandatory
-  adversarial cross-model review has **not yet** been conducted.
+- **Record status:** **OPEN - revision delivered; re-review pending.** The adversarial review
+  returned 0 blockers + 4 major + 4 minor findings (F1-F8); **all eight were fixed** and the
+  code + data revised. Awaiting the confirmation re-review.
 - **Date opened:** 2026-07-04
-- **Reviewed commit:** *(to be recorded when the B6 branch is pushed for review)*
+- **Reviewed commit (original):** `385d2b1` (`chore/b6-trade-study`)
+- **Revision commit:** *(to be recorded when the F1-F8 revision is pushed)*
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B6)
-- **Disposition:** *pending*
+- **Disposition (original):** **changes required** - 4 major (F1-F4/F5) + 4 minor; no blocker.
+- **Disposition (revision):** all 8 findings **fixed**; **re-review requested** before B6 is
+  treated as complete and before B7.
 
 ## Review Basis
 B6 is reviewed against the roadmap B6 entry, the plan Section 8 (B6) and 4.8/4.8a, and the
@@ -62,9 +65,55 @@ python scripts/generate_trade_study.py        # 144 points; 6 fronts, 0 degenera
 7. Is the 22/144 nonconvergence rate acceptable, and are those points correctly excluded from
    ranking?
 
-## Findings
-*(to be populated by the cross-model review; each finding dispositioned
-fixed / accepted-limitation / deferred-with-consequence, with reviewed commits recorded)*
+## Findings (adversarial review, retained) and disposition
+
+No blocker. Core Pareto logic and the mass boundary **passed**. All eight findings are **fixed**.
+
+1. **[major][defect] F1 - feasibility reason codes lossy (message-parsed, one reason).**
+   **FIXED:** `FeasibilityError` now carries structured `failed_gates`; `architecture_cases`
+   maps **every** failed gate to a reason (deduped) via `_GATE_REASON` (no message parsing);
+   B6 emits all mapped reason codes. Test: a junction+subcooling failure reports both reasons.
+2. **[major][risk] F2 - `Tr <= 0.97` cap not justified as a safe branch filter.**
+   **FIXED:** removed the arbitrary cap; the domain guard is now the clean supercritical check
+   (`mean >= Tcrit`, a phase-envelope violation), and near-critical alternate roots are handled
+   by the **subcooled-liquid filter** (an alt root is a branch only if it is itself a subcooled
+   single-phase liquid at the operating pressure). Documented in `coupled-model.md` /
+   `trade-study.md`. B4 tests pass (41, incl. the near-critical regression).
+3. **[major][defect] F3 - dominance flags/reasons computed but not exported.**
+   **FIXED:** the CSV now exports `pareto_front_membership` and `dominated_reasons`
+   (front=dominated_on_axis) per point. Test asserts the fields and a known dominated reason.
+4. **[major][risk] F4 - "no universal winner" overclaimed.**
+   **FIXED:** narrowed to the supported claim -- *no single case is Pareto-optimal on every
+   named front* (max 4 of 6; membership across all 4 cases); the generated page states it is
+   not a global aggregate-ranking claim. Test asserts `max fronts-per-case < len(TRADES)`.
+5. **[major][limitation] F5 - 22/144 nonconvergence under-diagnosed.**
+   **FIXED:** a distinct `NONCONVERGED` category (separate from gate-rejection); a
+   nonconvergence diagnostic table (case + grid coordinates) in the generated data; and an
+   explicit statement that nonconvergence is **not** evidence of physical infeasibility. Test
+   asserts the category invariant.
+6. **[minor][documentation] F6 - front members not uniquely identified.**
+   **FIXED:** stable `point_id` (`case|Q|mdot|A|Plo`); exported in the CSV and shown in the
+   generated front tables; `ParetoFront` carries `member_point_ids`. Test: point_ids unique.
+7. **[minor][sensitivity] F7 - pressure front maximizes pressure without proving benefit.**
+   **FIXED:** `min_subcooling_Pa` is now an exposed objective; the front's dominating-assumption
+   and docs state pressure is a **design-capability proxy** for phase margin, not an intrinsic
+   benefit. (Axis kept as pressure to match the roadmap's named front.)
+8. **[minor][test gap] F8 - fronts not checked against an independent oracle.**
+   **FIXED:** an oracle test recomputes each of the six fronts with a naive local dominance and
+   asserts engine membership == oracle (no dominated member; none omitted).
+
+## Post-revision self-verification
+```
+ruff check src/ tests/ scripts/                    # clean
+pytest -q                                          # 546 passed, 3 xfailed
+pytest tests/test_trade_study.py -q                # 20 passed (incl. oracle)
+pytest tests/test_coupled_model.py -q              # 41 passed
+pytest --cov=orbital_thermal --cov-fail-under=90   # total 96.0%; trade_study.py 98%
+verify_suite.py / verify_paper3.py / companion/verify_ai1.py   # all pass
+python scripts/generate_trade_study.py             # 144 points; 6 fronts, 0 degenerate
+```
 
 ## Disposition
-*pending cross-model review*
+**Revision delivered; all 8 findings fixed. Re-review requested.** Reviewed commit `385d2b1`;
+the revision commit will be recorded when pushed. B6 is not treated as closed until the
+confirmation re-review clears the revision.

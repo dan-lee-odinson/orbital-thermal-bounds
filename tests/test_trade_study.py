@@ -24,6 +24,12 @@ def _pt(case, **metrics):
 _MINMIN = ts.TradeDef("t", "x", False, "y", False, "test assumption")
 
 
+def _cmp(av, bv, maximize, strict=False):
+    if strict:
+        return av > bv if maximize else av < bv
+    return av >= bv if maximize else av <= bv
+
+
 # --- pure Pareto logic: no CoolProp ----------------------------------------------
 
 
@@ -106,7 +112,8 @@ class TestSweep:
         res = study
         s = res.summary()
         assert s["total_points"] == _SMALL.size() * 4  # 4 rank-eligible cases
-        assert s["feasible_ranked"] + s["infeasible_ranked"] == s["total_points"]
+        assert (s["feasible_ranked"] + s["gate_rejected"] + s["nonconverged"]
+                == s["total_points"])  # every point is classified (F5)
         assert s["fronts"] == 6
 
     def test_only_rank_eligible_cases_are_swept(self, study):
@@ -142,13 +149,65 @@ class TestSweep:
         res = study
         rows = ts.to_csv_rows(res)
         assert len(rows) == len(res.points) + 1  # header + points
-        assert rows[0].startswith("case_id,coolant,material")
-        assert "modeled_mass_kg" in rows[0] and "pareto_fronts" in rows[0]
+        assert rows[0].startswith("point_id,case_id,coolant,material")
+        assert "modeled_mass_kg" in rows[0] and "min_subcooling_Pa" in rows[0]
+        assert "pareto_front_membership" in rows[0] and "dominated_reasons" in rows[0]
 
-    def test_trade_offs_exist_no_single_case_wins_everything(self, study):
+    def test_no_single_case_is_optimal_on_every_front(self, study):
+        # F4: the supportable claim -- no case is a member of ALL six fronts, and membership
+        # spans more than one case (genuine trade-offs).
         res = study
-        # union of front members spans more than one case => genuine trade-offs
-        members = set()
+        from collections import Counter
+        counts = Counter()
         for f in res.fronts:
-            members.update(f.member_case_ids)
-        assert len(members) >= 2
+            for cid in set(f.member_case_ids):
+                counts[cid] += 1
+        assert counts and max(counts.values()) < len(ts.TRADES)  # no universal winner
+        assert len(counts) >= 2  # membership distributed across cases
+
+    def test_dominance_reasons_exported(self, study):
+        # F3: the CSV must expose per-front dominance so dominance is auditable from data
+        res = study
+        rows = ts.to_csv_rows(res)
+        hdr = rows[0].split(",")
+        assert "dominated_reasons" in hdr and "pareto_front_membership" in hdr
+        dominated = [p for p in res.points if p.feasible and p.dominated_reasons]
+        assert dominated  # some feasible points are dominated on some front
+        p = dominated[0]
+        front, why = next(iter(p.dominated_reasons.items()))
+        assert why.startswith("dominated_on_")
+
+    def test_point_ids_unique(self, study):
+        res = study  # F6
+        ids = [p.point_id for p in res.points]
+        assert len(ids) == len(set(ids))
+
+    def test_nonconverged_category_is_distinct_from_gate_rejection(self, study):
+        # F5: category is NONCONVERGED iff a nonconvergence reason is present
+        res = study
+        for p in res.points:
+            has_nc = ReasonCode.RESIDUAL_NONCONVERGENCE in p.reason_codes
+            assert (p.category is ts.PointCategory.NONCONVERGED) == has_nc
+
+    def test_pareto_fronts_match_independent_oracle(self, study):
+        # F8: recompute each front with a naive local dominance and compare membership
+        res = study
+        feasible = [p for p in res.points if p.feasible]
+        for t in ts.TRADES:
+            oracle = set()
+            for pt in feasible:
+                dom = False
+                for q in feasible:
+                    if q is pt:
+                        continue
+                    xge = _cmp(q.metrics[t.x_key], pt.metrics[t.x_key], t.x_maximize)
+                    yge = _cmp(q.metrics[t.y_key], pt.metrics[t.y_key], t.y_maximize)
+                    xs = _cmp(q.metrics[t.x_key], pt.metrics[t.x_key], t.x_maximize, True)
+                    ys = _cmp(q.metrics[t.y_key], pt.metrics[t.y_key], t.y_maximize, True)
+                    if xge and yge and (xs or ys):
+                        dom = True
+                        break
+                if not dom:
+                    oracle.add(pt.point_id)
+            engine = {pt.point_id for pt in feasible if t.name in pt.pareto_fronts}
+            assert engine == oracle, f"front {t.name}: engine != oracle"

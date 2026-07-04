@@ -70,6 +70,17 @@ class Reason(str, Enum):
     NOT_EVALUATED = "classified only; not evaluated (no backend, or no parametric inputs supplied)"
 
 
+# map every B4 feasibility gate name -> a reason code (all failed gates are preserved, F1)
+_GATE_REASON = {
+    "junction_within_limit": Reason.JUNCTION_LIMIT_FAILURE,
+    "subcooling_margin": Reason.SINGLE_PHASE_MARGIN_FAILURE,
+    "freeze_margin": Reason.SINGLE_PHASE_MARGIN_FAILURE,
+    "critical_margin": Reason.SINGLE_PHASE_MARGIN_FAILURE,
+    "radiator_above_sink": Reason.SINGLE_PHASE_MARGIN_FAILURE,
+    "reynolds_in_range": Reason.CORRELATION_DOMAIN_FAILURE,
+}
+
+
 # --- Stage-1 common envelope ----------------------------------------------------
 
 
@@ -366,8 +377,11 @@ def evaluate_case(
             return CaseResult(coolant, material, spec.contract.value, Classification.RANK_ELIGIBLE,
                               (Reason.RANK_ELIGIBLE_FEASIBLE,), True, True, r, mass)
         except _cm.FeasibilityError as exc:
+            reasons = tuple(dict.fromkeys(  # every failed gate -> a reason (deduped, F1)
+                _GATE_REASON.get(g, Reason.OTHER_FEASIBILITY_FAILURE) for g in exc.failed_gates
+            )) or (Reason.OTHER_FEASIBILITY_FAILURE,)
             return CaseResult(coolant, material, spec.contract.value, Classification.REJECTED,
-                              (_reason_from_feasibility(str(exc)),), True, False, None, None)
+                              reasons, True, False, None, None)
         except _cm.ConvergenceError:
             return CaseResult(coolant, material, spec.contract.value, Classification.REJECTED,
                               (Reason.NONCONVERGENCE,), True, False, None, None)
@@ -392,16 +406,6 @@ def evaluate_case(
 
     return CaseResult(
         coolant, material, spec.contract.value, cls, reasons, False, False, None, None)
-
-
-def _reason_from_feasibility(msg: str) -> Reason:
-    if "junction_within_limit" in msg:
-        return Reason.JUNCTION_LIMIT_FAILURE
-    if "subcooling_margin" in msg or "freeze_margin" in msg or "critical_margin" in msg:
-        return Reason.SINGLE_PHASE_MARGIN_FAILURE
-    if "reynolds_in_range" in msg:
-        return Reason.CORRELATION_DOMAIN_FAILURE
-    return Reason.OTHER_FEASIBILITY_FAILURE
 
 
 def build_case_matrix(

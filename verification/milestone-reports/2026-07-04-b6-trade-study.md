@@ -63,10 +63,21 @@ still pass (41, +1 regression). This touches approved B4 code and is called out 
 - **ruff**: clean. **B6 tests** (`tests/test_trade_study.py`): **16 passed** (dominance,
   Pareto membership, degenerate/empty records, grid/trade defs, real sweep + reason metadata,
   reproducibility, CSV export, trade-offs). **B4 tests:** 41 passed (+ regression).
-- **Full suite** (clone, CoolProp pinned): **541 passed, 3 xfailed, 0 failed** (+17 over B5).
-- **Coverage:** `trade_study.py` 98%; total 95.8% (gate 90%).
+- **Full suite** (clone, CoolProp pinned): **546 passed, 3 xfailed, 0 failed**.
+- **Coverage:** `trade_study.py` 98%; total 96.0% (gate 90%).
 - **Phase A guards:** all three scripts pass. **mkdocs --strict**: builds the new pages + CSV.
 - **Evidence level:** c (engine) + inherited a/b/sensitivity (physics).
+
+## Cross-model re-review (F1-F8) applied
+
+The adversarial review returned **no blocker**, 4 major + 4 minor findings; **all fixed**
+(see the review record). Summary: structured `failed_gates` so all feasibility reasons are
+preserved (F1); removed the arbitrary `Tr<=0.97` cap -- clean supercritical guard +
+subcooled-liquid alt-root filter (F2); exported dominance status/reasons + stable point_id
+in the CSV (F3/F6); narrowed the 'no universal winner' claim to what the data supports
+(F4); a distinct `NONCONVERGED` category + diagnostic (F5); `min_subcooling_Pa` exposed and
+pressure reframed as a capability proxy (F7); an independent-oracle Pareto test (F8). B6
+tests 16 -> 20.
 
 ## Limitations and readiness
 

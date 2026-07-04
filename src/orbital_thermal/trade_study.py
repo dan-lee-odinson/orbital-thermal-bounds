@@ -33,7 +33,8 @@ from .architecture_cases import Classification, Stage1Envelope
 
 class PointCategory(str, Enum):
     FEASIBLE_RANKED = "feasible_ranked"
-    INFEASIBLE_RANKED = "infeasible_ranked"  # provenance-eligible but physics-rejected
+    INFEASIBLE_RANKED = "infeasible_ranked"  # provenance-eligible but gate-rejected (physics)
+    NONCONVERGED = "nonconverged"  # solver did not converge -- NOT evidence of infeasibility
     SENSITIVITY_ONLY = "sensitivity_only"
     SOURCE_REQUIRED = "source_required"
     UNSUPPORTED_DEFERRED = "unsupported_deferred"
@@ -99,7 +100,7 @@ _OBJECTIVES = (
     "heat_load_W", "modeled_mass_kg", "fluid_delta_T_K", "pump_power_W",
     "radiator_temperature_K", "radiator_area_m2", "junction_margin_K",
     "fluid_inventory_kg", "containment_mass_kg", "inventory_plus_containment_kg",
-    "operating_pressure_Pa", "parasitic_power_W",
+    "operating_pressure_Pa", "parasitic_power_W", "min_subcooling_Pa",
 )
 
 
@@ -120,6 +121,12 @@ class EvaluatedPoint:
     active_constraint: str = "none"
     pareto_fronts: set[str] = field(default_factory=set)  # fronts this point is non-dominated in
     dominated_reasons: dict[str, str] = field(default_factory=dict)  # front -> why dominated
+
+    @property
+    def point_id(self) -> str:
+        """Stable per-point identity: case + grid coordinates (re-review F6)."""
+        return (f"{self.case_id}|Q={self.grid_heat_load_W:g}|mdot={self.grid_mass_flow_kg_s:g}"
+                f"|A={self.grid_radiator_area_m2:g}|Plo={self.grid_low_side_pressure_Pa:g}")
 
 
 def _metric(point: EvaluatedPoint, key: str) -> float:
@@ -160,17 +167,21 @@ def _evaluate_point(base: Stage1Envelope, coolant: str, material: str,
             "containment_mass_kg": cont,
             "inventory_plus_containment_kg": inv + cont,
             "operating_pressure_Pa": p,
+            "min_subcooling_Pa": c.min_subcooling_Pa,
         }
         return EvaluatedPoint(
             case_id, coolant, material, q, md, area, p, True, PointCategory.FEASIBLE_RANKED,
             (ReasonCode.FEASIBLE, ReasonCode.MASS_ACCOUNTING_INCOMPLETE), metrics,
             active_constraint=_active_constraint(c, env))
-    # provenance-eligible but physics-rejected
-    reasons = tuple(_REASON_MAP.get(r, ReasonCode.OTHER_FEASIBILITY_FAILURE)
-                    for r in cr.reason_codes) or (ReasonCode.OTHER_FEASIBILITY_FAILURE,)
+    # provenance-eligible but physics-rejected: preserve ALL reason codes (deduped, F1)
+    reasons = tuple(dict.fromkeys(
+        _REASON_MAP.get(r, ReasonCode.OTHER_FEASIBILITY_FAILURE) for r in cr.reason_codes
+    )) or (ReasonCode.OTHER_FEASIBILITY_FAILURE,)
+    # nonconvergence is a distinct category -- NOT evidence of physical infeasibility (F5)
+    category = (PointCategory.NONCONVERGED if ReasonCode.RESIDUAL_NONCONVERGENCE in reasons
+                else PointCategory.INFEASIBLE_RANKED)
     return EvaluatedPoint(
-        case_id, coolant, material, q, md, area, p, False, PointCategory.INFEASIBLE_RANKED,
-        reasons, {})
+        case_id, coolant, material, q, md, area, p, False, category, reasons, {})
 
 
 def evaluate_grid(
@@ -213,8 +224,10 @@ TRADES: tuple[TradeDef, ...] = (
              "limit design variable."),
     TradeDef("inventory_containment_mass_vs_pressure", "operating_pressure_Pa", True,
              "inventory_plus_containment_kg", False,
-             "containment is an ideal-shell lower bound (minimum gauge unmodeled, 4.6); higher "
-             "pressure buys phase margin at a mass penalty."),
+             "containment is an ideal-shell lower bound (minimum gauge unmodeled, 4.6). "
+             "Pressure is a **design-capability proxy** for phase margin (see "
+             "min_subcooling_Pa), not an intrinsic benefit: higher pressure buys margin at a "
+             "containment-mass penalty."),
     TradeDef("modeled_mass_vs_parasitic_power", "parasitic_power_W", False, "modeled_mass_kg",
              False, "mass-vs-parasitic-power trade; parasitic power is the pump electrical input "
              "(fluid-loop boundary, 4.7)."),
@@ -240,6 +253,7 @@ class ParetoFront:
     y_sense: str
     dominating_assumption: str
     member_case_ids: list[str]
+    member_point_ids: list[str]
     n_feasible: int
     degenerate: bool
     note: str = ""
@@ -272,7 +286,8 @@ def pareto_front(points: list[EvaluatedPoint], t: TradeDef) -> ParetoFront:
     return ParetoFront(
         t.name, t.x_key, t.y_key, "maximize" if t.x_maximize else "minimize",
         "maximize" if t.y_maximize else "minimize", t.dominating_assumption,
-        [m.case_id for m in members], len(feasible), degenerate, note)
+        [m.case_id for m in members], [m.point_id for m in members], len(feasible),
+        degenerate, note)
 
 
 # --- top-level result -----------------------------------------------------------
@@ -286,10 +301,14 @@ class TradeStudyResult:
 
     def summary(self) -> dict[str, int]:
         feas = sum(1 for p in self.points if p.feasible)
+        nonconv = sum(1 for p in self.points if p.category is PointCategory.NONCONVERGED)
+        gate_rej = sum(1 for p in self.points
+                       if p.category is PointCategory.INFEASIBLE_RANKED)
         return {
             "total_points": len(self.points),
             "feasible_ranked": feas,
-            "infeasible_ranked": len(self.points) - feas,
+            "gate_rejected": gate_rej,
+            "nonconverged": nonconv,
             "fronts": len(self.fronts),
             "degenerate_fronts": sum(1 for f in self.fronts if f.degenerate),
         }
@@ -321,10 +340,10 @@ def _model_version() -> str:
 # --- machine-readable export ----------------------------------------------------
 
 _CSV_FIELDS = (
-    "case_id", "coolant", "material", "grid_heat_load_W", "grid_mass_flow_kg_s",
+    "point_id", "case_id", "coolant", "material", "grid_heat_load_W", "grid_mass_flow_kg_s",
     "grid_radiator_area_m2", "grid_low_side_pressure_Pa", "feasible", "category",
     "reason_codes", "active_constraint",
-    *_OBJECTIVES, "pareto_fronts",
+    *_OBJECTIVES, "pareto_front_membership", "dominated_reasons",
 )
 
 
@@ -334,12 +353,13 @@ def to_csv_rows(result: TradeStudyResult) -> list[str]:
     rows = [",".join(_CSV_FIELDS)]
     for p in result.points:
         vals = [
-            p.case_id, p.coolant, p.material, f"{p.grid_heat_load_W:g}",
+            p.point_id, p.case_id, p.coolant, p.material, f"{p.grid_heat_load_W:g}",
             f"{p.grid_mass_flow_kg_s:g}", f"{p.grid_radiator_area_m2:g}",
             f"{p.grid_low_side_pressure_Pa:g}", str(p.feasible), p.category.value,
             "|".join(r.value for r in p.reason_codes), p.active_constraint,
         ]
         vals += [f"{p.metrics.get(k, ''):g}" if k in p.metrics else "" for k in _OBJECTIVES]
-        vals.append("|".join(sorted(p.pareto_fronts)))
+        vals.append("|".join(sorted(p.pareto_fronts)))  # fronts this point is non-dominated in
+        vals.append("|".join(f"{fr}={why}" for fr, why in sorted(p.dominated_reasons.items())))
         rows.append(",".join(vals))
     return rows

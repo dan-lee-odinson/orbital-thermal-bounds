@@ -45,10 +45,6 @@ from .radiation import SIGMA_SB, required_area
 from .solid_network import SolidPath
 
 _COOLANT_FLUID = {"ammonia": "Ammonia", "water": "Water"}
-# single-phase-liquid domain cap: reject fixed-point excursions above this reduced
-# temperature (Tr = T/Tcrit). Near-critical roots are ill-conditioned and unphysical for a
-# liquid loop; the tighter cap (vs Tcrit-1) removes spurious near-critical branches (B6).
-_LIQUID_TR_MAX = 0.97
 
 
 class SolveMode(str, Enum):
@@ -71,7 +67,14 @@ class ConvergenceError(CoupledError):
 
 
 class FeasibilityError(CoupledError):
-    """A converged solution failed a feasibility gate and is rejected (ranked case, 5)."""
+    """A converged solution failed a feasibility gate and is rejected (ranked case, 5).
+
+    ``failed_gates`` lists **every** gate that failed (not just the first), so downstream
+    code can report all reasons (re-review F1)."""
+
+    def __init__(self, message: str, failed_gates: tuple[str, ...] = ()):
+        super().__init__(message)
+        self.failed_gates = tuple(failed_gates)
 
 
 class BranchError(CoupledError):
@@ -360,9 +363,10 @@ def solve_coupled(
         q_pump = 0.0
         iters = 0
         for iters in range(1, max_iter + 1):
-            if mean >= _LIQUID_TR_MAX * t_crit:
-                # left the single-phase-liquid domain (near-critical / supercritical
-                # excursion, Tr >= 0.97) -> not a physical root for this seed (B0 plan 5).
+            if mean >= t_crit:
+                # supercritical excursion -> phase-envelope violation; not a physical liquid
+                # root for this seed (B0 plan 5). (Near-critical *converged* roots are
+                # filtered below by the subcooled-liquid test, not by an arbitrary cap.)
                 return dict(converged=False, iters=iters, mean=mean,
                             reason="left single-phase-liquid domain", q_rad=q_chip + q_pump)
             props = fluids.transport_properties(mean, press, fluid)
@@ -422,7 +426,7 @@ def solve_coupled(
     # uniqueness basis.
     if multistart:
         lo = max(radiator.max_sink_K + 2.0, 0.9 * sol["mean"])
-        hi = min(_LIQUID_TR_MAX * t_crit - 1.0, 1.1 * sol["mean"])
+        hi = min(t_crit - 1.0, 1.1 * sol["mean"])
         for seed in (lo, hi):
             alt = _fixed_point(seed)
             if alt["converged"]:
@@ -500,10 +504,11 @@ def solve_coupled(
     converged = residual_converged and energy_closed
 
     if ranked and not feasible:
-        failed = [name for name, ok in gates.items() if not ok]
+        failed = tuple(name for name, ok in gates.items() if not ok)
         raise FeasibilityError(
-            f"ranked coupled case converged but failed feasibility gate(s): {failed}. "
-            "A converged-but-infeasible solution is rejected (B0 plan 5)."
+            f"ranked coupled case converged but failed feasibility gate(s): {list(failed)}. "
+            "A converged-but-infeasible solution is rejected (B0 plan 5).",
+            failed_gates=failed,
         )
 
     return CoupledResult(

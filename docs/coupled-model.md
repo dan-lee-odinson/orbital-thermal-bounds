@@ -39,7 +39,10 @@ in `T_rad^4`, so R5 (Mode T) and its inverse (Mode A) are **closed form**.
 below `residual_tol` (B0 plan 5, F8) -- distinct from `fixed_point_converged`, which only
 reports that the iteration stopped stepping (below `tol`). Multi-start bracketing seeds are a
 **local branch smoke check**: each must return to the same root or fail for a *classified*
-single-phase-domain reason; an unexplained non-convergence is reported as a branch.
+single-phase-domain reason; an unexplained non-convergence is reported as a branch. An
+alternate root counts as a competing branch **only if it is itself a subcooled single-phase
+liquid** at the operating pressure -- an infeasible near-critical alt root is not a physical
+competitor (B6).
 
 ## Solve modes (B4 scope: T and A)
 

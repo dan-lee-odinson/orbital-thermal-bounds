@@ -57,8 +57,9 @@ def main() -> None:
     w("")
     w(f"- total points: **{summ['total_points']}** ({meta['n_cases']} cases x "
       f"{meta['grid_points_per_case']} grid points)")
-    w(f"- feasible (ranked): **{summ['feasible_ranked']}**; infeasible (ranked, reported with "
-      f"reasons): **{summ['infeasible_ranked']}**")
+    w(f"- feasible (ranked): **{summ['feasible_ranked']}**; gate-rejected (infeasible, "
+      f"reported with reasons): **{summ['gate_rejected']}**; **nonconverged** (solver did "
+      f"not converge -- NOT evidence of physical infeasibility): **{summ['nonconverged']}**")
     w(f"- Pareto fronts: **{summ['fronts']}**; degenerate/empty: **{summ['degenerate_fronts']}**")
     w("")
     # infeasible reason breakdown
@@ -74,6 +75,22 @@ def main() -> None:
     w("**Mass note:** every mass value is *modeled component mass (incomplete Stage-1 "
       "accounting, 4.8a)* -- never total-system, launch, or flight mass.")
     w("")
+    nonconv = [p for p in res.points if p.category is ts.PointCategory.NONCONVERGED]
+    if nonconv:
+        w("## Nonconvergence diagnostic (excluded from ranking)")
+        w("")
+        w("These points did **not** converge in the fixed-point solver. Nonconvergence is "
+          "**not evidence of physical infeasibility** -- it may indicate a solver basin / "
+          "step-tolerance limit at an extreme grid corner. They are excluded from every "
+          "front and never ranked. (Full per-point data, incl. grid coordinates, is in the "
+          "CSV.)")
+        w("")
+        w("| case | Q (W) | m_dot (kg/s) | A_plan (m^2) | P_lo (Pa) |")
+        w("|---|---:|---:|---:|---:|")
+        for p in nonconv:
+            w(f"| {p.case_id} | {p.grid_heat_load_W:g} | {p.grid_mass_flow_kg_s:g} | "
+              f"{p.grid_radiator_area_m2:g} | {p.grid_low_side_pressure_Pa:g} |")
+        w("")
     w("## The six Pareto fronts")
     w("")
     for f in res.fronts:
@@ -86,20 +103,28 @@ def main() -> None:
           f"{len(members)}{'  **[degenerate/empty: ' + f.note + ']**' if f.degenerate else ''}")
         if members:
             w("")
-            w(f"| case | {f.x_axis} | {f.y_axis} | active constraint |")
+            w(f"| point_id | {f.x_axis} | {f.y_axis} | active constraint |")
             w("|---|---:|---:|---|")
             for p in sorted(members, key=lambda q: q.metrics[f.x_axis]):
-                w(f"| {p.case_id} | {p.metrics[f.x_axis]:.3g} | {p.metrics[f.y_axis]:.3g} | "
-                  f"{p.active_constraint} |")
+                w(f"| `{p.point_id}` | {p.metrics[f.x_axis]:.3g} | {p.metrics[f.y_axis]:.3g} "
+                  f"| {p.active_constraint} |")
         w("")
-    w("## No universal winner")
+    w("## No single case is optimal on every front")
     w("")
-    all_members = set()
+    from collections import Counter
+    fcount: Counter = Counter()
     for f in res.fronts:
-        all_members.update(f.member_case_ids)
-    w(f"Non-dominated membership spans {len(all_members)} of {meta['n_cases']} cases across the "
-      "six fronts: different coolant/material cases are Pareto-optimal on different trades, so "
-      "there is **no single dominating architecture** in this Stage-1 envelope.")
+        for cid in set(f.member_case_ids):
+            fcount[cid] += 1
+    max_fronts = max(fcount.values()) if fcount else 0
+    w(f"No single case is Pareto-optimal on every named front: the most any case reaches is "
+      f"**{max_fronts} of {len(res.fronts)}** fronts, and non-dominated membership is "
+      f"distributed across **{len(fcount)} of {meta['n_cases']}** cases. This establishes "
+      "multi-front trade-off diversity under this Stage-1 grid; it is **not** a global "
+      "aggregate-ranking claim over the full objective vector.")
+    w("")
+    w("Fronts each case is Pareto-optimal on: "
+      + "; ".join(f"{c} ({n}/{len(res.fronts)})" for c, n in sorted(fcount.items())) + ".")
     w("")
 
     md_path = Path("docs/trade-study-data.md")

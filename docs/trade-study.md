@@ -37,7 +37,7 @@ grid values are recorded in the output metadata (see `DesignGrid`).
 | `pump_power_vs_delta_T` | fluid delta_T (min) vs pump power (min) |
 | `radiator_area_vs_temp` | radiator temperature (min) vs radiator area (min) |
 | `junction_margin_vs_load` | heat load (max) vs junction margin (max) |
-| `inventory_containment_mass_vs_pressure` | operating pressure (max) vs inventory+containment mass (min) |
+| `inventory_containment_mass_vs_pressure` | operating pressure (max, a **capability proxy** for phase margin -- see `min_subcooling_Pa`) vs inventory+containment mass (min) |
 | `modeled_mass_vs_parasitic_power` | parasitic power (min) vs modeled mass (min) |
 
 Each front carries its **dominating assumption** (the physical/accounting driver, e.g., mass is
@@ -54,8 +54,7 @@ reason**, never silently omitted.
   `residual_nonconvergence`, `mass_accounting_incomplete`, dominance reasons).
 - Mass is **modeled component mass (incomplete Stage-1 accounting, 4.8a)** -- never total-system,
   launch, or flight mass. The objective is *not* renamed "total thermal-system mass".
-- **No universal winner:** different cases are Pareto-optimal on different fronts; the engine
-  makes no single-architecture ranking claim.
+- **No single case is optimal on every front:** non-dominated membership is distributed across the cases (the most any case reaches is a strict minority of the six fronts). This is a multi-front trade-off-diversity statement, **not** a global aggregate-ranking claim over the full objective vector.
 
 ## Outputs
 
@@ -71,6 +70,8 @@ members and dominating assumptions). **Figures are produced in B7**, consuming t
 The B6 sweep exercised the B4 coupled solver across many design points and surfaced a
 multi-start false-positive near the coolant critical temperature: a high bracketing seed could
 converge to an **infeasible near-critical** second fixed point and raise a spurious `BranchError`
-even though the physical **subcooled-liquid** root was correct. B4's multi-start was tightened
-(reduced-temperature domain cap `Tr <= 0.97`, and a subcooled-liquid filter so an alt root is a
-branch only if it is itself a subcooled single-phase liquid). See the B6 review record.
+even though the physical **subcooled-liquid** root was correct. The fix keeps B4's clean
+supercritical domain guard (`mean >= Tcrit` is a phase-envelope violation) and adds a
+**subcooled-liquid filter**: an alternate root counts as a branch only if it is itself a
+subcooled single-phase liquid at the operating pressure. No arbitrary temperature cap is
+used. See the B6 review record.

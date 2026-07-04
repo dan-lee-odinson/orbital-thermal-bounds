@@ -4,6 +4,8 @@ and the modeled component mass (4.6 / 4.8a). Classification is CoolProp-free; so
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from orbital_thermal import architecture_cases as ac
@@ -128,6 +130,14 @@ class TestRejectedByPhysics:
         assert r.classification is C.REJECTED
         assert Reason.JUNCTION_LIMIT_FAILURE in r.reason_codes
         assert not r.rank_eligible
+
+    def test_multiple_failed_gates_all_preserved(self):
+        # F1 (re-review): a case failing junction AND subcooling reports BOTH reasons
+        env = dataclasses.replace(ENV, t_junction_max_K=330.0, subcooling_margin_Pa=1e7)
+        r = ac.evaluate_case(env, "ammonia", "aluminum")
+        assert r.classification is C.REJECTED
+        assert Reason.JUNCTION_LIMIT_FAILURE in r.reason_codes
+        assert Reason.SINGLE_PHASE_MARGIN_FAILURE in r.reason_codes
 
 
 class TestModeledMass:
