@@ -53,4 +53,5 @@ intermediate milestones (B1/B2/B3) carry a completion report with an optional sp
 | [single-phase-pumped-loop](entries/single-phase-pumped-loop.md) | Single-phase loop hydraulics, film coefficient, pump energy, per-segment phase margins | `reproduced` | TODO (director) | TODO | not yet run |
 | [coupled-steady-state-solution](entries/coupled-steady-state-solution.md) | Coupled R1-R5 chip-to-radiator steady state (Modes T/A); temperatures/area are solved outputs | `reproduced` | TODO (director) | TODO | **approved (F1-F8 + N1 closed)** |
 | [architecture-cases](entries/architecture-cases.md) | Stage-1 common-envelope coolant x solid-path case matrix; gate-driven classification + ranked references + modeled component mass | `reproduced` | TODO (director) | TODO | optional spot-check (intermediate) |
+| [trade-study](entries/trade-study.md) | Stage-1 trade-study engine: grid sweep over the rank-eligible cases + six Pareto fronts (engine verified c; physics inherits B1-B5) | `reproduced` | TODO (director) | TODO | **required (B6); review OPEN** |
 
