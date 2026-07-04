@@ -74,6 +74,15 @@ class TestRadiatorLaw:
         with pytest.raises(cm.FeasibilityError):
             cm.radiator_area(1000.0, 240.0, C1)
 
+    def test_c3_spec_rejected_by_radiator_law_helpers(self):
+        # N1: the standalone C1/C2 helpers must not silently compute a C3 spec
+        c3 = RadiatorSpec(faces=(RadiatorFace(1.0, 250.0, parametric_solar_flux_W_m2=150.0),),
+                          emissivity=0.9, contract=Contract.C3)
+        with pytest.raises(cm.CoupledError):
+            cm.radiator_temperature(1200.0, 2.0, c3)
+        with pytest.raises(cm.CoupledError):
+            cm.radiator_area(1200.0, 320.0, c3)
+
 
 class TestContracts:
     def test_c2_requires_single_face(self):

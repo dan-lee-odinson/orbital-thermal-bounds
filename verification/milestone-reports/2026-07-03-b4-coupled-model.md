@@ -1,8 +1,9 @@
 # B4 completion report: coupled steady-state radiator model (MAJOR)
 
-> **Working verification record.** B4 is a **major** milestone: a cross-model review record is
-> **required** and is **OPEN** (`verification/review-records/2026-07-03-b4-coupled-model.md`).
-> B4 is not complete until that review is dispositioned. No physical result is validated.
+> **Working verification record.** B4 is a **major** milestone. The required cross-model
+> review is **CLOSED - B4 approved** (`verification/review-records/2026-07-03-b4-coupled-model.md`);
+> the initial review's F1-F8 and the confirmation re-review's N1 are all fixed. No physical
+> result is validated.
 
 - **Milestone:** B4 (Phase B, Stage 1 radiator coupling)
 - **Date:** 2026-07-03
@@ -39,14 +40,14 @@ Files (4 new + 1 index):
 ## Verification performed
 
 - **ruff** (E,F,W,I,B,UP, line 100): clean.
-- **B4 tests** (`tests/test_coupled_model.py`): **39 passed** -- including the **two-direction
+- **B4 tests** (`tests/test_coupled_model.py`): **40 passed** -- including the **two-direction
   baseline recovery** (Mode T recovers Phase A `T_rad`; Mode A recovers Phase A area, both to
   ~1e-9), energy closure, vanishing nondimensional residual (~1e-15), Mode T/A
   cross-consistency, feasibility gates, failure states, multi-start robustness, and the
   C1/C2/C3 contract.
-- **Full suite** (sandbox clone, CoolProp pinned): **505 passed, 3 xfailed, 0 failed** -- no
-  regressions (+39 over B3's 466).
-- **Coverage:** `coupled_model.py` 97%; total 95.7% (CI gate is 90%).
+- **Full suite** (sandbox clone, CoolProp pinned): **506 passed, 3 xfailed, 0 failed** -- no
+  regressions (+40 over B3's 466).
+- **Coverage:** `coupled_model.py` 97%; total 95.8% (CI gate is 90%).
 - **Phase A guards:** `verify_suite.py`, `verify_paper3.py`, `companion/verify_ai1.py` all
   pass -- no published result perturbed.
 - **Evidence level:** c (baseline + closure + feasibility) + b (residual formulation).
@@ -69,7 +70,9 @@ pass, not merely that the fixed point stopped (F4); multi-start classifies seed 
 and the docs claim is a local smoke check (F5); worst-case station min margins are exposed
 and the guard is labelled a lumped conservative screen (F6); the ranked Reynolds gate
 requires validity for every active correlation, including the friction blend to 4000 (F7);
-and the contract enum is coerced (F8). Test count 32 -> 39.
+and the contract enum is coerced (F8). Test count 32 -> 40. The confirmation re-review then **closed F1-F8** and raised one
+new minor item, **N1** (standalone radiator-law helpers accepted a C3 spec) -- also
+**fixed** (a C3 guard on the helpers). **B4 is approved; the review record is CLOSED.**
 
 ## Limitations and readiness
 

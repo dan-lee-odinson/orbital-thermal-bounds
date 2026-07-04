@@ -9,18 +9,21 @@ findings are dispositioned.
 # Review Record: B4 - Coupled steady-state radiator model
 
 ## Record Metadata
-- **Record status:** **OPEN - revision delivered; re-review pending.** The initial
-  adversarial cross-model review returned 1 blocker + 7 major/minor findings; all eight
-  were dispositioned (**fixed**) and the code revised. Awaiting the confirmation re-review.
+- **Record status:** **CLOSED - B4 approved.** The initial adversarial review returned 1
+  blocker + 7 findings (F1-F8); all were fixed, and the **confirmation re-review closed all
+  eight**. One new minor item (N1) was raised in the re-review and also fixed. No open items.
 - **Date opened:** 2026-07-03
 - **Reviewed commit (original):** `ca08e69` (`chore/b4-coupled-model`)
-- **Revision commit:** *(to be recorded when the F1-F8 revision is pushed)*
+- **Revision commit (F1-F8):** `6f22fbf` (`chore/b4-coupled-model`)
+- **Final revision (N1 closure):** follow-up commit on the same branch (PR #36 head; the
+  squash-merge commit is the closing record on `main`)
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B4)
 - **Disposition (original):** **changes required** - 1 blocker (F1) + 6 major (F2-F7) + 1
   minor (F8).
-- **Disposition (revision):** all 8 findings **fixed**; **re-review requested** before B4 is
-  treated as closed and before B5 begins.
+- **Disposition (revision):** all 8 findings **fixed**.
+- **Disposition (confirmation re-review):** **F1-F8 all CLOSED**; one new minor item (N1)
+  raised and **fixed**. **B4 APPROVED - B5 may proceed.**
 
 ## Review Basis
 B4 is reviewed against the B0 plan (`docs/development/chip_to_radiator_phase_b_plan.md`,
@@ -118,7 +121,20 @@ pytest --cov=orbital_thermal --cov-fail-under=90   # total 95.7%; coupled_model.
 verify_suite.py / verify_paper3.py / companion/verify_ai1.py   # all pass
 ```
 
+### Confirmation re-review (retained) and new item
+
+The confirmation re-review **closed F1-F8** against the requested closure criteria and raised
+one new minor item:
+
+9. **[minor][API hardening] N1 - the standalone radiator-law helpers accepted a C3 spec and
+   ignored its solar flux.** `solve_coupled` already rejects C3, so no coupled result omitted
+   direct solar; but `radiator_temperature` / `radiator_area` / `_radiator_rejection` could
+   silently compute a C3 spec if called directly. **FIXED:** added `_reject_c3_radiator_law`
+   (per the reviewer's suggested guard), called at the top of all three helpers. Test:
+   `test_c3_spec_rejected_by_radiator_law_helpers`. Test count 39 -> 40; suite 506 passed.
+
 ## Disposition
-**Revision delivered; all 8 findings fixed. Re-review requested.** B4 is not treated as closed
-until the confirmation re-review clears the revision; the revision commit will be recorded here
-when pushed.
+**B4 APPROVED.** Original review: 1 blocker + 7 findings; confirmation re-review: **F1-F8
+CLOSED**; new minor N1 **fixed**. No open items. Reviewed commit `ca08e69`; F1-F8 revision
+`6f22fbf`; N1 closed in the follow-up branch head (squash-merge lands the closing commit on
+`main`). **B5 may proceed.**

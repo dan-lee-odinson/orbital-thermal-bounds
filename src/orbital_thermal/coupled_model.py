@@ -192,8 +192,21 @@ class CoupledResult:
 # --- radiator law (linear in T_rad^4) -------------------------------------------
 
 
+def _reject_c3_radiator_law(spec: RadiatorSpec) -> None:
+    """The radiator-law helpers implement the **C1/C2 shielded-sink** law only. A C3 spec
+    carries a direct-solar flux that this law does not include, so computing it here would
+    silently omit that load (re-review N1). C3 is deferred in B4 (4.4a); fail loudly."""
+    if spec.contract is Contract.C3:
+        raise CoupledError(
+            "the radiator-law helpers are C1/C2 shielded-boundary only; a C3 spec carries a "
+            "direct-solar flux they do not model. C3 is deferred in B4 (4.4a) -- do not call "
+            "these helpers with a C3 spec, and note solve_coupled already rejects C3."
+        )
+
+
 def radiator_temperature(Q_rad_W: float, A_plan_m2: float, spec: RadiatorSpec) -> float:
     """Solve R5 for ``T_rad`` (closed form; the law is linear in ``T_rad^4``)."""
+    _reject_c3_radiator_law(spec)
     positive("Q_rad_W", Q_rad_W)
     positive("A_plan_m2", A_plan_m2)
     esa = spec.emissivity * SIGMA_SB * A_plan_m2
@@ -205,6 +218,7 @@ def radiator_temperature(Q_rad_W: float, A_plan_m2: float, spec: RadiatorSpec) -
 
 def radiator_area(Q_rad_W: float, T_rad_K: float, spec: RadiatorSpec) -> float:
     """Solve R5 for the planform area ``A_plan`` given ``T_rad`` (Mode A)."""
+    _reject_c3_radiator_law(spec)
     positive("Q_rad_W", Q_rad_W)
     positive("T_rad_K", T_rad_K)
     per_unit = spec.emissivity * SIGMA_SB * math.fsum(
@@ -219,6 +233,7 @@ def radiator_area(Q_rad_W: float, T_rad_K: float, spec: RadiatorSpec) -> float:
 
 
 def _radiator_rejection(T_rad_K: float, A_plan_m2: float, spec: RadiatorSpec) -> float:
+    _reject_c3_radiator_law(spec)
     return spec.emissivity * SIGMA_SB * A_plan_m2 * math.fsum(
         f.area_fraction * (T_rad_K**4 - f.sink_temperature_K**4) for f in spec.faces
     )
