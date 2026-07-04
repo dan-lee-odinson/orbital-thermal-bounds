@@ -310,6 +310,21 @@ class TestFailureStates:
                              radiator_area_m2=2.0, ranked=False, max_iter=1, multistart=False,
                              **_common())
 
+    def test_multistart_ignores_infeasible_near_critical_alt_root(self):
+        # B6 regression: at low m_dot a spurious near-critical (infeasible, non-subcooled)
+        # fixed point coexists with the physical subcooled-liquid root; multi-start must not
+        # raise BranchError over an alt root that is not itself a subcooled liquid.
+        path = build_ranked_path(
+            material="aluminum", length_m=0.002, area_m2=5e-3, source_radius_m=0.02,
+            plate_radius_m=0.03, thickness_m=0.02, contact_conductance_W_m2K=2e4,
+            contact_source="test")
+        r = cm.solve_coupled(
+            mode="T", q_compute_W=1000.0, coolant="ammonia", solid_path=path, radiator=C1,
+            mass_flow_kg_s=0.03, tube_diameter_m=0.004, loop_length_m=2.0,
+            coldplate_wetted_area_m2=0.05, radiator_wetted_area_m2=4.0,
+            low_side_pressure_Pa=15e5, radiator_area_m2=2.0, ranked=True)
+        assert r.converged and r.T_rad_K < 320.0  # the physical subcooled root
+
     def test_supercritical_seed_does_not_create_a_branch(self):
         r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, ranked=True, multistart=True, **_common())

@@ -67,7 +67,14 @@ class ConvergenceError(CoupledError):
 
 
 class FeasibilityError(CoupledError):
-    """A converged solution failed a feasibility gate and is rejected (ranked case, 5)."""
+    """A converged solution failed a feasibility gate and is rejected (ranked case, 5).
+
+    ``failed_gates`` lists **every** gate that failed (not just the first), so downstream
+    code can report all reasons (re-review F1)."""
+
+    def __init__(self, message: str, failed_gates: tuple[str, ...] = ()):
+        super().__init__(message)
+        self.failed_gates = tuple(failed_gates)
 
 
 class BranchError(CoupledError):
@@ -356,9 +363,10 @@ def solve_coupled(
         q_pump = 0.0
         iters = 0
         for iters in range(1, max_iter + 1):
-            if mean >= t_crit - 1.0:
-                # left the single-phase-liquid domain (supercritical excursion) -> not a
-                # physical root for this seed (B0 plan 5: phase-envelope violation).
+            if mean >= t_crit:
+                # supercritical excursion -> phase-envelope violation; not a physical liquid
+                # root for this seed (B0 plan 5). (Near-critical *converged* roots are
+                # filtered below by the subcooled-liquid test, not by an arbitrary cap.)
                 return dict(converged=False, iters=iters, mean=mean,
                             reason="left single-phase-liquid domain", q_rad=q_chip + q_pump)
             props = fluids.transport_properties(mean, press, fluid)
@@ -418,10 +426,16 @@ def solve_coupled(
     # uniqueness basis.
     if multistart:
         lo = max(radiator.max_sink_K + 2.0, 0.9 * sol["mean"])
-        hi = min(t_crit - 5.0, 1.1 * sol["mean"])
+        hi = min(t_crit - 1.0, 1.1 * sol["mean"])
         for seed in (lo, hi):
             alt = _fixed_point(seed)
             if alt["converged"]:
+                # a competing root is only a physical branch if it is itself a **subcooled
+                # single-phase liquid** at the operating pressure. A near-critical alt root
+                # (P_sat >= P_lo, not subcooled) is infeasible-by-phase and not a physical
+                # competitor -- skip it rather than false-alarm (B6-exposed).
+                if fluids.saturation_pressure(alt["mean"], fluid) >= low_side_pressure_Pa:
+                    continue
                 if abs(alt["t_rad"] - sol["t_rad"]) > 1.0e-6 * max(1.0, sol["t_rad"]):
                     raise BranchError(
                         f"multi-start disagreement: T_rad {sol['t_rad']:.4f} vs "
@@ -490,10 +504,11 @@ def solve_coupled(
     converged = residual_converged and energy_closed
 
     if ranked and not feasible:
-        failed = [name for name, ok in gates.items() if not ok]
+        failed = tuple(name for name, ok in gates.items() if not ok)
         raise FeasibilityError(
-            f"ranked coupled case converged but failed feasibility gate(s): {failed}. "
-            "A converged-but-infeasible solution is rejected (B0 plan 5)."
+            f"ranked coupled case converged but failed feasibility gate(s): {list(failed)}. "
+            "A converged-but-infeasible solution is rejected (B0 plan 5).",
+            failed_gates=failed,
         )
 
     return CoupledResult(
