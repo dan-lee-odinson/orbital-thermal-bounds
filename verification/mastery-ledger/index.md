@@ -51,5 +51,5 @@ intermediate milestones (B1/B2/B3) carry a completion report with an optional sp
 |---|---|---|---|---|---|
 | [solid-thermal-network](entries/solid-thermal-network.md) | Junction-to-cold-plate solid resistance network (conduction + Yovanovich spreading + contact) | `reproduced` | TODO (director) | TODO | not yet run |
 | [single-phase-pumped-loop](entries/single-phase-pumped-loop.md) | Single-phase loop hydraulics, film coefficient, pump energy, per-segment phase margins | `reproduced` | TODO (director) | TODO | not yet run |
-| [coupled-steady-state-solution](entries/coupled-steady-state-solution.md) | Coupled R1-R5 chip-to-radiator steady state (Modes T/A); temperatures/area are solved outputs | `reproduced` | TODO (director) | TODO | **required (B4); review OPEN** |
+| [coupled-steady-state-solution](entries/coupled-steady-state-solution.md) | Coupled R1-R5 chip-to-radiator steady state (Modes T/A); temperatures/area are solved outputs | `reproduced` | TODO (director) | TODO | **F1-F8 fixed; re-review pending** |
 

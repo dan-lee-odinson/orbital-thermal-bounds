@@ -2,8 +2,8 @@
 
 The junction-to-radiator path is solved as the **simultaneous** solution of the five
 per-node residuals R1-R5, *not* a one-directional ``T_rad = T_chip - sum(dT)`` subtraction.
-Radiator and transport temperatures (or the radiator area) are **outputs** of the coupled
-solve.
+Radiator and transport temperatures (Mode T) or the radiator area (Mode A) are **outputs** of
+the coupled solve.
 
 Residuals (B0 plan 4.1a; ``T_f,cp = T_f,rad = (T1+T2)/2 = T_mean``)::
 
@@ -20,11 +20,16 @@ The radiator rejects ``Q_rad = Q_chip + Q_pump_fluid`` (fluid-loop boundary, 4.7
 **Solve structure.** The Jacobian is lower-triangular in solve order R5 -> R4 -> R3 -> R2 -> R1;
 the single circular dependency (pump heat / properties <-> loop temperature) is resolved as a
 fixed point in loop mean temperature and pressure. The radiator law is linear in ``T_rad^4``,
-so R5 (Mode T) and its inverse (Mode A) are closed form.
+so R5 (Mode T) and its inverse (Mode A) are closed form. ``converged`` means the nondimensional
+**residual** vector and global energy closure are below tolerance -- not merely that the fixed
+point stopped stepping.
 
 **Scope (B4, as directed).** Modes T and A only (Mode S -> B6). Mass/containment deferred to
-B5. Direct solar: C1/C2 rank-eligible using the inherited (shielded) Phase A sink; C3 is
-parametric-only (missing ``alpha_s`` blocks ranking) and adds no solar term to ``sink.py``.
+B5. **Boundary: fluid-loop only** -- the whole-spacecraft roll-up is B5 system accounting
+(4.7). Direct solar: C1/C2 rank-eligible using the inherited (shielded) Phase A sink; **C3 is
+deferred and cannot be solved in B4** (sink.py omits the direct-solar term, 4.4a). The
+single-phase-liquid feasibility is a **lumped conservative screen** at the worst-case station
+(hottest loop temperature, minimum station pressure); the per-segment march lives in B3.
 """
 
 from __future__ import annotations
@@ -50,7 +55,7 @@ class SolveMode(str, Enum):
 class Contract(str, Enum):
     C1 = "C1"  # fully-shielded bifacial
     C2 = "C2"  # single cold-face (one-sided)
-    C3 = "C3"  # explicit sunlit face (parametric-only; deferred solar term)
+    C3 = "C3"  # explicit sunlit face (deferred: sink.py omits direct solar)
 
 
 class CoupledError(ValueError):
@@ -66,7 +71,7 @@ class FeasibilityError(CoupledError):
 
 
 class BranchError(CoupledError):
-    """Multi-start seeds converged to different roots (multiplicity reported, not chosen)."""
+    """Multi-start seeds disagreed or failed for an unclassified reason (branch reported)."""
 
 
 # --- radiator faces / contract --------------------------------------------------
@@ -76,8 +81,8 @@ class BranchError(CoupledError):
 class RadiatorFace:
     """One emitting face: ``area_fraction`` multiples of the planform area ``A_plan`` at an
     effective ``sink_temperature_K`` (from the Phase A orbital sink). ``parametric_solar_flux``
-    is a C3-only, user-supplied (sourced or parametric) absorbed flux; its presence forces the
-    case non-rank-eligible (the inherited sink omits direct solar, 4.4a)."""
+    is a C3-only, user-supplied absorbed flux; its presence forces the case non-rank-eligible
+    and, in B4, C3 is not solvable (the inherited sink omits direct solar, 4.4a)."""
 
     area_fraction: float
     sink_temperature_K: float
@@ -92,13 +97,22 @@ class RadiatorFace:
 
 @dataclass(frozen=True)
 class RadiatorSpec:
-    """Emitting faces + emissivity + declared direct-solar contract (4.4a)."""
+    """Emitting faces + emissivity + declared direct-solar contract (4.4a).
+
+    For **C2** (single cold-face), the excluded face is rank-eligible only if it is demonstrated
+    to be **outside the thermal control volume** (insulated / isolated / shielded / no
+    direct-solar deposit). That evidence is carried explicitly in
+    ``excluded_face_outside_thermal_cv`` + ``excluded_face_basis``; without it a C2 case is
+    **not rank-eligible** (re-review F1; B0 4.4a)."""
 
     faces: tuple[RadiatorFace, ...]
     emissivity: float
     contract: Contract
+    excluded_face_outside_thermal_cv: bool = False
+    excluded_face_basis: str = ""
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "contract", Contract(self.contract))  # coerce (re-review F8)
         if not (0.0 < self.emissivity <= 1.0):
             raise ValueError(f"emissivity must be in (0, 1], got {self.emissivity}")
         if not self.faces:
@@ -108,8 +122,6 @@ class RadiatorSpec:
         if c is Contract.C2 and len(self.faces) != 1:
             raise ValueError("C2 (single cold-face) must declare exactly one emitting face")
         if c is Contract.C3 and not has_solar:
-            # a C3 face is sunlit+coupled: without a sourced/parametric alpha_s*G it cannot be
-            # modeled (sink.py omits direct solar) and must never be assumed. (4.4a)
             raise registry.NotRankEligibleError(
                 "C3 declares a sunlit, thermally coupled face but supplies no direct-solar flux; "
                 "missing alpha_s blocks ranking and the case cannot be solved as-is (4.4a)."
@@ -129,8 +141,13 @@ class RadiatorSpec:
 
     @property
     def rank_eligible(self) -> bool:
-        # C3 (direct solar) is parametric-only until sink.py grows the solar term (4.4a).
-        return self.contract in (Contract.C1, Contract.C2)
+        """C1 rank-eligible; C2 only with excluded-face-outside-CV evidence (F1); C3 never
+        (parametric-only, direct-solar term deferred)."""
+        if self.contract is Contract.C1:
+            return True
+        if self.contract is Contract.C2:
+            return self.excluded_face_outside_thermal_cv and bool(self.excluded_face_basis.strip())
+        return False
 
 
 # --- result ---------------------------------------------------------------------
@@ -158,10 +175,15 @@ class CoupledResult:
     pressure_drop_Pa: float
     reynolds: float
     mean_htc_W_m2K: float
+    # worst-case station single-phase margins (lumped conservative screen; per-segment -> B3)
+    min_subcooling_Pa: float
+    min_freeze_margin_K: float
+    min_critical_margin_K: float
     residual_norm: float
     energy_closure_rel: float
     iterations: int
-    converged: bool
+    fixed_point_converged: bool  # the fixed point stopped stepping
+    converged: bool  # residual vector AND energy closure below tolerance (B0 plan 5)
     feasible: bool
     feasibility: dict[str, bool] = field(default_factory=dict)
     rank_eligible: bool = False
@@ -207,8 +229,8 @@ def _radiator_rejection(T_rad_K: float, A_plan_m2: float, spec: RadiatorSpec) ->
 
 def assert_case_rank_eligible(coolant: str, solid_path: SolidPath, radiator: RadiatorSpec) -> None:
     """A ranked coupled case needs a rank-eligible coolant backend (B3), a rank-eligible solid
-    path (B2: isotropic + spreading + cited contact), and a rank-eligible radiator contract
-    (C1/C2). Any failure raises ``NotRankEligibleError``."""
+    path (B2), and a rank-eligible radiator contract (C1, or C2 with excluded-face-outside-CV
+    evidence; C3 never). Any failure raises ``NotRankEligibleError``."""
     _pl.assert_loop_coolant_rankable(coolant)
     if not solid_path.rank_eligible:
         raise registry.NotRankEligibleError(
@@ -216,6 +238,13 @@ def assert_case_rank_eligible(coolant: str, solid_path: SolidPath, radiator: Rad
             "spreading without a 1-D justification); run the case as a sensitivity (B2)."
         )
     if not radiator.rank_eligible:
+        if radiator.contract is Contract.C2:
+            raise registry.NotRankEligibleError(
+                "C2 (single cold-face) is rank-eligible only with evidence that the excluded "
+                "face is outside the thermal control volume (insulated / isolated / shielded / "
+                "no direct-solar deposit). Set excluded_face_outside_thermal_cv=True with a "
+                "cited excluded_face_basis, or treat the case as C3/parametric (4.4a, F1)."
+            )
         raise registry.NotRankEligibleError(
             f"radiator contract {radiator.contract.value} is parametric-only "
             "(direct solar omitted by the inherited sink, 4.4a); not rank-eligible."
@@ -247,9 +276,11 @@ def solve_coupled(
     minor_loss_K: float = 0.0,
     rel_roughness: float = 0.0,
     subcooling_margin_Pa: float = 1.0e4,
+    freeze_margin_K: float = 5.0,
     ranked: bool = True,
     neglect_transport_losses: bool = False,
     tol: float = 1.0e-9,
+    residual_tol: float = 1.0e-6,
     max_iter: int = 200,
     relaxation: float = 0.5,
     multistart: bool = True,
@@ -258,8 +289,24 @@ def solve_coupled(
     ``radiator_temperature_K``). Returns a :class:`CoupledResult`. For ``ranked=True`` a
     converged-but-infeasible solution is **rejected** (raises :class:`FeasibilityError`); for a
     sensitivity case it is returned with ``feasible=False``. ``neglect_transport_losses`` zeroes
-    the solid/film resistances and pump heat for the Phase A baseline-recovery test."""
+    the solid/film resistances and pump heat for the Phase A baseline-recovery test.
+
+    B4 scope guards (fail loudly): **C3 is not solvable** here (direct-solar term deferred,
+    4.4a); the **only boundary is ``fluid_loop``** (whole-spacecraft accounting -> B5, 4.7).
+
+    ``tol`` is the fixed-point step tolerance; ``residual_tol`` is the convergence-declaration
+    threshold on the nondimensional residual and energy-closure (B0 plan 5, F8)."""
     mode = SolveMode(mode)
+    if radiator.contract is Contract.C3:
+        raise CoupledError(
+            "C3 (explicit sunlit face) is not solvable in B4: the per-face direct-solar term is "
+            "deferred (sink.py omits it, 4.4a). Run C3 as a future model extension, not here."
+        )
+    if boundary != "fluid_loop":
+        raise ValueError(
+            "B4 solves the fluid-loop boundary only; the whole-spacecraft roll-up is deferred "
+            "to B5 system accounting (4.7). Pass boundary='fluid_loop'."
+        )
     positive("q_compute_W", q_compute_W)
     positive("mass_flow_kg_s", mass_flow_kg_s)
     positive("tube_diameter_m", tube_diameter_m)
@@ -298,7 +345,7 @@ def solve_coupled(
                 # left the single-phase-liquid domain (supercritical excursion) -> not a
                 # physical root for this seed (B0 plan 5: phase-envelope violation).
                 return dict(converged=False, iters=iters, mean=mean,
-                            reason='left single-phase-liquid domain', q_rad=q_chip + q_pump)
+                            reason="left single-phase-liquid domain", q_rad=q_chip + q_pump)
             props = fluids.transport_properties(mean, press, fluid)
             rho, cp = props["density"], props["specific_heat"]
             mu, k, pr = props["dynamic_viscosity"], props["thermal_conductivity"], props["prandtl"]
@@ -338,28 +385,37 @@ def solve_coupled(
                 )
             mean = (1.0 - relaxation) * mean + relaxation * mean_new
             q_pump = q_pump_fluid
-        return dict(converged=False, iters=iters, mean=mean, q_rad=q_chip + q_pump)
+        return dict(converged=False, iters=iters, mean=mean,
+                    reason="residual above tolerance", q_rad=q_chip + q_pump)
 
     sol = _fixed_point(_seed_mean())
     if not sol["converged"]:
-        reason = sol.get("reason", "residual above tolerance")
         raise ConvergenceError(
             f"coupled solve did not converge in {max_iter} iterations "
-            f"(mode {mode.value}; {reason}); last mean T = {sol['mean']:.3f} K."
+            f"(mode {mode.value}; {sol.get('reason', 'unknown')}); "
+            f"last mean T = {sol['mean']:.3f} K."
         )
 
-    # multi-start: perturbed seeds must reach the same radiator temperature (unique root).
+    # Multi-start: bracket the converged root within the liquid range. Seeds must return to the
+    # same root or fail for a *classified* single-phase-domain reason; an unexplained
+    # non-convergence is an unresolved branch (F5). This is a local branch smoke check -- the
+    # lower-triangular structure (each residual introduces one new temperature) is the actual
+    # uniqueness basis.
     if multistart:
         lo = max(radiator.max_sink_K + 2.0, 0.9 * sol["mean"])
         hi = min(t_crit - 5.0, 1.1 * sol["mean"])
         for seed in (lo, hi):
             alt = _fixed_point(seed)
-            if not alt["converged"]:
-                continue
-            if abs(alt["t_rad"] - sol["t_rad"]) > 1.0e-6 * max(1.0, sol["t_rad"]):
+            if alt["converged"]:
+                if abs(alt["t_rad"] - sol["t_rad"]) > 1.0e-6 * max(1.0, sol["t_rad"]):
+                    raise BranchError(
+                        f"multi-start disagreement: T_rad {sol['t_rad']:.4f} vs "
+                        f"{alt['t_rad']:.4f} K; multiple roots reported, not silently chosen."
+                    )
+            elif alt.get("reason") != "left single-phase-liquid domain":
                 raise BranchError(
-                    f"multi-start disagreement: T_rad {sol['t_rad']:.4f} vs {alt['t_rad']:.4f} K; "
-                    "multiple physical roots reported, not silently chosen."
+                    f"multi-start seed {seed:.2f} K failed to converge for an unclassified "
+                    f"reason ('{alt.get('reason')}'); branch/solver status unresolved (F5)."
                 )
 
     mean, press, cp = sol["mean"], sol["press"], sol["cp"]
@@ -388,24 +444,35 @@ def solve_coupled(
         (q_rad - _radiator_rejection(t_rad, a_plan, radiator)) / q_char,
     ]
     residual_norm = math.sqrt(math.fsum(r * r for r in res) / len(res))
-    q_pump_boundary = sol["q_pump_fluid"]
-    energy_closure_rel = abs(q_rad - (q_chip + q_pump_boundary)) / q_char
+    energy_closure_rel = abs(q_rad - (q_chip + sol["q_pump_fluid"])) / q_char
 
-    # feasibility gates (post-convergence, B0 plan 5)
-    p_sat_hot = fluids.saturation_pressure(t2, fluid)
+    # worst-case station single-phase margins: hottest loop temperature (T2) at the minimum
+    # station pressure (P_lo, the prescribed low side, 4.3). Lumped conservative screen -- the
+    # per-segment march is B3's (march_single_phase_loop); see docs/coupled-model.md.
+    margins = fluids.single_phase_liquid_margins(t2, low_side_pressure_Pa, fluid)
+
+    residual_converged = residual_norm < residual_tol
+    energy_closed = energy_closure_rel < residual_tol
+    # ranked cases require Reynolds valid for *every* active correlation: laminar (<=2300) or
+    # fully turbulent (>= the friction turbulent cutoff, 4000), not merely past the Nusselt
+    # cutoff (3000) -- the friction factor blends up to 4000 (F7).
+    re_valid = sol["re"] <= _pl._LAMINAR_RE or sol["re"] >= _pl._TURBULENT_RE_FRICTION
     gates = {
         "mass_flow_positive": mass_flow_kg_s > 0.0,
         "temperature_ordering": t_j >= t_w >= mean >= t_rad and t2 >= t1,
         "efficiencies_valid": 0.0 < eta_pump <= 1.0 and 0.0 < eta_motor <= 1.0,
         "radiator_above_sink": t_rad > radiator.max_sink_K,
-        "reynolds_in_range": sol["re"] <= _pl._LAMINAR_RE or sol["re"] >= _pl._TURBULENT_RE_NUSSELT,
-        "pressure_above_saturation": low_side_pressure_Pa - p_sat_hot >= subcooling_margin_Pa,
-        "residual_converged": residual_norm < 1.0e-6,
-        "energy_closed": energy_closure_rel < 1.0e-6,
+        "reynolds_in_range": re_valid,
+        "subcooling_margin": margins["subcooling_Pa"] >= subcooling_margin_Pa,
+        "freeze_margin": margins["freeze_margin_K"] >= freeze_margin_K,
+        "critical_margin": margins["critical_margin_K"] > 0.0,
+        "residual_converged": residual_converged,
+        "energy_closed": energy_closed,
     }
     if t_junction_max_K is not None:
         gates["junction_within_limit"] = t_j <= t_junction_max_K
     feasible = all(gates.values())
+    converged = residual_converged and energy_closed
 
     if ranked and not feasible:
         failed = [name for name, ok in gates.items() if not ok]
@@ -418,11 +485,14 @@ def solve_coupled(
         mode=mode.value, contract=radiator.contract.value,
         T_j_K=t_j, T_w_K=t_w, T1_K=t1, T2_K=t2, T_rad_K=t_rad,
         A_plan_m2=a_plan, A_emit_m2=a_emit,
-        Q_chip_W=q_chip, Q_pump_fluid_W=q_pump_boundary, Q_rad_W=q_rad,
+        Q_chip_W=q_chip, Q_pump_fluid_W=sol["q_pump_fluid"], Q_rad_W=q_rad,
         pump=sol["pump"], mean_fluid_K=mean, mean_pressure_Pa=press,
         pressure_drop_Pa=sol["dp"], reynolds=sol["re"], mean_htc_W_m2K=sol["h"],
+        min_subcooling_Pa=margins["subcooling_Pa"], min_freeze_margin_K=margins["freeze_margin_K"],
+        min_critical_margin_K=margins["critical_margin_K"],
         residual_norm=residual_norm, energy_closure_rel=energy_closure_rel,
-        iterations=sol["iters"], converged=True, feasible=feasible, feasibility=gates,
+        iterations=sol["iters"], fixed_point_converged=True, converged=converged,
+        feasible=feasible, feasibility=gates,
         rank_eligible=ranked and radiator.rank_eligible,
     )
 

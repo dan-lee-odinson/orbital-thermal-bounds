@@ -55,8 +55,9 @@ Code: `orbital_thermal.coupled_model` (consumes B1 registry, B2 `solid_network`,
   limit, subcooling, radiator-above-sink), failure states (non-convergence, unknown coolant),
   multi-start robustness, per-face C1/C2, and C3 parametric-only. Status: present and passing.
 - **d. qualified external human review:** `pending`.
-- **cross-model review (separate; not category d):** **required at B4 (major milestone); the
-  B4 review record is OPEN pending the cross-model cycle.**
+- **cross-model review (separate; not category d):** initial adversarial review returned 1
+  blocker + 7 findings (F1-F8); **all fixed**; the B4 review record is OPEN pending the
+  confirmation re-review.
 
 ## Sensitivity / limiting cases
 - Transport losses + pump heat zeroed -> exact Phase A recovery (both modes).
@@ -77,6 +78,6 @@ coupled faces are parametric-only.
 - `TODO (director)`: plain-language explanation of the coupled solve and the heat-injection
   rule (chip heat through R1/R2; pump heat into R3).
 - `TODO`: independent derivation record (b) beyond the docs argument.
-- **Required:** cross-model (GPT) adversarial review; disposition findings; finalize the B4
-  review record before B4 is treated as complete.
+- **Required:** confirmation re-review of the F1-F8 revision; finalize the B4 review record
+  before B4 is treated as complete.
 - Deferred: Mode S / Mode O (B6); mass/containment (B5); C3 direct-solar term.

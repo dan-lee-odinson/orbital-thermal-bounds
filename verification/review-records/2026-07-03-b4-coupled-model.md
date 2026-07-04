@@ -9,14 +9,18 @@ findings are dispositioned.
 # Review Record: B4 - Coupled steady-state radiator model
 
 ## Record Metadata
-- **Record status:** **OPEN - awaiting cross-model review.** B4 code is implemented and
-  self-verified (baseline recovery, energy closure, feasibility gates); the mandatory
-  adversarial cross-model review has **not yet** been conducted.
+- **Record status:** **OPEN - revision delivered; re-review pending.** The initial
+  adversarial cross-model review returned 1 blocker + 7 major/minor findings; all eight
+  were dispositioned (**fixed**) and the code revised. Awaiting the confirmation re-review.
 - **Date opened:** 2026-07-03
-- **Reviewed commit:** *(to be recorded when the B4 branch is pushed for review)*
+- **Reviewed commit (original):** `ca08e69` (`chore/b4-coupled-model`)
+- **Revision commit:** *(to be recorded when the F1-F8 revision is pushed)*
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B4)
-- **Disposition:** *pending*
+- **Disposition (original):** **changes required** - 1 blocker (F1) + 6 major (F2-F7) + 1
+  minor (F8).
+- **Disposition (revision):** all 8 findings **fixed**; **re-review requested** before B4 is
+  treated as closed and before B5 begins.
 
 ## Review Basis
 B4 is reviewed against the B0 plan (`docs/development/chip_to_radiator_phase_b_plan.md`,
@@ -69,9 +73,52 @@ python verify_suite.py / verify_paper3.py / companion/verify_ai1.py   # all pass
 6. Does the fluid-loop pump-energy boundary (4.7) close consistently, and is the
    whole-spacecraft accounting correctly left to B5/B6?
 
-## Findings
-*(to be populated by the cross-model review; each finding dispositioned
-fixed / accepted-limitation / deferred-with-consequence, with reviewed commits recorded)*
+## Findings (initial cross-model review, retained) and disposition
+
+All eight findings are **fixed** in the revision. Location lines refer to the revised
+`coupled_model.py`.
+
+1. **[blocker][defect] F1 - C2 rank-eligibility did not require excluded-face evidence.** §4.4a
+   makes C2 rank-eligible only if the excluded face is outside the thermal control volume; the
+   code only checked "one face", reopening the B0 Rev-3 loophole. **FIXED:** `RadiatorSpec`
+   gains `excluded_face_outside_thermal_cv` + `excluded_face_basis`; `rank_eligible` is False
+   for C2 without both; `assert_case_rank_eligible` raises a C2-specific `NotRankEligibleError`.
+   Tests: `test_c2_without_evidence_raises`, `test_rank_eligibility_by_contract`.
+2. **[major][defect] F2 - C3 accepted a solar flux but ignored it in the radiator balance.**
+   **FIXED (deferred per scope):** `solve_coupled` now **rejects** any C3 case (`CoupledError`)
+   -- C3 is not solved with the direct-solar term silently omitted. Test: `test_c3_solve_is_rejected`.
+3. **[major][defect] F3 - `whole_spacecraft` boundary accepted but not applied to `Q_rad`.**
+   **FIXED:** `solve_coupled` accepts only `boundary="fluid_loop"`; the whole-spacecraft
+   roll-up is deferred to B5 accounting. Test: `test_whole_spacecraft_boundary_rejected`.
+4. **[major][risk] F4 - `converged=True` meant "fixed point stopped", not residual converged.**
+   **FIXED:** added `residual_tol`; `converged = residual_converged AND energy_closed`; exposed
+   `fixed_point_converged` separately. Test: `test_converged_reflects_residual_not_just_fixed_point`.
+5. **[major][risk] F5 - multi-start did not establish uniqueness; skipped failed seeds.**
+   **FIXED:** alt-seed outcomes are classified -- same root / classified domain-exit / else a
+   `BranchError`; the docs claim is downgraded to a *local branch smoke check* with the
+   lower-triangular structure as the uniqueness basis.
+6. **[major][risk] F6 - single-phase guard was lumped, not per-station/segment.** **FIXED
+   (labelled):** worst-case station margins (hottest `T2`, minimum `P_lo`) are computed via
+   `fluids.single_phase_liquid_margins` and exposed (`min_subcooling_Pa`, `min_freeze_margin_K`,
+   `min_critical_margin_K`); docs label it a lumped conservative screen with the per-segment
+   march (B3) noted. Test: `test_min_margin_fields_exposed`.
+7. **[major][defect] F7 - ranked cases could use transitional friction (3000<=Re<4000).**
+   **FIXED:** the ranked Reynolds gate now requires `Re <= 2300 or Re >= 4000` (the friction
+   turbulent cutoff), not the Nusselt cutoff 3000. Test: `test_transitional_reynolds_rejected_when_ranked`.
+8. **[minor][robustness] F8 - `RadiatorSpec` did not coerce the contract enum.** **FIXED:**
+   `object.__setattr__(self, "contract", Contract(self.contract))` in `__post_init__`. Test:
+   `test_string_contract_is_coerced_and_checked`.
+
+## Post-revision self-verification
+```
+ruff check src/ tests/                       # clean
+pytest -q                                    # 505 passed, 3 xfailed
+pytest tests/test_coupled_model.py -q        # 39 passed
+pytest --cov=orbital_thermal --cov-fail-under=90   # total 95.7%; coupled_model.py 97%
+verify_suite.py / verify_paper3.py / companion/verify_ai1.py   # all pass
+```
 
 ## Disposition
-*pending cross-model review*
+**Revision delivered; all 8 findings fixed. Re-review requested.** B4 is not treated as closed
+until the confirmation re-review clears the revision; the revision commit will be recorded here
+when pushed.

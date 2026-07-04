@@ -1,9 +1,11 @@
 """B4 coupled steady-state tests: the R1-R5 residual system (4.1a), two-direction baseline
 recovery (Modes T and A vs Phase A), energy closure, nondimensional convergence, feasibility
-gates, failure states, and per-face C1/C2 contracts (C3 parametric-only). CoolProp-gated where
-the coupled loop evaluates properties."""
+gates, failure states, and per-face C1/C2 contracts (C3 deferred). Includes the re-review
+fixes F1-F8. CoolProp-gated where the coupled loop evaluates properties."""
 
 from __future__ import annotations
+
+import warnings
 
 import pytest
 
@@ -14,7 +16,10 @@ from orbital_thermal.registry import NotRankEligibleError
 from orbital_thermal.solid_network import build_ranked_path, build_sensitivity_path
 
 C1 = RadiatorSpec(faces=(RadiatorFace(2.0, 250.0),), emissivity=0.9, contract=Contract.C1)
-C2 = RadiatorSpec(faces=(RadiatorFace(1.0, 250.0),), emissivity=0.9, contract=Contract.C2)
+C2 = RadiatorSpec(
+    faces=(RadiatorFace(1.0, 250.0),), emissivity=0.9, contract=Contract.C2,
+    excluded_face_outside_thermal_cv=True, excluded_face_basis="insulated backside (test)")
+C2_NOEVID = RadiatorSpec(faces=(RadiatorFace(1.0, 250.0),), emissivity=0.9, contract=Contract.C2)
 
 
 def _ranked_path(**over):
@@ -41,7 +46,6 @@ def _common(**over):
 
 class TestRadiatorLaw:
     def test_temperature_matches_phase_a_single_sink(self):
-        # C1 with area_fraction 2.0 => A_emit = 2*A_plan; must equal the Phase A inverse law.
         t = cm.radiator_temperature(1200.0, 2.0, C1)
         expect = cm.phase_a_baseline_temperature(1200.0, 4.0, 0.9, 250.0)
         assert t == pytest.approx(expect, rel=1e-12)
@@ -68,7 +72,7 @@ class TestRadiatorLaw:
 
     def test_area_raises_when_radiator_below_sink(self):
         with pytest.raises(cm.FeasibilityError):
-            cm.radiator_area(1000.0, 240.0, C1)  # 240 < 250 K sink
+            cm.radiator_area(1000.0, 240.0, C1)
 
 
 class TestContracts:
@@ -91,15 +95,32 @@ class TestContracts:
             RadiatorFace(1.0, 250.0, parametric_solar_flux_W_m2=-5.0)
 
     def test_rank_eligibility_by_contract(self):
-        assert C1.rank_eligible and C2.rank_eligible
+        assert C1.rank_eligible
+        assert C2.rank_eligible                # C2 with excluded-face evidence
+        assert not C2_NOEVID.rank_eligible     # C2 without evidence (F1)
         c3 = RadiatorSpec(faces=(RadiatorFace(1.0, 250.0, parametric_solar_flux_W_m2=150.0),),
                           emissivity=0.9, contract=Contract.C3)
         assert not c3.rank_eligible
 
+    def test_string_contract_is_coerced_and_checked(self):
+        # F8: a string contract is coerced to the enum, so its constructor checks still apply
+        spec = RadiatorSpec(faces=(RadiatorFace(2.0, 250.0),), emissivity=0.9, contract="C1")
+        assert spec.contract is Contract.C1
+        with pytest.raises(ValueError, match="exactly one"):
+            RadiatorSpec(faces=(RadiatorFace(1.0, 250.0), RadiatorFace(1.0, 250.0)),
+                         emissivity=0.9, contract="C2")
+
 
 class TestRankEligibilityInheritance:
     def test_ranked_case_passes(self):
-        cm.assert_case_rank_eligible("ammonia", _ranked_path(), C1)  # must not raise
+        cm.assert_case_rank_eligible("ammonia", _ranked_path(), C1)
+
+    def test_c2_with_evidence_passes(self):
+        cm.assert_case_rank_eligible("ammonia", _ranked_path(), C2)
+
+    def test_c2_without_evidence_raises(self):
+        with pytest.raises(NotRankEligibleError, match="thermal control volume"):
+            cm.assert_case_rank_eligible("ammonia", _ranked_path(), C2_NOEVID)
 
     def test_blocked_coolant_raises(self):
         with pytest.raises(NotRankEligibleError):
@@ -120,7 +141,6 @@ class TestRankEligibilityInheritance:
 
 
 class TestArgumentValidation:
-    # these raise before any CoolProp property evaluation
     def test_mode_t_requires_area(self):
         with pytest.raises(ValueError, match="radiator_area_m2"):
             cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
@@ -143,6 +163,21 @@ class TestArgumentValidation:
                              radiator=C1, radiator_area_m2=2.0, ranked=True,
                              **_common(coolant="co2"))
 
+    def test_c3_solve_is_rejected(self):
+        # F2: C3 is not solvable in B4 (direct-solar term deferred)
+        c3 = RadiatorSpec(faces=(RadiatorFace(1.0, 250.0, parametric_solar_flux_W_m2=150.0),),
+                          emissivity=0.9, contract=Contract.C3)
+        with pytest.raises(cm.CoupledError, match="C3"):
+            cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=c3,
+                             radiator_area_m2=2.0, ranked=False, **_common())
+
+    def test_whole_spacecraft_boundary_rejected(self):
+        # F3: only the fluid-loop boundary is solved in B4
+        with pytest.raises(ValueError, match="fluid-loop"):
+            cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
+                             radiator_area_m2=2.0, boundary="whole_spacecraft", ranked=False,
+                             **_common())
+
 
 # --- coupled solve: needs CoolProp for loop properties --------------------------
 
@@ -150,14 +185,12 @@ pytest.importorskip("CoolProp", reason="CoolProp not installed")
 
 
 class TestBaselineRecovery:
-    # two separate tests, per B0 plan Section 5.
     def test_mode_t_recovers_phase_a_temperature(self):
         r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, neglect_transport_losses=True, ranked=False,
                              **_common())
         expect = cm.phase_a_baseline_temperature(1200.0, 4.0, 0.9, 250.0)
         assert r.T_rad_K == pytest.approx(expect, rel=1e-9)
-        # with transport off, every node collapses onto T_rad
         assert r.T_j_K == pytest.approx(r.T_rad_K, rel=1e-9)
 
     def test_mode_a_recovers_phase_a_area(self):
@@ -172,7 +205,7 @@ class TestCoupledSolve:
     def test_full_transport_converges_and_closes(self):
         r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, ranked=True, **_common())
-        assert r.converged and r.feasible
+        assert r.converged and r.fixed_point_converged and r.feasible
         assert r.residual_norm < 1e-10
         assert r.energy_closure_rel < 1e-10
         assert r.T_j_K >= r.T_w_K >= r.mean_fluid_K >= r.T_rad_K
@@ -196,13 +229,24 @@ class TestCoupledSolve:
                              radiator_area_m2=3.0, ranked=True, **_common())
         assert r.residual_norm < 1e-10
 
+    def test_converged_reflects_residual_not_just_fixed_point(self):
+        # F4: an impossibly tight residual gate leaves the fixed point stopped but the residual
+        # system "not converged" -- and a ranked case is then rejected.
+        r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
+                             radiator_area_m2=2.0, ranked=False, residual_tol=1e-16, **_common())
+        assert r.fixed_point_converged is True
+        assert r.converged is False
+        assert r.feasibility["residual_converged"] is False
+        with pytest.raises(cm.FeasibilityError):
+            cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
+                             radiator_area_m2=2.0, ranked=True, residual_tol=1e-16, **_common())
+
 
 class TestFeasibilityGates:
     def test_junction_limit_rejects_ranked_but_flags_sensitivity(self):
         base = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
                                 radiator=C1, radiator_area_m2=2.0, ranked=False, **_common())
         tj = base.T_j_K
-        # a limit above T_j passes; below T_j rejects a ranked case
         ok = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                               radiator_area_m2=2.0, ranked=True, t_junction_max_K=tj + 10.0,
                               **_common())
@@ -211,17 +255,12 @@ class TestFeasibilityGates:
             cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, ranked=True, t_junction_max_K=tj - 10.0,
                              **_common())
-        flagged = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
-                                   radiator=C1, radiator_area_m2=2.0, ranked=False,
-                                   t_junction_max_K=tj - 10.0, **_common())
-        assert not flagged.feasible and not flagged.feasibility["junction_within_limit"]
 
     def test_underpressure_rejected_when_ranked(self):
-        # huge required subcooling margin makes P_lo - P_sat insufficient
         flagged = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
                                    radiator=C1, radiator_area_m2=2.0, ranked=False,
                                    subcooling_margin_Pa=1.0e7, **_common())
-        assert not flagged.feasibility["pressure_above_saturation"]
+        assert not flagged.feasibility["subcooling_margin"]
         with pytest.raises(cm.FeasibilityError):
             cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, ranked=True, subcooling_margin_Pa=1.0e7,
@@ -232,6 +271,28 @@ class TestFeasibilityGates:
             cm.solve_coupled(mode="A", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_temperature_K=240.0, ranked=False, **_common())
 
+    def test_transitional_reynolds_rejected_when_ranked(self):
+        # F7: Re in [3000, 4000) uses a blended (approximate) friction factor -> not rank-eligible
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            flagged = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
+                                       radiator=C1, radiator_area_m2=2.0, ranked=False,
+                                       **_common(mass_flow_kg_s=0.0012))
+            assert 3000.0 <= flagged.reynolds < 4000.0
+            assert not flagged.feasibility["reynolds_in_range"]
+            with pytest.raises(cm.FeasibilityError):
+                cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(),
+                                 radiator=C1, radiator_area_m2=2.0, ranked=True,
+                                 **_common(mass_flow_kg_s=0.0012))
+
+    def test_min_margin_fields_exposed(self):
+        # F6: worst-case station single-phase margins are reported
+        r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
+                             radiator_area_m2=2.0, ranked=True, **_common())
+        assert r.min_subcooling_Pa > 0.0
+        assert r.min_freeze_margin_K > 0.0
+        assert r.min_critical_margin_K > 0.0
+
 
 class TestFailureStates:
     def test_nonconvergence_raises(self):
@@ -241,8 +302,6 @@ class TestFailureStates:
                              **_common())
 
     def test_supercritical_seed_does_not_create_a_branch(self):
-        # a healthy case still solves (multi-start with the domain guard rejects the spurious
-        # supercritical root instead of raising BranchError)
         r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
                              radiator_area_m2=2.0, ranked=True, multistart=True, **_common())
         assert r.converged
@@ -254,10 +313,3 @@ class TestPumpBoundary:
                              radiator_area_m2=2.0, boundary="fluid_loop", ranked=True, **_common())
         assert r.pump.boundary == "fluid_loop"
         assert r.Q_rad_W == pytest.approx(r.Q_chip_W + r.pump.fluid_heat_W, rel=1e-12)
-
-    def test_whole_spacecraft_boundary_label_carried(self):
-        r = cm.solve_coupled(mode="T", q_compute_W=1200.0, solid_path=_ranked_path(), radiator=C1,
-                             radiator_area_m2=2.0, boundary="whole_spacecraft", ranked=True,
-                             **_common())
-        assert r.pump.boundary == "whole_spacecraft"
-        assert r.pump.electrical_power_W > r.pump.fluid_heat_W

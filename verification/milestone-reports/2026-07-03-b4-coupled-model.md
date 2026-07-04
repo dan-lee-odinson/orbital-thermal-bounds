@@ -39,14 +39,14 @@ Files (4 new + 1 index):
 ## Verification performed
 
 - **ruff** (E,F,W,I,B,UP, line 100): clean.
-- **B4 tests** (`tests/test_coupled_model.py`): **32 passed** -- including the **two-direction
+- **B4 tests** (`tests/test_coupled_model.py`): **39 passed** -- including the **two-direction
   baseline recovery** (Mode T recovers Phase A `T_rad`; Mode A recovers Phase A area, both to
   ~1e-9), energy closure, vanishing nondimensional residual (~1e-15), Mode T/A
   cross-consistency, feasibility gates, failure states, multi-start robustness, and the
   C1/C2/C3 contract.
-- **Full suite** (sandbox clone, CoolProp pinned): **496 passed, 3 xfailed, 0 failed** -- no
-  regressions (+30 over B3's 466).
-- **Coverage:** `coupled_model.py` 97%; total 95.4% (CI gate is 90%).
+- **Full suite** (sandbox clone, CoolProp pinned): **505 passed, 3 xfailed, 0 failed** -- no
+  regressions (+39 over B3's 466).
+- **Coverage:** `coupled_model.py` 97%; total 95.7% (CI gate is 90%).
 - **Phase A guards:** `verify_suite.py`, `verify_paper3.py`, `companion/verify_ai1.py` all
   pass -- no published result perturbed.
 - **Evidence level:** c (baseline + closure + feasibility) + b (residual formulation).
@@ -58,6 +58,18 @@ Files (4 new + 1 index):
 - **Nondimensional convergence** + feasibility-gate suite: pass; ranked-infeasible rejected.
 - **Multi-start / branch** check: pass (supercritical excursion rejected as a domain exit,
   not a root).
+
+## Cross-model re-review (F1-F8) applied
+
+The initial adversarial cross-model review returned one blocker and seven major/minor
+findings; **all eight were fixed** (see the review record). Summary: C2 now requires
+excluded-face-outside-thermal-CV evidence (F1, blocker); `solve_coupled` rejects C3 (F2)
+and the whole-spacecraft boundary (F3); `converged` now means the residual + energy gates
+pass, not merely that the fixed point stopped (F4); multi-start classifies seed outcomes
+and the docs claim is a local smoke check (F5); worst-case station min margins are exposed
+and the guard is labelled a lumped conservative screen (F6); the ranked Reynolds gate
+requires validity for every active correlation, including the friction blend to 4000 (F7);
+and the contract enum is coerced (F8). Test count 32 -> 39.
 
 ## Limitations and readiness
 
