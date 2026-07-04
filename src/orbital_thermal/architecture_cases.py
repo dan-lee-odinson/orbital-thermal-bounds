@@ -341,6 +341,7 @@ class CaseResult:
     rank_eligible: bool
     coupled: object | None = None  # CoupledResult when evaluated
     mass: ModeledMass | None = None
+    failed_gates: tuple[str, ...] = ()  # exact B4 gate names for a rejected case (N2)
 
 
 def evaluate_case(
@@ -381,7 +382,7 @@ def evaluate_case(
                 _GATE_REASON.get(g, Reason.OTHER_FEASIBILITY_FAILURE) for g in exc.failed_gates
             )) or (Reason.OTHER_FEASIBILITY_FAILURE,)
             return CaseResult(coolant, material, spec.contract.value, Classification.REJECTED,
-                              reasons, True, False, None, None)
+                              reasons, True, False, None, None, failed_gates=exc.failed_gates)
         except _cm.ConvergenceError:
             return CaseResult(coolant, material, spec.contract.value, Classification.REJECTED,
                               (Reason.NONCONVERGENCE,), True, False, None, None)

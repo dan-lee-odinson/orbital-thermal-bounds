@@ -138,6 +138,9 @@ class TestRejectedByPhysics:
         assert r.classification is C.REJECTED
         assert Reason.JUNCTION_LIMIT_FAILURE in r.reason_codes
         assert Reason.SINGLE_PHASE_MARGIN_FAILURE in r.reason_codes
+        # N2: the exact gate names are preserved too
+        assert "junction_within_limit" in r.failed_gates
+        assert "subcooling_margin" in r.failed_gates
 
 
 class TestModeledMass:

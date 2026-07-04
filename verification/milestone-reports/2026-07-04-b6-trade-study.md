@@ -1,9 +1,9 @@
 # B6 completion report: Stage-1 trade-study engine (MAJOR)
 
 > **Working verification record.** B6 is a **major** milestone: a cross-model review record is
-> **required** and is **OPEN** (`verification/review-records/2026-07-04-b6-trade-study.md`). B6
-> is not complete until that review is dispositioned. The engine carries executable verification
-> (c); the physics is inherited from B1-B5 and is not re-validated.
+> **required**; it is **CLOSED - B6 approved** (`verification/review-records/2026-07-04-b6-trade-study.md`): the adversarial review's F1-F8
+> and the confirmation re-review's N1/N2 are all fixed. The engine carries executable
+> verification (c); the physics is inherited from B1-B5 and is not re-validated.
 
 - **Milestone:** B6 (Phase B, Stage 1 trade-study engine)
 - **Date:** 2026-07-04
@@ -63,7 +63,7 @@ still pass (41, +1 regression). This touches approved B4 code and is called out 
 - **ruff**: clean. **B6 tests** (`tests/test_trade_study.py`): **16 passed** (dominance,
   Pareto membership, degenerate/empty records, grid/trade defs, real sweep + reason metadata,
   reproducibility, CSV export, trade-offs). **B4 tests:** 41 passed (+ regression).
-- **Full suite** (clone, CoolProp pinned): **546 passed, 3 xfailed, 0 failed**.
+- **Full suite** (clone, CoolProp pinned): **547 passed, 3 xfailed, 0 failed**.
 - **Coverage:** `trade_study.py` 98%; total 96.0% (gate 90%).
 - **Phase A guards:** all three scripts pass. **mkdocs --strict**: builds the new pages + CSV.
 - **Evidence level:** c (engine) + inherited a/b/sensitivity (physics).

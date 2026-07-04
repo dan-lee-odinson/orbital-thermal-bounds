@@ -6,17 +6,21 @@
 # Review Record: B6 - Trade-study engine
 
 ## Record Metadata
-- **Record status:** **OPEN - revision delivered; re-review pending.** The adversarial review
-  returned 0 blockers + 4 major + 4 minor findings (F1-F8); **all eight were fixed** and the
-  code + data revised. Awaiting the confirmation re-review.
+- **Record status:** **CLOSED - B6 approved.** The adversarial review returned 0 blockers +
+  4 major + 4 minor findings (F1-F8); all were fixed, and the **confirmation re-review closed
+  all eight**. Two new minor items (N1 doc, N2 traceability) were then also fixed. No open
+  items.
 - **Date opened:** 2026-07-04
 - **Reviewed commit (original):** `385d2b1` (`chore/b6-trade-study`)
-- **Revision commit:** *(to be recorded when the F1-F8 revision is pushed)*
+- **Revision commit (F1-F8):** `989804e` (`chore/b6-trade-study`)
+- **Final revision (N1/N2 closure):** follow-up commit on the same branch (PR head; the
+  squash-merge commit is the closing record on `main`)
 - **Reviewer(s):** human director (Dan Lee-Odinson); cross-model reviewer (GPT-5.5 High)
 - **Trigger:** major milestone (B6)
 - **Disposition (original):** **changes required** - 4 major (F1-F4/F5) + 4 minor; no blocker.
-- **Disposition (revision):** all 8 findings **fixed**; **re-review requested** before B6 is
-  treated as complete and before B7.
+- **Disposition (revision):** all 8 findings **fixed**.
+- **Disposition (confirmation re-review):** **F1-F8 all CLOSED**; two new minor items (N1,
+  N2) raised and **fixed**. **B6 APPROVED - B7 may proceed.**
 
 ## Review Basis
 B6 is reviewed against the roadmap B6 entry, the plan Section 8 (B6) and 4.8/4.8a, and the
@@ -26,8 +30,9 @@ inherit a/b/sensitivity from B1-B5 and are **not** newly validated. Figures are 
 ## Review Scope
 **In scope:** `src/orbital_thermal/trade_study.py`; `tests/test_trade_study.py`;
 `scripts/generate_trade_study.py`; `docs/trade-study.md` + generated `trade-study-data.md` /
-`trade-study-points.csv`; and the **B4 fix** (`coupled_model.py` multi-start:
-reduced-temperature cap + subcooled-liquid filter) with its regression test.
+`trade-study-points.csv`; and the **B4 fix** (`coupled_model.py` multi-start: a clean
+supercritical guard `mean >= Tcrit` + a subcooled-liquid alternate-root filter) with its
+regression test.
 **Directed scope decisions:** sweep Q/m_dot/area/P_lo only; junction limit is a filter; all six
 fronts as data; figures -> B7; modeled component mass only (no total-system claim).
 **Out of scope:** B7 figures; denser sweeps; independent re-validation of B1-B5 physics.
@@ -38,7 +43,9 @@ fronts as data; figures -> B7; modeled component mass only (no total-system clai
 - Pareto-dominance construction per trade (declared axis senses); degenerate/empty fronts
   emitted explicitly; per-point category, reason codes, active constraint, dominance flags.
 - Modeled component mass only (4.8a); no total-system mass; only rank-eligible cases swept.
-- **B4 multi-start fix** (reduced-temperature cap `Tr<=0.97`; subcooled-liquid alt-root filter).
+- **B4 multi-start fix**: clean supercritical guard (`mean >= Tcrit`) + a subcooled-liquid
+  alternate-root filter (an alt root is a branch only if it is itself a subcooled liquid at
+  the operating pressure). No arbitrary temperature cap.
 
 ## Commands and Tests Run (self-verification, pre-review)
 ```
@@ -59,7 +66,8 @@ python scripts/generate_trade_study.py        # 144 points; 6 fronts, 0 degenera
 3. Is the mass strictly "modeled component mass (incomplete)"? Any hidden total-system claim?
 4. Are only rank-eligible cases swept, and are sensitivity/rejected points kept out of fronts?
 5. Is the **B4 fix** correct and safe -- does the subcooled-liquid filter ever suppress a *real*
-   feasible second root, and is `Tr<=0.97` defensible? Does it weaken B4's F5 branch check?
+   feasible second root? Does it weaken B4's F5 branch check? (The revision uses a clean
+   supercritical guard `mean >= Tcrit`; the earlier arbitrary `Tr` cap was removed.)
 6. Are degenerate/empty fronts handled honestly, and is "no universal winner" actually supported
    by the data (not asserted)?
 7. Is the 22/144 nonconvergence rate acceptable, and are those points correctly excluded from
@@ -113,7 +121,20 @@ verify_suite.py / verify_paper3.py / companion/verify_ai1.py   # all pass
 python scripts/generate_trade_study.py             # 144 points; 6 fronts, 0 degenerate
 ```
 
+### Confirmation re-review (retained) and new items
+
+The confirmation re-review **closed F1-F8** and raised two new minor items, both **fixed**:
+
+9. **[minor][documentation] N1 - review record still described the removed `Tr<=0.97` cap.**
+   **FIXED:** the scope / focus / implementation-summary sections now describe the final B4 fix
+   (supercritical guard + subcooled-liquid filter); no `Tr<=0.97` language remains.
+10. **[minor][traceability] N2 - exact failed gate names not exported (only categories).**
+    **FIXED:** the exact `failed_gates` now propagate `FeasibilityError -> CaseResult ->
+    EvaluatedPoint -> CSV` as a separate `failed_gates` column, while `reason_codes` remains the
+    categorized view. Tests assert the exact gate names survive end-to-end. B6 tests 20 -> 21.
+
 ## Disposition
-**Revision delivered; all 8 findings fixed. Re-review requested.** Reviewed commit `385d2b1`;
-the revision commit will be recorded when pushed. B6 is not treated as closed until the
-confirmation re-review clears the revision.
+**B6 APPROVED.** Adversarial review: 0 blockers + 4 major + 4 minor; confirmation re-review:
+**F1-F8 CLOSED**; new minor N1/N2 **fixed**. No open items. Reviewed commit `385d2b1`; F1-F8
+revision `989804e`; N1/N2 closed in the follow-up branch head (squash-merge lands the closing
+commit on `main`). **B7 may proceed.**

@@ -119,6 +119,7 @@ class EvaluatedPoint:
     reason_codes: tuple[ReasonCode, ...]
     metrics: dict[str, float]  # objective values (empty for infeasible)
     active_constraint: str = "none"
+    failed_gates: tuple[str, ...] = ()  # exact B4 gate names (N2; categorized in reason_codes)
     pareto_fronts: set[str] = field(default_factory=set)  # fronts this point is non-dominated in
     dominated_reasons: dict[str, str] = field(default_factory=dict)  # front -> why dominated
 
@@ -181,7 +182,8 @@ def _evaluate_point(base: Stage1Envelope, coolant: str, material: str,
     category = (PointCategory.NONCONVERGED if ReasonCode.RESIDUAL_NONCONVERGENCE in reasons
                 else PointCategory.INFEASIBLE_RANKED)
     return EvaluatedPoint(
-        case_id, coolant, material, q, md, area, p, False, category, reasons, {})
+        case_id, coolant, material, q, md, area, p, False, category, reasons, {},
+        failed_gates=cr.failed_gates)
 
 
 def evaluate_grid(
@@ -342,7 +344,7 @@ def _model_version() -> str:
 _CSV_FIELDS = (
     "point_id", "case_id", "coolant", "material", "grid_heat_load_W", "grid_mass_flow_kg_s",
     "grid_radiator_area_m2", "grid_low_side_pressure_Pa", "feasible", "category",
-    "reason_codes", "active_constraint",
+    "reason_codes", "failed_gates", "active_constraint",
     *_OBJECTIVES, "pareto_front_membership", "dominated_reasons",
 )
 
@@ -356,7 +358,8 @@ def to_csv_rows(result: TradeStudyResult) -> list[str]:
             p.point_id, p.case_id, p.coolant, p.material, f"{p.grid_heat_load_W:g}",
             f"{p.grid_mass_flow_kg_s:g}", f"{p.grid_radiator_area_m2:g}",
             f"{p.grid_low_side_pressure_Pa:g}", str(p.feasible), p.category.value,
-            "|".join(r.value for r in p.reason_codes), p.active_constraint,
+            "|".join(r.value for r in p.reason_codes), "|".join(p.failed_gates),
+            p.active_constraint,
         ]
         vals += [f"{p.metrics.get(k, ''):g}" if k in p.metrics else "" for k in _OBJECTIVES]
         vals.append("|".join(sorted(p.pareto_fronts)))  # fronts this point is non-dominated in

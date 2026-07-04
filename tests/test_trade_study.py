@@ -182,6 +182,16 @@ class TestSweep:
         ids = [p.point_id for p in res.points]
         assert len(ids) == len(set(ids))
 
+    def test_exact_failed_gates_exported(self, study):
+        # N2: gate-rejected points carry exact gate names (not just categorized reasons)
+        res = study
+        rows = ts.to_csv_rows(res)
+        assert "failed_gates" in rows[0].split(",")
+        rejected = [p for p in res.points
+                    if p.category is ts.PointCategory.INFEASIBLE_RANKED]
+        assert rejected  # the small grid contains gate-rejected points
+        assert all(p.failed_gates for p in rejected)
+
     def test_nonconverged_category_is_distinct_from_gate_rejection(self, study):
         # F5: category is NONCONVERGED iff a nonconvergence reason is present
         res = study
