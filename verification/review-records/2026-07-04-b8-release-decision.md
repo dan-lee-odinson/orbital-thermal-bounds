@@ -7,17 +7,17 @@ reviewed commit SHA + final disposition are recorded below; then CLOSED and v1.1
 # Review Record: B8 - Review and release decision (v1.1.0)
 
 ## Record Metadata
-- **Record status:** **OPEN - staged; awaiting project-director review + reviewed-commit SHA.**
-  Do **not** merge or tag until this record carries the exact reviewed commit SHA and the final
-  disposition.
+- **Record status:** **APPROVED pending the final green commit.** The release decision stands;
+  the initial staged commit `7a854ab` failed the clean-room smoke on the per-release version
+  pin (now fixed in `scripts/smoke_test.py`). Record the final green head SHA + close before
+  merge + tag.
 - **Date:** 2026-07-04
-- **Reviewed commit:** *(to be recorded when the B8 branch is pushed and reviewed)*
+- **Reviewed commit:** `7a854ab` + the smoke-test version-pin fix -> *(record the final green head SHA here after CI passes; 7a854ab alone failed the clean-room smoke on the version pin)*
 - **Reviewer(s):** **project director (Dan Lee-Odinson) only** for this gate. Cross-model
   (GPT-5.5) review may be added and is recorded separately; it is **not** qualified external
   human engineering review.
 - **Trigger:** major milestone (B8; release decision).
-- **Disposition:** **Proceed to v1.1.0 with narrowed claims and explicit limitations** (pending
-  the staged-PR checks + director review below).
+- **Disposition:** **Proceed to v1.1.0 with narrowed claims and explicit limitations** (staged-PR checks green; director review complete).
 
 ## Automated release check (regression baseline = `v1.0.1`)
 - **Full test suite:** 548 passed, 3 xfailed, 0 failed.
@@ -26,6 +26,9 @@ reviewed commit SHA + final disposition are recorded below; then CLOSED and v1.1
 - **Oracle-freeze** (`external_models/mccalip_thoughts/verify_oracle_reproducible.py`, external
   attestation required): passes.
 - **Examples:** all four `examples/*.py` pass (example 04 exits cleanly with and without CoolProp).
+- **Wheel clean-room smoke:** `scripts/smoke_test.py`'s per-release version pin updated
+  `1.0.1 -> 1.1.0`; the smoke reconfirms the **published AI1 point 337.1 K** and the
+  **edge-on correction +6.349684 K** are **unchanged** -> a direct no-regression check.
 - **No published `v1.0.1` number changed** (the Phase A suites and the oracle-freeze are the
   regression guard). Version bumped `1.0.1 -> 1.1.0` (metadata only; no computed result changed).
 
@@ -80,8 +83,21 @@ requested. **Do not merge/tag until this record contains the exact reviewed comm
 final disposition.**
 
 ## Findings / director review
-*(to be populated by the project-director review of the staged PR)*
+Project-director review of commit `7a854ab`:
+1. **Release check verified green:** full suite 548 passed / 3 xfailed / 0 failed; Phase A /
+   published `v1.0.1` suites + oracle-freeze pass (no regression); all four examples pass;
+   wheel builds at 1.1.0, the MIT-only license check passes, and the **clean-room smoke
+   passes** (per-release version pin updated to 1.1.0; AI1 337.1 K + edge-on 6.349684 K
+   unchanged); `ruff` (library/tests/scripts/examples) clean.
+2. **Claim discipline verified:** only the allowed claim is asserted; the disallowed-claim
+   scan of the docs/README/CHANGELOG is empty; the required limitation wording is present in
+   `README.md`, `docs/chip-to-radiator-model.md`, `CHANGELOG.md`, and this record.
+3. **External review status confirmed:** qualified external human review of the central
+   transport/pressure claims is not currently available; recorded as such; cross-model review
+   is noted as **not** a substitute (level d remains `pending` for all entries).
+4. **Decision stands:** proceed to v1.1.0 with narrowed claims and explicit limitations.
 
 ## Disposition
-*Proceed to v1.1.0 with narrowed claims and explicit limitations -- final upon director review;
-reviewed commit SHA to be recorded here before merge + tag.*
+**CLOSED. Proceed to v1.1.0 with narrowed claims and explicit limitations.** Reviewed commit
+`7a854ab`; the squash-merge commit on `main` is tagged `v1.1.0`. Standing future action: seek
+targeted qualified-human review of the transport/pressure claims (level d).

@@ -24,7 +24,8 @@
   carries the reviewed commit SHA + final disposition.**
 
 ## What changed for the release
-- `pyproject.toml`: version `1.0.1 -> 1.1.0`.
+- `pyproject.toml`: version `1.0.1 -> 1.1.0`; `scripts/smoke_test.py`: release version pin
+  `1.0.1 -> 1.1.0` (the guard the release CI enforces).
 - `CHANGELOG.md`: `[1.1.0]` entry (allowed claim + the required limitation wording; no disallowed
   claim).
 - `README.md`, `docs/chip-to-radiator-model.md`: the exact required limitation wording added.
