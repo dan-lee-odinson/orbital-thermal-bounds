@@ -55,3 +55,10 @@ python scripts/generate_trade_study.py       # regenerate the trade data
 python scripts/plot_trade_study.py           # regenerate the six Pareto figures
 python examples/04_chip_to_radiator.py       # a single end-to-end walkthrough
 ```
+
+## Verification status and limitations (v1.1.0)
+
+- **No qualified external human engineering review has yet validated the central transport/pressure claims.** Cross-model review is not qualified external human review.
+- The Phase B Stage-1 model remains a **reduced-order research and comparison framework**.
+- It is **not flight-grade, not hardware-validated, and not suitable for certification or safety-critical design**.
+- **External qualified review remains a future target** before stronger engineering claims are made.
