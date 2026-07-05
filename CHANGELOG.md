@@ -7,6 +7,45 @@ All notable changes to this project are documented here. The format follows
 Scope note: entries describe the **software package** (`orbital_thermal`) and the
 repository. The three preprints have their own Zenodo DOIs (see the README).
 
+## [1.1.0] — 2026-07-04
+
+Phase B (Stage 1): a **verification-supported, reduced-order, single-phase
+chip-to-radiator** modeling and trade-study framework, with documented
+assumptions, executable tests, cross-model review records, and explicit
+limitations. Backward-compatible feature addition — **no Phase A result and no
+published `v1.0.1` result changed** (the Phase A verification suites and every
+published number are unchanged; the full test suite is 548 passed / 3 xfailed).
+
+### Added
+- Property/correlation registry with provenance and rank-eligibility gates (B1).
+- Solid conduction network: conduction + Yovanovich spreading + contact (B2).
+- Single-phase pumped loop: hydraulics, film coefficient, pump energy, per-segment
+  phase margins (B3).
+- Coupled steady-state chip-to-radiator solve (per-node residuals R1–R5), Modes T/A —
+  temperatures/area are solved outputs (B4; adversarial cross-model review CLOSED).
+- Stage-1 architecture-case classification + modeled component mass (B5).
+- Trade-study engine: grid sweep → six Pareto fronts, plot-ready data (B6; adversarial
+  cross-model review CLOSED).
+- Public docs (`docs/chip-to-radiator-model.md`, guides), six Pareto figures, and an
+  end-to-end example (B7).
+
+### Verification and limitations
+- Evidence levels a (source) + b (analytic) + c (executable), plus adversarial
+  cross-model review at the major milestones (B4, B6).
+- **No qualified external human engineering review has yet validated the central
+  transport/pressure claims.** Cross-model review is **not** qualified external human
+  review.
+- The Phase B Stage-1 model remains a **reduced-order research and comparison
+  framework**. It is **not flight-grade, not hardware-validated, and not suitable for
+  certification or safety-critical design**.
+- Mass figures are **modeled component mass (incomplete Stage-1 accounting)** — not
+  total thermal-system mass. No single case is Pareto-optimal on every named front
+  (not a global architecture ranking). No published-architecture (AI1 / Starcloud /
+  Suncatcher) judgment is claimed.
+- **External qualified review remains a future target** before stronger engineering
+  claims are made.
+
+
 ## [1.0.1] — 2026-06-16
 
 Maintenance release. No functional, numerical, or API changes; every published

@@ -24,6 +24,13 @@ The project is designed to separate published values, derived results, assumptio
 > against flown hardware** and is **not** intended for flight design, certification, or
 > safety-critical decisions. See [`docs/VERIFICATION_AND_VALIDATION.md`](docs/VERIFICATION_AND_VALIDATION.md).
 
+> **Phase B (v1.1.0) status.** No qualified external human engineering review has yet
+> validated the central transport/pressure claims. The Phase B Stage-1 model remains a
+> reduced-order research and comparison framework. It is not flight-grade, not
+> hardware-validated, and not suitable for certification or safety-critical design.
+> External qualified review remains a future target before stronger engineering claims
+> are made.
+
 ## Research Lineage
 
 This repository is part of the Orbital Thermal Bounds research program: a DOI-archived sequence of preprints, software releases, verification records, and reference-case comparisons for reduced-order thermal feasibility analysis of orbital compute architectures.
