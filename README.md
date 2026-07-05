@@ -47,7 +47,7 @@ This repository is part of the Orbital Thermal Bounds research program: a DOI-ar
 
 - **+6.35 K** correction to a public radiator model at its default edge-on geometry — McCalip's coded equilibrium **335.75 K → 342.10 K** with the exact Earth view factor — decomposed into **+5.77 K** model-form geometry and **+0.58 K** a floating-point branch artifact ([paper three](https://doi.org/10.5281/zenodo.20695720)).
 - Exact tilted-plate-to-sphere edge-on Earth view factor **0.257773** per face at 550 km.
-- A certified orbit-coupled **transient** solver: at periodic steady state ⟨T⁴⟩ = T_steady⁴, so a steady averaged-sink sizing under-predicts the orbital **peak** (up to several kelvin), not the mean.
+- A convergence-checked orbit-coupled **transient** solver: at periodic steady state ⟨T⁴⟩ = T_steady⁴, so a steady averaged-sink sizing under-predicts the orbital **peak** (up to several kelvin), not the mean.
 
 ## Current Status
 
@@ -149,11 +149,11 @@ T = equilibrium.equilibrium_temperature(Q=120e3, area=220.0, emissivity=0.91, T_
 for row in mx.correction_table_vs_beta():
     print(row["beta_deg"], round(row["delta_K"], 3))   # +6.35 K at beta = 90
 
-# 3. Transient averaging-load bias with a certified periodic steady state
+# 3. Transient averaging-load bias with a convergence-checked periodic steady state
 Q = 0.91 * SIGMA_SB * (337.1**4 - 220.0**4)
 bias = transient.averaging_bias(
     altitude_km=550, beta_deg=30, q_load=Q, areal_heat_capacity=8000.0,
-    tilt_deg=0, assume_sun_shielded=True)        # raises unless fully certified
+    tilt_deg=0, assume_sun_shielded=True)        # raises unless fully convergence-checked
 print(bias["transient_mean_K"], bias["peak_excess_over_steady_K"])
 ```
 
@@ -174,7 +174,9 @@ print(bias["transient_mean_K"], bias["peak_excess_over_steady_K"])
 
 ### Transient solver and convergence certificate
 
-The one-node model `C dT/dt = q_load − εσ(T⁴ − T_sink_eff(t)⁴)` is marched with fixed-step RK4 and a positivity guard at every stage. `simulate(..., check_time_resolution=True)` returns a result only when it is certified along three independent axes:
+Throughout this package, "certificate" denotes an **internal numerical convergence certificate** — an automated, machine-checkable record that the numerical solution has passed the resolution and closure checks below. It is **not** an external validation, engineering sign-off, or flight certification of any kind.
+
+The one-node model `C dT/dt = q_load − εσ(T⁴ − T_sink_eff(t)⁴)` is marched with fixed-step RK4 and a positivity guard at every stage. `simulate(..., check_time_resolution=True)` returns a result only when it is convergence-checked along three independent axes:
 
 - **periodic closure** — start-to-end orbit change below tolerance;
 - **scale-aware energy balance** — orbit-mean net flux, as an equivalent temperature error, below tolerance (catches the high-thermal-inertia false-convergence trap that periodic closure alone misses);
@@ -191,7 +193,7 @@ The one-node model `C dT/dt = q_load − εσ(T⁴ − T_sink_eff(t)⁴)` is mar
 
 ### Audit status
 
-The package passed an adversarial review cycle conducted by GPT-5.5 with independent Wolfram verification: **eight remediation rounds and a final pass**, ending in **FULL PASS — AUDIT CLOSED** at v1.0.0. The reviewer independently reproduced the +6.35 K headline correction every round, confirmed the analytic bounds symbolically, and verified the transient certificate against 8×–16×-resolution reference solutions across structured and randomized parameter sweeps (largest certified pointwise error 0.0046 K against a 0.01 K tolerance; zero exceedances). No P1/P2/blocking defect remains.
+The package passed an adversarial review cycle conducted by GPT-5.5 with independent Wolfram verification: **eight remediation rounds and a final pass**, ending in **FULL PASS — AUDIT CLOSED** at v1.0.0. The reviewer independently reproduced the +6.35 K headline correction every round, confirmed the analytic bounds symbolically, and verified the transient certificate against 8×–16×-resolution reference solutions across structured and randomized parameter sweeps (largest checked pointwise error 0.0046 K against a 0.01 K tolerance; zero exceedances). No P1/P2/blocking defect remains.
 
 ---
 

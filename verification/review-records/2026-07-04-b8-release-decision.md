@@ -7,12 +7,11 @@ reviewed commit SHA + final disposition are recorded below; then CLOSED and v1.1
 # Review Record: B8 - Review and release decision (v1.1.0)
 
 ## Record Metadata
-- **Record status:** **APPROVED pending the final green commit.** The release decision stands;
-  the initial staged commit `7a854ab` failed the clean-room smoke on the per-release version
-  pin (now fixed in `scripts/smoke_test.py`). Record the final green head SHA + close before
-  merge + tag.
+- **Record status:** **CLOSED - B8 approved; Phase B v1.1.0 release authorized.** Staged PR
+  director-reviewed at the final green commit; the initial `7a854ab` failed the clean-room
+  smoke on the per-release version pin, fixed in `542ad0f` (`scripts/smoke_test.py`).
 - **Date:** 2026-07-04
-- **Reviewed commit:** `7a854ab` + the smoke-test version-pin fix -> *(record the final green head SHA here after CI passes; 7a854ab alone failed the clean-room smoke on the version pin)*
+- **Reviewed commit:** `542ad0f` (`chore/b8-release-decision` head; green including the clean-room smoke). Supersedes `7a854ab`, which failed the smoke on the version pin.
 - **Reviewer(s):** **project director (Dan Lee-Odinson) only** for this gate. Cross-model
   (GPT-5.5) review may be added and is recorded separately; it is **not** qualified external
   human engineering review.
@@ -65,6 +64,19 @@ human review. *(Docs scanned; none present.)*
 validated the central transport/pressure claims; the model remains a reduced-order
 research/comparison framework.
 
+## Public-claims hygiene
+- **README wording ("certified"):** README wording was updated to avoid public-facing
+  ambiguity around the word "certified," while the underlying Phase A technical meaning was not
+  changed. The transient-solver adjective/verb uses of "certified" were replaced with
+  convergence-checked language, and the "convergence certificate" section now carries an explicit
+  definition that the term denotes an internal numerical convergence certificate, not external
+  validation, engineering sign-off, qualification, or flight certification.
+- **Historical CHANGELOG v1.0.0 entry (not rewritten):** The historical CHANGELOG v1.0.0 phrase
+  "transient convergence certificate" is retained as release-history language. In this project,
+  "certificate" in that context means an internal numerical convergence certificate produced by
+  solver checks; it does not mean external validation, engineering sign-off, qualification, or
+  flight certification.
+
 ## Verification level
 - **d (qualified external human review):** **not obtained** -> recorded inability + explicit
   decision (this record). Level d remains `pending` for every ledger entry.
@@ -99,5 +111,5 @@ Project-director review of commit `7a854ab`:
 
 ## Disposition
 **CLOSED. Proceed to v1.1.0 with narrowed claims and explicit limitations.** Reviewed commit
-`7a854ab`; the squash-merge commit on `main` is tagged `v1.1.0`. Standing future action: seek
+`542ad0f + docs-hygiene follow-up`; the squash-merge commit on `main` is tagged `v1.1.0`. Standing future action: seek
 targeted qualified-human review of the transport/pressure claims (level d).
