@@ -36,8 +36,21 @@ def _load_script():
 
 
 def test_vendored_script_byte_identical():
-    """The vendored script must stay byte-identical to the pinned upstream file."""
-    digest = hashlib.sha256(_VENDORED.read_bytes()).hexdigest()
+    """The vendored script must stay byte-identical to the pinned upstream file.
+
+    Verifies the SHA-256 of the file *as checked out on this platform*. The pinned
+    upstream file is LF-only; a CRLF checkout (git autocrlf on Windows) changes the
+    raw bytes and breaks the hash. `.gitattributes` pins this path to `text eol=lf`
+    so the checkout is LF everywhere; the explicit CRLF assertion below turns an
+    otherwise-opaque hash mismatch into an actionable line-ending diagnostic.
+    """
+    raw = _VENDORED.read_bytes()
+    assert b"\r\n" not in raw, (
+        "vendored script was checked out with CRLF line endings; it must be LF. "
+        "Confirm `.gitattributes` pins it to `text eol=lf`, then re-normalize with "
+        "`git add --renormalize external_models/biswas_suncatcher/report_one_thermal.py`."
+    )
+    digest = hashlib.sha256(raw).hexdigest()
     assert digest == _PINNED_SHA256
 
 
