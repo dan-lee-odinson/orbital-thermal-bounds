@@ -165,6 +165,13 @@ class CorrelationEntry:
     evaluate: object = None  # Callable | None
     applicability: str = ""
     note: str = ""
+    # S1 two-phase extension: optional, backward-compatible microgravity/gravity-basis
+    # metadata for HTC/dP/CHF correlations (rankings are 1g reference-only; ISS/microgravity
+    # literature shows gravity-dependent behavior). Defaults keep all existing entries valid.
+    microgravity_validated: bool | None = None
+    gravity_basis: str = ""
+    rank_scope: str = ""
+    limitation: str = ""
 
     @property
     def rank_eligible(self) -> bool:
