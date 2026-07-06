@@ -20,20 +20,48 @@
     "exists_at_v1_2": true,
     "lines": 128,
     "dependency_free": true,
-    "sha256": "52b2f7af90e99e9aa2bb4c4de479c03ef742622c9a153d7867f1bfbeece02d8c"
+    "sha256": "52b2f7af90e99e9aa2bb4c4de479c03ef742622c9a153d7867f1bfbeece02d8c",
+    "vendored_path": "external_models/biswas_suncatcher/report_one_thermal.py",
+    "vendored_byte_identical": true
   },
   "status": {
     "pinned": true,
-    "reproduced": false,
+    "reproduced": true,
     "ranked": false,
-    "phase": "future",
+    "phase": "reference",
     "integrated_into_orbital_thermal": false
+  },
+  "reproduction": {
+    "milestone": "R1",
+    "date": "2026-07-05",
+    "method": "ran the byte-identical pinned standalone script unchanged (Python 3.10); built-in self-check passed (checks ok, exit 0)",
+    "conventions": "author's own (no harmonization to orbital-thermal-bounds; that is R3)",
+    "tolerance": { "temperature_C": 0.05, "R_th_K_per_W": 0.001 },
+    "reproduced_values": {
+      "T_rad_C": 21.34,
+      "T_j_C": 111.3,
+      "T_j_single_heat_pipe_fail_C": 114.8,
+      "R_th_before_K_per_W": 0.350,
+      "R_th_after_K_per_W": 0.300
+    },
+    "author_provided_values": {
+      "T_rad_C": 21.3,
+      "T_j_C": 111.3,
+      "T_j_single_heat_pipe_fail_C": 114.8,
+      "R_th_before_K_per_W": 0.350,
+      "R_th_after_K_per_W": 0.300
+    },
+    "within_tolerance": true,
+    "sandbox_sha256_match": true,
+    "authoritative_byte_identity_check": "director Codespaces git + sha256sum (recorded in the R1 review record)",
+    "claim": "faithful reproduction of the pinned v1.2 standalone script's Part I baseline; external reference; not validation, not ranking, not integrated",
+    "review_record": "verification/review-records/2026-07-05-r1-biswas-reproduction.md"
   },
   "source_classification": [
     "published repository",
     "tagged release",
     "author-provided clarification",
-    "future reproduction target"
+    "reproduced external reference (R1)"
   ],
-  "notes": "R0 source-intake pin only. No reproduction, ranking, or integration performed. The upstream CITATION.cff version field reads 1.0.0 while the release tag is v1.2 (upstream metadata mismatch)."
+  "notes": "R1 reproduced the pinned standalone Part I thermal baseline (external reference; unranked, not integrated). R2 will wrap it as a tested reference case with a ledger entry; R3 is the harmonized comparison. The upstream CITATION.cff version field reads 1.0.0 while the release tag is v1.2 (upstream metadata mismatch); the pin uses the tag + full SHA."
 }
