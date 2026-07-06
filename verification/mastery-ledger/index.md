@@ -56,3 +56,21 @@ intermediate milestones (B1/B2/B3) carry a completion report with an optional sp
 | [trade-study](entries/trade-study.md) | Stage-1 trade-study engine: grid sweep over the rank-eligible cases + six Pareto fronts (engine verified c; physics inherits B1-B5) | `reproduced` | TODO (director) | TODO | **approved (F1-F8 + N1/N2 closed)** |
 
 > **Release note (B8, v1.1.0):** every entry above is at status `reproduced` (evidence a/b/c + cross-model review at the majors). **Level d -- qualified external human review -- is `pending` for all entries;** cross-model review does not count as level d. Phase B v1.1.0 is released with narrowed claims and explicit limitations (see the [B8 release record](../review-records/2026-07-04-b8-release-decision.md)).
+
+## Track R - external reference reproductions
+
+> **NOT `orbital-thermal-bounds` claims.** Entries in this section are **external** models
+> reproduced from a pinned third-party source **in the source author's own conventions**. They are
+> **not validation, not ranking, and not harmonized** to this project. They are kept separate from
+> the project's own results above so they can never be read as an `orbital-thermal-bounds` claim.
+> Category-**d** review is `pending`; formal cross-model review is deferred to the harmonized
+> comparison (Track-R **R3**), which additionally requires the Stage-2 two-phase framework (S4-S6).
+
+| Entry | Result | Status | Category | Ranked? | Cross-model review (not d) |
+|---|---|---|---|---|---|
+| [suncatcher-v1.2-part-i-reference](entries/suncatcher-v1.2-part-i-reference.md) | Biswas/Suncatcher v1.2 Part I passive thermal baseline (`T_rad`, `T_j`, `R_th`), reproduced from the pinned standalone script | `reproduced` (external reference) | external reference; **unranked, unharmonized, not validated** | **no** | deferred to R3 |
+
+> **Track-R status:** R0 pinned -> **R1 reproduced** -> **R2 reference-case wrapped (CI-enforced)**.
+> **R3** (harmonized comparison; major, with cross-model review) is deferred and gated on S4-S6.
+> The reproduced values stay an external reference; any comparison to `orbital-thermal-bounds` is the
+> assumption-explicit R3, never a "best architecture" claim.

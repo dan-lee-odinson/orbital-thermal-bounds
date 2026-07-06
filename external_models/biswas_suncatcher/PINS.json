@@ -27,9 +27,13 @@
   "status": {
     "pinned": true,
     "reproduced": true,
+    "reference_case": true,
     "ranked": false,
+    "harmonized": false,
+    "validated": false,
+    "integrated_into_orbital_thermal": false,
     "phase": "reference",
-    "integrated_into_orbital_thermal": false
+    "source_conventions": "Biswas/Suncatcher v1.2 author conventions"
   },
   "reproduction": {
     "milestone": "R1",
@@ -38,6 +42,8 @@
     "conventions": "author's own (no harmonization to orbital-thermal-bounds; that is R3)",
     "tolerance": { "temperature_C": 0.05, "R_th_K_per_W": 0.001 },
     "reproduced_values": {
+      "compute_load_W": 1200.0,
+      "total_modeled_thermal_load_W": 1450.0,
       "T_rad_C": 21.34,
       "T_j_C": 111.3,
       "T_j_single_heat_pipe_fail_C": 114.8,
@@ -57,11 +63,26 @@
     "claim": "faithful reproduction of the pinned v1.2 standalone script's Part I baseline; external reference; not validation, not ranking, not integrated",
     "review_record": "verification/review-records/2026-07-05-r1-biswas-reproduction.md"
   },
+  "reference_case": {
+    "milestone": "R2",
+    "date": "2026-07-05",
+    "test": "tests/test_biswas_suncatcher_reference.py",
+    "ledger_entry": "verification/mastery-ledger/entries/suncatcher-v1.2-part-i-reference.md",
+    "review_record": "verification/review-records/2026-07-05-r2-biswas-reference-case.md",
+    "ci_enforced": true,
+    "asserts": [
+      "byte-identity SHA-256 of the vendored script",
+      "script self-check passes (subprocess, timeout)",
+      "reproduced values within tolerance (0.05 C / 0.001 K/W)"
+    ],
+    "note": "1450 W is the total modeled thermal load (1.2 kW compute + 150 W avionics + 100 W parasitic), Biswas-script convention; 1.2 kW compute input asserted separately"
+  },
   "source_classification": [
     "published repository",
     "tagged release",
     "author-provided clarification",
-    "reproduced external reference (R1)"
+    "reproduced external reference (R1)",
+    "tested external reference case (R2)"
   ],
-  "notes": "R1 reproduced the pinned standalone Part I thermal baseline (external reference; unranked, not integrated). R2 will wrap it as a tested reference case with a ledger entry; R3 is the harmonized comparison. The upstream CITATION.cff version field reads 1.0.0 while the release tag is v1.2 (upstream metadata mismatch); the pin uses the tag + full SHA."
+  "notes": "R1 reproduced the pinned standalone Part I thermal baseline; R2 wrapped it as a CI-enforced external reference case (test + ledger entry + limitations). External reference: reproduced but unranked, unharmonized, unvalidated, and not integrated into orbital_thermal. Harmonized comparison is Track-R R3 (gated on S4-S6). The upstream CITATION.cff version field reads 1.0.0 while the release tag is v1.2 (upstream metadata mismatch); the pin uses the tag + full SHA."
 }
