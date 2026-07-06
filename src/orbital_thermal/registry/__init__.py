@@ -35,6 +35,12 @@ from .provenance import (
     blockers,
     is_rank_eligible,
 )
+from .two_phase import (
+    COOLPROP_PIN,
+    TWO_PHASE_BY_ID,
+    TWO_PHASE_CORRELATIONS,
+    TWO_PHASE_PROPERTIES,
+)
 
 __all__ = [
     "Provenance",
@@ -51,6 +57,10 @@ __all__ = [
     "is_rank_eligible",
     "PROPERTIES",
     "CORRELATIONS",
+    "TWO_PHASE_CORRELATIONS",
+    "TWO_PHASE_PROPERTIES",
+    "TWO_PHASE_BY_ID",
+    "COOLPROP_PIN",
     "ALL_ENTRIES",
     "get",
     "rank_eligible_entries",
@@ -59,11 +69,17 @@ __all__ = [
 ]
 
 #: Every registered entry (properties + correlations).
-ALL_ENTRIES: list[PropertyEntry | CorrelationEntry] = [*PROPERTIES, *CORRELATIONS]
+ALL_ENTRIES: list[PropertyEntry | CorrelationEntry] = [
+    *PROPERTIES,
+    *CORRELATIONS,
+    *TWO_PHASE_PROPERTIES,
+    *TWO_PHASE_CORRELATIONS,
+]
 
 _BY_ID: dict[str, PropertyEntry | CorrelationEntry] = {
     **PROPERTIES_BY_ID,
     **CORRELATIONS_BY_ID,
+    **TWO_PHASE_BY_ID,
 }
 
 
