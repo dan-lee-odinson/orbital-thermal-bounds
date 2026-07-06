@@ -4,3 +4,12 @@
 external_models/mccalip_thoughts/math.js               -text
 external_models/mccalip_thoughts/generate_oracle.js    -text
 external_models/mccalip_thoughts/expected_outputs.json -text
+
+# Same reasoning for the Biswas/Suncatcher vendored script: its SHA-256 pin in
+# external_models/biswas_suncatcher/PINS.json is enforced byte-for-byte by
+# tests/test_biswas_suncatcher_reference.py::test_vendored_script_byte_identical.
+# The pinned upstream file is LF; force an LF checkout on every platform so git
+# autocrlf cannot rewrite LF->CRLF on Windows and break the hash. `text eol=lf`
+# also normalizes CRLF->LF on commit, so the blob self-heals (R2 Track-R
+# byte-identity guard must be platform-robust).
+external_models/biswas_suncatcher/report_one_thermal.py text eol=lf
