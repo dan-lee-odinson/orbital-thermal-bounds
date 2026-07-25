@@ -7,6 +7,42 @@ All notable changes to this project are documented here. The format follows
 Scope note: entries describe the **software package** (`orbital_thermal`) and the
 repository. The three preprints have their own Zenodo DOIs (see the README).
 
+## [Unreleased] — Stage 2
+
+Work in progress on Stage-2 build branches. **Not released, not tagged**, and not part
+of any published version. No Phase A or Stage-1 published number is changed.
+
+### Added — S2, two-phase acquisition / evaporator (screening level)
+- Two-phase saturation backend in `fluids`: `saturation_temperature`,
+  `saturation_enthalpies`, `surface_tension`, `saturation_properties`, guarded against
+  both the declared registry domain and the real triple/critical bounds. Coolants with
+  no registry entry are source-gated.
+- `orbital_thermal.two_phase`: vapour quality / loop state, the ONB-saturated-regime
+  rank policy, the CHF/dryout bands (`q''/CHF ≤ 0.5` rank-eligible; `0.5–1` sensitivity,
+  not ranked; `≥ 1` rejected), and the local-wall-flux basis discipline.
+- Executable Gungor & Winterton (1986) flow-boiling HTC wired into
+  `two_phase.htc.gungor_winterton` — the **only** correlation carrying an `evaluate`.
+  Vertical / non-stratified form; the horizontal Froude/stratification de-rating is
+  deliberately not applied (1-g effect, recorded modelling decision).
+- `scripts/witness_s2_checks.py`: 16 deliberate mutations proving every S2 check can
+  actually fail.
+- `docs/two-phase-evaporator.md`, the S2 review record, and the mastery-ledger entry for
+  S0 §4 claim 1 (status `derived`).
+
+### Not implemented (recorded as blockers, not guessed)
+- `two_phase.chf.shah_2015` — attribution could not be established: the "Shah (2015)"
+  citation is ambiguous (two distinct 2015 CHF papers, annuli vs horizontal channels) and
+  its declared `pr_reduced` domain traces to Shah (1987). Stays `SOURCE_REQUIRED` with a
+  blank locator; the CHF **banding policy** ships regardless.
+- `two_phase.onb.bergles_rohsenow` — the 1964 criterion is graphical, and its usual
+  algebraic surrogate is a dimensional water-only fit, out of fluid domain for the
+  ammonia reference coolant. The ONB **policy gate** ships regardless.
+
+### Changed
+- The S1 `test_no_evaluate_callable_in_s1` guard is replaced by a strictly stronger
+  successor pinning the **exact** set of implemented ids, plus a new invariant requiring
+  every implemented correlation to carry a non-empty `source.locator` (and its converse).
+
 ## [1.1.0] — 2026-07-04
 
 Phase B (Stage 1): a **verification-supported, reduced-order, single-phase

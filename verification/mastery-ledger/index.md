@@ -57,6 +57,27 @@ intermediate milestones (B1/B2/B3) carry a completion report with an optional sp
 
 > **Release note (B8, v1.1.0):** every entry above is at status `reproduced` (evidence a/b/c + cross-model review at the majors). **Level d -- qualified external human review -- is `pending` for all entries;** cross-model review does not count as level d. Phase B v1.1.0 is released with narrowed claims and explicit limitations (see the [B8 release record](../review-records/2026-07-04-b8-release-decision.md)).
 
+## Stage 2 entries (two-phase)
+
+Opened per Stage-2 milestone as S0 §4 central claims are introduced (see the
+[S0 scoping note](../../docs/development/phase-b-stage-2-scoping-note.md)). These are
+**not** covered by the B8 / `v1.1.0` release note above: Stage 2 is unreleased work in
+progress on a build branch.
+
+| Entry | Result | Status | Director explanation | Independent derivation (b) | Cross-model review (not d) |
+|---|---|---|---|---|---|
+| [two-phase-flow-boiling-heat-acquisition](entries/two-phase-flow-boiling-heat-acquisition.md) | S0 §4 claim 1 — vapour quality, flow-boiling HTC, ONB/saturated-regime policy, CHF/dryout bands on **local** wall flux | `derived` | TODO (director) | partial (`x→0` limit + Cooper term) | not yet run (S2 is intermediate) |
+
+> **Status note (S2).** `derived`, deliberately one step below the Stage-1 entries. The
+> policy layer and the one implemented correlation are executable and
+> mutation-witnessed, but the claim's **CHF leg rests on a blocked entry**: no CHF
+> correlation is implemented, because the `shah_2015` citation is ambiguous and its
+> declared domain traces to Shah (1987). A claim whose dryout limit is unsourced has not
+> been reproduced end to end. Two items need **director disposition** before this entry
+> can advance: which paper the CHF entry denotes, and that **ammonia — the S0 §9.1
+> reference coolant — is not in the Gungor & Winterton (1986) fluid database.** See the
+> entry and the [S2 review record](../review-records/2026-07-25-s2-two-phase-evaporator.md).
+
 ## Track R - external reference reproductions
 
 > **NOT `orbital-thermal-bounds` claims.** Entries in this section are **external** models
