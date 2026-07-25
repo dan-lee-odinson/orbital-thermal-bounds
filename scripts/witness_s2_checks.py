@@ -1,14 +1,21 @@
 """Witness that every S2 check can actually fail (Stage 2, milestone S2).
 
 A checker is a callable that *can* fail; a check that has never failed is not a
-check. This script proves each new S2 gate is load-bearing by deliberately breaking
-the thing it guards -- one mutation at a time -- and requiring the mapped tests to
-fail. A mutation that leaves the suite green is itself a failure: it means the gate
-does not actually constrain the behaviour it claims to.
+check. This script proves each S2 gate is load-bearing by deliberately breaking the
+thing it guards -- one mutation at a time -- and requiring the mapped tests to fail.
+A mutation that leaves the suite green is itself a failure: it means the gate does not
+actually constrain the behaviour it claims to.
 
-Each mutation is a literal source substitution, applied to a working copy, verified
-to have changed the file, exercised, and then reverted. Files are restored in a
-``finally`` block, so an interrupted run does not leave the tree dirty.
+Each mutation is a literal source substitution, applied to a working copy, verified to
+have changed the file, exercised, and then reverted. Files are restored in a
+``finally`` block, so an interrupted run does not leave the tree dirty. An anchor that
+no longer matches is reported as NOT WITNESSED rather than skipped, so the harness
+cannot rot into a no-op as the source moves.
+
+**Verification hazard.** ``pip install -e .`` in a second checkout repoints the global
+editable install, which silently turns every mutation into a no-op -- the harness then
+reports 0/N. This script therefore checks at start-up that the imported
+``orbital_thermal`` is the one it is about to mutate, and refuses to run otherwise.
 
 Usage::
 
@@ -30,14 +37,18 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SRC = REPO / "src" / "orbital_thermal"
-TESTS = REPO / "tests"
 
 REGISTRY = SRC / "registry" / "two_phase.py"
+APPLIC = SRC / "registry" / "applicability.py"
+PROVENANCE = SRC / "registry" / "provenance.py"
 TWO_PHASE = SRC / "two_phase.py"
 FLUIDS = SRC / "fluids.py"
 
-EVAP_TESTS = "tests/test_two_phase_evaporator.py"
-REG_TESTS = "tests/test_two_phase_registry.py"
+TEST_MODULES = (
+    "tests/test_two_phase_evaporator.py",
+    "tests/test_two_phase_registry.py",
+    "tests/test_applicability_enforcement.py",
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +61,7 @@ class Mutation:
     old: str
     new: str
     expect_failing: tuple[str, ...]
+    finding: str = ""
     notes: str = ""
 
 
@@ -57,6 +69,7 @@ class Mutation:
 class Result:
     mutation: str
     guards: str
+    finding: str
     applied: bool
     witnessed: bool
     failed_tests: list[str] = field(default_factory=list)
@@ -64,25 +77,28 @@ class Result:
 
 
 MUTATIONS: list[Mutation] = [
+    # ---------------------------------------------------------------- registry scope
     Mutation(
         name="implement-an-unsourced-CHF-entry",
         guards="the exact-set evaluate guard and the locator<->evaluate invariant",
+        finding="pre-existing",
         path=REGISTRY,
-        old='        source=_SHAH_2015,\n        evaluate=None,',
-        new='        source=_SHAH_2015,\n        evaluate=gungor_winterton_1986_htc,',
+        old="        source=_SHAH_2015,\n        evaluate=None,",
+        new="        source=_SHAH_2015,\n        evaluate=gungor_winterton_1986_htc,",
         expect_failing=(
             "test_exactly_the_s2_implemented_ids_carry_an_evaluate_callable",
             "test_s2_unimplemented_entries_are_still_none",
             "test_implemented_correlations_have_a_nonempty_locator",
         ),
-        notes="Simulates attaching maths to an entry whose source was never established.",
+        notes="Attaching maths to an entry whose source was never established.",
     ),
     Mutation(
         name="implement-an-S3-pressure-drop-entry-early",
         guards="the S3 scope guard",
+        finding="pre-existing",
         path=REGISTRY,
-        old='        source=_LOCKHART_MARTINELLI,\n        evaluate=None,',
-        new='        source=_LOCKHART_MARTINELLI,\n        evaluate=gungor_winterton_1986_htc,',
+        old="        source=_LOCKHART_MARTINELLI,\n        evaluate=None,",
+        new="        source=_LOCKHART_MARTINELLI,\n        evaluate=gungor_winterton_1986_htc,",
         expect_failing=(
             "test_s3_pressure_drop_entries_are_not_implemented_early",
             "test_exactly_the_s2_implemented_ids_carry_an_evaluate_callable",
@@ -91,68 +107,305 @@ MUTATIONS: list[Mutation] = [
     ),
     Mutation(
         name="blank-the-locator-of-an-implemented-correlation",
-        guards="the locator<->evaluate invariant (Sec. 3.2b)",
+        guards="the locator<->evaluate invariant",
+        finding="pre-existing",
         path=REGISTRY,
-        old='    locator=(\n        "executable form transcribed from Thome',
-        new='    locator="" and (\n        "executable form transcribed from Thome',
+        old='    locator=(\n        "Executable form confirmed by THREE',
+        new='    locator="" and (\n        "Executable form confirmed by THREE',
         expect_failing=("test_implemented_correlations_have_a_nonempty_locator",),
         notes="An implemented correlation must record the source actually consulted.",
     ),
+    # ------------------------------------------------------- F-03 provenance / eligibility
     Mutation(
-        name="drop-the-provisional-domain-declaration",
-        guards="the provisional-domain declaration",
-        path=REGISTRY,
-        old='    "two_phase.htc.gungor_winterton": (\n        "S2: the declared',
-        new='    "_disabled.htc.gungor_winterton": (\n        "S2: the declared',
-        expect_failing=("test_provisional_domains_are_declared_not_promoted",),
-        notes="An unconfirmed domain must stay declared provisional, not quietly promoted.",
+        name="F03-let-an-entry-with-no-evaluator-rank",
+        guards="F-03: an entry needing an evaluated value is ineligible without one",
+        finding="F-03",
+        path=PROVENANCE,
+        old=(
+            '        if getattr(spec, "requires_executable_form", False) '
+            "and self.evaluate is None:"
+        ),
+        new="        if False:",
+        expect_failing=("test_f03_the_executable_form_rule_is_load_bearing_on_its_own",),
+        notes=(
+            "The silently permissive generic path. NOTE: shah_2015 is now also "
+            "SOURCE_REQUIRED, so its status alone blocks it and it cannot witness this "
+            "rule -- the first witness run caught that, and the named test exercises "
+            "the rule directly on an entry that would otherwise rank."
+        ),
     ),
     Mutation(
-        name="pretend-ammonia-is-in-the-GW86-database",
-        guards="the fluid-database applicability flag",
+        name="F03-drop-the-requires-executable-form-declaration",
+        guards="F-03: the CHF reference declares that it needs an executable form",
+        finding="F-03",
+        path=REGISTRY,
+        old="    requires_executable_form=True,",
+        new="    requires_executable_form=False,",
+        expect_failing=("test_f03_requires_executable_form_is_what_blocks_it",),
+        notes=(
+            "The mechanism-level sibling test builds its own spec and cannot see a "
+            "registry change; only the wiring test can."
+        ),
+    ),
+    # ------------------------------------------------------------- F-04 fluid axis
+    Mutation(
+        name="F04-record-applicability-violations-without-acting-on-them",
+        guards="F-04: a violation must ALTER STATUS, not merely annotate",
+        finding="F-04",
+        path=TWO_PHASE,
+        # Mutating the MAPPING, not one fold site: violations are folded into the
+        # status in two places (HTC and CHF), and mutating only the first left the
+        # ammonia case still de-ranked by the second. The first witness run caught it.
+        old="_CONSEQUENCE_TO_STATUS = {\n    Consequence.DE_RANK: RankStatus.SENSITIVITY_ONLY,",
+        new="_CONSEQUENCE_TO_STATUS = {\n    Consequence.DE_RANK: RankStatus.RANK_ELIGIBLE,",
+        expect_failing=(
+            "test_every_consequence_maps_to_a_status_that_actually_de_ranks",
+        ),
+        notes=(
+            "This is the exact defect: appending a warning and not worsening status. "
+            "A full ammonia case is de-ranked by two independent paths, so only a "
+            "direct test of the mapping can witness it -- the first run showed that."
+        ),
+    ),
+    Mutation(
+        name="F04-widen-the-fluid-database-to-include-ammonia",
+        guards="F-04: the sourced seven-fluid database",
+        finding="F-04",
         path=REGISTRY,
         old='{"water", "r-11", "r-12", "r-22", "r-113", "r-114", "ethylene glycol"}',
         new='{"water", "ammonia", "r-11", "r-12", "r-22", "r-113", "r-114", "ethylene glycol"}',
-        expect_failing=("test_ammonia_is_not_in_the_gw86_fluid_database",),
-        notes="The reference coolant really is outside the reference HTC's fluid basis.",
+        expect_failing=(
+            "test_ammonia_is_not_in_the_gw86_fluid_database",
+            "test_gw86_spec_matches_the_sourced_seven_fluid_database",
+            "test_gate5_ammonia_is_de_ranked_through_gungor_winterton",
+        ),
     ),
+    # ------------------------------------------------------------ F-06 regime axis
+    Mutation(
+        name="F06-remove-the-liquid-Reynolds-turbulence-guard",
+        guards="F-06: the Dittus-Boelter turbulent basis is checked, not documented",
+        finding="F-06",
+        path=REGISTRY,
+        old="    min_liquid_reynolds=GW86_MIN_LIQUID_REYNOLDS,",
+        new="    min_liquid_reynolds=None,",
+        expect_failing=(
+            "test_gate5_laminar_liquid_reynolds_rejects_the_case",
+            "test_gw86_spec_matches_the_sourced_seven_fluid_database",
+        ),
+        notes="47 combinations inside the declared box are laminar; worst Re_L = 0.3.",
+    ),
+    Mutation(
+        name="F06-stop-rejecting-laminar-flow-in-the-mechanism",
+        guards="F-06: the regime axis actually rejects",
+        finding="F-06",
+        path=APPLIC,
+        old="            elif liquid_reynolds < self.min_liquid_reynolds:",
+        new="            elif False:",
+        expect_failing=(
+            "test_sibling_laminar_liquid_reynolds_is_rejected",
+            "test_gate5_laminar_liquid_reynolds_rejects_the_case",
+        ),
+    ),
+    # ------------------------------------------------------- D-9 geometry axis
+    Mutation(
+        name="D9-stop-enforcing-the-geometry-axis",
+        guards="DEBTS D-9: 'tubes and annuli' enforced, not just in the title",
+        finding="D-9",
+        path=APPLIC,
+        # Anchored inside check(), not declared_axes -- 'if self.geometries:' appears in
+        # both, and a bare anchor hit the wrong one on the first witness run.
+        old="        # --- geometry (DEBTS D-9) ---\n        if self.geometries:",
+        new="        # --- geometry (DEBTS D-9) ---\n        if False:",
+        expect_failing=(
+            "test_sibling_geometry_outside_the_basis_is_de_ranked",
+            "test_multiple_axis_failures_are_all_reported",
+        ),
+        notes="The hole that becomes live the moment a chevron geometry is supplied.",
+    ),
+    Mutation(
+        name="D9-let-an-unstated-axis-pass-silently",
+        guards="the rule that closes the class: silence is not consent",
+        finding="D-9",
+        path=APPLIC,
+        old="            if fluid is None:",
+        new="            if False:",
+        expect_failing=("test_a_declared_axis_with_no_stated_value_blocks",),
+        notes="Without this rule the class returns as 'enforced when someone remembers'.",
+    ),
+    # ------------------------------------------------------------ F-01 ONB criterion
+    Mutation(
+        name="F01-accept-any-object-as-a-sourced-ONB-criterion",
+        guards="F-01: an ONB criterion must be typed and EVALUATED",
+        finding="F-01",
+        path=TWO_PHASE,
+        old="        isinstance(onb_criterion, OnbCriterion)",
+        new="        onb_criterion is not None",
+        expect_failing=(
+            "test_f01_a_non_criterion_object_is_not_treated_as_a_sourced_criterion",
+        ),
+        notes="The original defect: 'banana' returned sourced=True and was never called.",
+    ),
+    # ------------------------------------------------------------- F-02 CHF provenance
+    Mutation(
+        name="F02-accept-a-naked-CHF-float-again",
+        guards="F-02: CHF must be a validated result binding its evidence",
+        finding="F-02",
+        path=TWO_PHASE,
+        old="    if not isinstance(chf, ChfResult):",
+        new="    if False:",
+        expect_failing=("test_f02_a_naked_float_is_rejected_by_type",),
+        notes="Any positive number could previously carry a case to RANK_ELIGIBLE.",
+    ),
+    Mutation(
+        name="F02-let-a-violated-CHF-result-rank",
+        guards="F-02: a CHF result carrying violations cannot rank",
+        finding="F-02",
+        path=TWO_PHASE,
+        old="    if not chf.is_sourced:",
+        new="    if False:",
+        expect_failing=("test_f02_a_chf_result_with_violations_cannot_rank",),
+    ),
+    # ------------------------------------------------------ F-05 bound saturation state
+    Mutation(
+        name="F05-skip-the-state-consistency-check",
+        guards="F-05: the guarded domain must be the evaluated domain",
+        finding="F-05",
+        path=TWO_PHASE,
+        old='    if not state.matches(fluid=state.fluid, pressure_Pa=loop.pressure_Pa):',
+        new="    if False:",
+        expect_failing=("test_f05_a_loop_state_from_another_pressure_is_rejected",),
+        notes="Properties at 0.3 MPa evaluating under a 1.0 MPa guard (18 % shift).",
+    ),
+    # ---------------------------------------------------------------- F-09 guard bypass
+    Mutation(
+        name="F09-reintroduce-a-domain-bypass-on-the-public-wrapper",
+        guards="F-09: the ranked-facing wrapper always range-checks",
+        finding="F-09",
+        path=TWO_PHASE,
+        # The defect was an API AFFORDANCE, so the mutation must restore it in the
+        # SIGNATURE. Adding a flag to the body proved nothing on the first run.
+        old="    state,\n    loop: LoopState | None = None,\n) -> float:",
+        new=(
+            "    state,\n    loop: LoopState | None = None,\n"
+            "    check_domain: bool = True,\n) -> float:"
+        ),
+        expect_failing=("test_f09_the_public_wrapper_exposes_no_domain_bypass",),
+        notes=(
+            "Restores the removed keyword on the ranked-facing wrapper. Nothing in the "
+            "old API distinguished a sensitivity call from a ranking call."
+        ),
+    ),
+    # ------------------------------------------------------------------ F-10 backend pin
+    Mutation(
+        name="F10-stop-enforcing-the-backend-pin",
+        guards="F-10: pinned properties require the pinned backend",
+        finding="F-10",
+        path=FLUIDS,
+        old="    if installed == _COOLPROP_PIN.pinned_version:\n        return",
+        new="    if True:\n        return",
+        expect_failing=("test_f10_a_mismatched_backend_version_fails_evaluation",),
+        notes="The pin was metadata only: any installed version silently applied.",
+    ),
+    Mutation(
+        name="F10-allow-an-override-with-no-review-record",
+        guards="F-10: the migration path is explicit and separately reviewed",
+        finding="F-10",
+        path=FLUIDS,
+        old="    if not review_record.strip():",
+        new="    if False:",
+        expect_failing=(
+            "test_f10_the_migration_path_is_explicit_and_requires_a_review_record",
+        ),
+    ),
+    # ------------------------------------------- Shah (1987) transcription fidelity
+    Mutation(
+        name="SHAH-flip-the-F2-exponent-sign",
+        guards="the reconciled F2 exponent (the minus sign the extract lost)",
+        finding="F-03",
+        path=REGISTRY,
+        old="    f2 = f1**-0.42 if f1 <= 4.0 else 0.55",
+        new="    f2 = f1**0.42 if f1 <= 4.0 else 0.55",
+        expect_failing=("test_shah_1987_f2_exponent_is_negative_by_continuity",),
+        notes=(
+            "The supplied extract prints +0.42; continuity at F1 = 4 shows it must be "
+            "negative (0.5588 vs 0.55, against a 3.25x jump)."
+        ),
+    ),
+    Mutation(
+        name="SHAH-use-the-extracts-Bo0-constant",
+        guards="the reconciled Bo0 third constant (0.00024, not 0.0024)",
+        finding="F-03",
+        path=REGISTRY,
+        old="        0.00024 * y**-0.105 * (1.0 + 1.15 * p_reduced**3.39),",
+        new="        0.0024 * y**-0.105 * (1.0 + 1.15 * p_reduced**3.39),",
+        expect_failing=(
+            "test_shah_1987_bo_zero_third_candidate_uses_the_reconciled_constant",
+        ),
+        notes=(
+            "A factor of ten. Bo0 is the HIGHEST of three candidates, so the wrong "
+            "constant only shows up where candidate 3 could win -- at large Y. The "
+            "order-of-magnitude plausibility test cannot see it; the direct one can."
+        ),
+    ),
+    Mutation(
+        name="SHAH-drop-the-gravity-explicit-guard",
+        guards="the gravity axis: Shah (1987) has no microgravity limit",
+        finding="new",
+        path=REGISTRY,
+        old="    gravity_explicit=True,",
+        new="    gravity_explicit=False,",
+        expect_failing=(
+            "test_shah_1987_spec_carries_the_gravity_axis_and_the_ammonia_exclusion",
+        ),
+        notes="Y divides by g; as g -> 0 the correlation diverges.",
+    ),
+    Mutation(
+        name="SHAH-allow-zero-gravity-evaluation",
+        guards="the gravity guard in the correlating parameter itself",
+        finding="new",
+        path=REGISTRY,
+        old="    if gravity_m_s2 <= 0.0:\n        raise ValueError(",
+        new="    if False:\n        raise ValueError(",
+        expect_failing=("test_shah_1987_y_is_gravity_explicit",),
+    ),
+    # ------------------------------------------------------------- carried-over gates
     Mutation(
         name="clamp-vapour-quality-instead-of-enforcing-it",
         guards="the 0 <= x <= 1 enforcement (gate 3)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="    if not (0.0 <= x <= 1.0):\n        raise ValueError(",
         new="    if False:\n        raise ValueError(",
         expect_failing=("test_gate3_quality_outside_zero_one_is_rejected",),
-        notes="Clamping would silently turn a subcooled state into a saturated one.",
     ),
     Mutation(
         name="collapse-subcooled-into-saturated",
-        guards="regime classification and the ONB gate (gate 1a/1b, gate 3)",
+        guards="regime classification and the ONB gate (gates 1a/1b, 3)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="    if x_eq < 0.0:\n        regime, x = Regime.SUBCOOLED_LIQUID, None",
         new="    if False:\n        regime, x = Regime.SUBCOOLED_LIQUID, None",
         expect_failing=(
             "test_gate1a_subcooled_forced_convection_is_not_rank_eligible",
-            "test_gate1b_onb_transition_is_resolved_and_de_ranks_the_subcooled_side",
             "test_gate3_loop_state_classifies_instead_of_clamping",
         ),
-        notes="The ONB gate depends on the subcooled side staying distinguishable.",
     ),
     Mutation(
         name="widen-the-HTC-validity-domain-to-nothing",
         guards="the correlation range checks (gate 4)",
+        finding="pre-existing",
         path=REGISTRY,
         old='                "G_kg_m2s": (10.0, 600.0),',
         new='                "G_kg_m2s": (0.0, 1.0e12),',
         expect_failing=(
-            "test_gate4_assert_in_domain_fires_on_every_axis",
-            "test_gate4_out_of_domain_htc_call_is_rejected_not_extrapolated",
+            "test_gate4_htc_guard_fires_on_every_axis",
+            "test_f09_out_of_domain_always_raises_through_the_wrapper",
         ),
-        notes="Proves the declared domain is what makes out-of-range calls raise.",
     ),
     Mutation(
         name="move-the-CHF-rank-band-from-0.5-to-0.9",
-        guards="director ruling 9.5 CHF bands (gate 5)",
+        guards="director ruling A5 CHF bands (gate 5)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="CHF_RANK_MAX = 0.5",
         new="CHF_RANK_MAX = 0.9",
@@ -160,11 +413,11 @@ MUTATIONS: list[Mutation] = [
             "test_gate5_chf_band_between_half_and_one_is_sensitivity_not_ranked",
             "test_gate5_band_boundaries_are_closed_on_the_conservative_side",
         ),
-        notes="The 0.5 margin is a director ruling, not a tunable.",
     ),
     Mutation(
         name="let-an-averaged-flux-rank",
-        guards="the local-flux discipline (gate 5, T6)",
+        guards="the local-flux discipline (gate 5)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="    if not wall_flux.is_rankable_basis:\n        return ChfAssessment(",
         new="    if False:\n        return ChfAssessment(",
@@ -172,42 +425,33 @@ MUTATIONS: list[Mutation] = [
             "test_gate5_underivable_local_flux_is_never_silently_averaged",
             "test_gate5_unsourced_geometry_de_ranks_a_local_flux",
         ),
-        notes="A section- or chip-average must never be substituted for a local flux.",
     ),
     Mutation(
         name="assume-a-missing-CHF-is-safe",
         guards="the blocked-on-missing-CHF rule (gate 5)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="        status = _worst(status, RankStatus.BLOCKED)",
         new="        status = _worst(status, RankStatus.RANK_ELIGIBLE)",
         expect_failing=(
             "test_gate5_missing_chf_blocks_the_case_rather_than_assuming_it_is_safe",
         ),
-        notes="Absent CHF evidence must block, not pass.",
-    ),
-    Mutation(
-        name="return-an-invented-CHF-value",
-        guards="the no-invention blocker at the point of use",
-        path=TWO_PHASE,
-        old="    entry = get(CHF_ID)\n    raise NotRankEligibleError(",
-        new="    return 1.0e6\n    entry = get(CHF_ID)\n    raise NotRankEligibleError(",
-        expect_failing=("test_gate4_no_sourced_chf_evaluator_exists",),
-        notes="The single most dangerous failure mode: a plausible number from nowhere.",
     ),
     Mutation(
         name="silently-correct-the-published-Cooper-constant",
         guards="fidelity to the printed source constant",
+        finding="pre-existing",
         path=REGISTRY,
         old="* (-0.4343 * math.log(p_reduced)) ** -0.55",
         new="* (-math.log10(p_reduced)) ** -0.55",
         expect_failing=(
             "test_cooper_term_matches_the_independently_cross_checked_source",
         ),
-        notes="0.4343 is what both sources print; 1/ln(10) would be a silent edit.",
     ),
     Mutation(
         name="drop-the-critical-point-guard",
         guards="no blanket supercritical treatment (gate 3)",
+        finding="pre-existing",
         path=FLUIDS,
         old=(
             "    if T >= t_crit:\n        raise ValueError(\n"
@@ -218,11 +462,11 @@ MUTATIONS: list[Mutation] = [
             '            f"T = {T} K is at or above the critical temperature of {fluid} "'
         ),
         expect_failing=("test_gate3_no_blanket_supercritical_treatment",),
-        notes="Closes the ~4 mK window the declared water domain admits above T_crit.",
     ),
     Mutation(
         name="disable-the-convective-enhancement-factor",
-        guards="the flow-boiling physics and the x->0 recovery (gate 1c/1d)",
+        guards="the flow-boiling physics (gates 1c/1d)",
+        finding="pre-existing",
         path=REGISTRY,
         old="    e_factor = 1.0 + 24000.0 * bo**1.16 + conv_term",
         new="    e_factor = 1.0",
@@ -230,11 +474,11 @@ MUTATIONS: list[Mutation] = [
             "test_gw86_htc_increases_with_quality_and_with_mass_flux",
             "test_gate1c_saturated_flow_boiling_is_evaluated_and_rank_eligible",
         ),
-        notes="E carries the convective enhancement; without it boiling stops enhancing.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
         guards="gate combination (a permissive gate must not outvote a strict one)",
+        finding="pre-existing",
         path=TWO_PHASE,
         old="    return max(statuses, key=lambda s: _STATUS_SEVERITY[s])",
         new="    return min(statuses, key=lambda s: _STATUS_SEVERITY[s])",
@@ -242,15 +486,36 @@ MUTATIONS: list[Mutation] = [
             "test_gate5_combined_assessment_takes_the_worst_gate_outcome",
             "test_gate5_missing_chf_blocks_the_case_rather_than_assuming_it_is_safe",
         ),
-        notes="Rejection must survive combination with a passing gate.",
     ),
 ]
 
 
-def _run_tests() -> tuple[int, set[str]]:
-    """Run the two S2 test modules; return (exit code, set of failing test names)."""
+def _assert_mutating_the_imported_package() -> None:
+    """Refuse to run if the installed package is not the tree being mutated.
+
+    ``pip install -e .`` in another checkout repoints the global editable install, and
+    every mutation then silently becomes a no-op (observed: 0/16 witnessed). This is
+    cheap insurance against trusting such a run.
+    """
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", EVAP_TESTS, REG_TESTS, "-q", "--no-header",
+        [sys.executable, "-c", "import orbital_thermal;print(orbital_thermal.__file__)"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+    imported = Path(proc.stdout.strip()).resolve().parent
+    if imported != SRC.resolve():
+        raise SystemExit(
+            f"REFUSING TO RUN: mutations target {SRC}, but 'import orbital_thermal' "
+            f"resolves to {imported}. Every mutation would be a silent no-op. Fix the "
+            "editable install (pip install -e . from this repo) and retry."
+        )
+
+
+def _run_tests() -> tuple[int, set[str]]:
+    """Run the S2 test modules; return (exit code, set of failing test names)."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", *TEST_MODULES, "-q", "--no-header",
          "-p", "no:cacheprovider"],
         cwd=REPO,
         capture_output=True,
@@ -272,6 +537,7 @@ def witness(mutation: Mutation) -> Result:
         return Result(
             mutation=mutation.name,
             guards=mutation.guards,
+            finding=mutation.finding,
             applied=False,
             witnessed=False,
             detail=(
@@ -288,6 +554,7 @@ def witness(mutation: Mutation) -> Result:
         return Result(
             mutation=mutation.name,
             guards=mutation.guards,
+            finding=mutation.finding,
             applied=True,
             witnessed=not missing,
             failed_tests=sorted(failing),
@@ -307,8 +574,10 @@ def main() -> int:
 
     if args.list:
         for m in MUTATIONS:
-            print(f"{m.name}\n    guards: {m.guards}\n    {m.notes}")
+            print(f"{m.name}  [{m.finding}]\n    guards: {m.guards}\n    {m.notes}")
         return 0
+
+    _assert_mutating_the_imported_package()
 
     print(f"Witnessing {len(MUTATIONS)} S2 checks by deliberate mutation.\n")
     results: list[Result] = []
@@ -316,7 +585,8 @@ def main() -> int:
         res = witness(m)
         results.append(res)
         mark = "WITNESSED" if res.witnessed else "NOT WITNESSED"
-        print(f"[{i:2d}/{len(MUTATIONS)}] {mark:14s} {m.name}")
+        tag = f"[{m.finding}]" if m.finding else ""
+        print(f"[{i:2d}/{len(MUTATIONS)}] {mark:14s} {m.name} {tag}")
         print(f"                        guards: {m.guards}")
         if res.witnessed:
             print(f"                        caught by: {', '.join(res.failed_tests)}")
