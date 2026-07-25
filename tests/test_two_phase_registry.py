@@ -29,10 +29,13 @@ from orbital_thermal.registry.two_phase import (
     missing_metadata,
 )
 
+# OTB-G001 F-03 / Director ruling D3 swapped the CHF reference: shah_2015's citation
+# resolves to no single paper and its declared band was Shah (1987)'s all along, so
+# shah_1987 is the reference and shah_2015 is blocked.
 _REFERENCE_IDS = [
     "two_phase.htc.gungor_winterton",
     "two_phase.dp.lockhart_martinelli_chisholm",
-    "two_phase.chf.shah_2015",
+    "two_phase.chf.shah_1987",
 ]
 _NON_RANKABLE_IDS = [
     "two_phase.htc.chen",
@@ -40,7 +43,7 @@ _NON_RANKABLE_IDS = [
     "two_phase.onb.bergles_rohsenow",
     "two_phase.dp.friedel",
     "two_phase.dp.muller_steinhagen_heck",
-    "two_phase.chf.shah_1987",
+    "two_phase.chf.shah_2015",
     "two_phase.chf.katto_ohno",
     "two_phase.pump.npsh",
 ]
@@ -68,7 +71,9 @@ def test_every_correlation_has_a_nonempty_citation():
 #: purpose: S2 was scoped to implement the CHF entry and to attempt the ONB one, and
 #: both were left unimplemented because their sources could not be established. See
 #: their registry source notes.
-S2_IMPLEMENTED_IDS = frozenset({"two_phase.htc.gungor_winterton"})
+S2_IMPLEMENTED_IDS = frozenset(
+    {"two_phase.htc.gungor_winterton", "two_phase.chf.shah_1987"}
+)
 
 
 def test_exactly_the_s2_implemented_ids_carry_an_evaluate_callable():
@@ -291,7 +296,89 @@ def test_assert_rank_eligible_raises_on_npsh():
 
 def test_assert_rank_eligible_passes_on_reference():
     # A rank-eligible reference must not raise.
-    assert_rank_eligible(get("two_phase.chf.shah_2015"))
+    assert_rank_eligible(get("two_phase.chf.shah_1987"))
+
+
+def test_f03_unimplemented_entry_cannot_pass_the_generic_eligibility_guard():
+    """OTB-G001 F-03: an entry needing an evaluator is not eligible without one.
+
+    Before the fix, ``shah_2015`` carried ``status=RESOLVED`` with ``evaluate=None``,
+    a blank locator and an ambiguous citation, and still passed both
+    ``rank_eligible`` and ``assert_rank_eligible`` -- the silently permissive generic
+    path. Both must now refuse it.
+    """
+    entry = get("two_phase.chf.shah_2015")
+    assert entry.status is Status.SOURCE_REQUIRED
+    assert entry.rank_eligible is False
+    with pytest.raises(NotRankEligibleError):
+        assert_rank_eligible(entry)
+
+
+def test_f03_the_reduced_pressure_band_moved_to_the_paper_it_belongs_to():
+    """The 0.0014-0.96 band is Shah (1987)'s and is now attached only to it."""
+    superseded = get("two_phase.chf.shah_2015")
+    reference = get("two_phase.chf.shah_1987")
+
+    assert superseded.domain.ranges == {}, (
+        "the pr_reduced band was never shah_2015's; leaving it attached would keep "
+        "asserting a validity range this entry has no claim to"
+    )
+    assert reference.domain.ranges["pr_reduced"] == (0.0014, 0.96)
+    assert reference.status is Status.RESOLVED
+    assert reference.evaluate is not None
+    assert reference.source.locator.strip()
+
+
+def test_f03_the_executable_form_rule_is_load_bearing_on_its_own():
+    """The rule must bite even where status alone would not have blocked the entry.
+
+    ``shah_2015`` is now also ``SOURCE_REQUIRED``, so its *status* already makes it
+    ineligible -- which means it cannot demonstrate that the executable-form rule
+    works. The mutation witness caught exactly that: disabling the rule left every
+    shah_2015 test green. This test exercises the rule directly, on an entry that is
+    RESOLVED and PUBLISHED and would otherwise rank.
+    """
+    import dataclasses
+
+    from orbital_thermal.registry.applicability import Applicability
+
+    would_otherwise_rank = dataclasses.replace(
+        get("two_phase.chf.shah_1987"),
+        evaluate=None,
+        applicability_spec=Applicability(requires_executable_form=True),
+    )
+    assert would_otherwise_rank.status is Status.RESOLVED
+    assert would_otherwise_rank.provenance.value == "published"
+    assert would_otherwise_rank.rank_eligible is False, (
+        "a RESOLVED, PUBLISHED entry that declares it needs an executable form must "
+        "not rank while it has none -- status alone does not catch this"
+    )
+
+    # Control: the same entry WITH its evaluator ranks.
+    with_evaluator = dataclasses.replace(
+        would_otherwise_rank, evaluate=get("two_phase.chf.shah_1987").evaluate
+    )
+    assert with_evaluator.rank_eligible is True
+
+
+def test_f03_requires_executable_form_is_what_blocks_it():
+    """The eligibility tightening is opt-in, so B1/S1 entries are unaffected.
+
+    ``lockhart_martinelli_chisholm`` is RESOLVED with no evaluator and is *meant* to
+    stay rank-eligible on source and domain -- that is the B1/S1 registration pattern.
+    It is the control for this rule: the fix must bite on the entry that declares it
+    needs an executable form, and only on that one.
+    """
+    from orbital_thermal.registry.two_phase import SHAH_1987_APPLICABILITY
+
+    assert SHAH_1987_APPLICABILITY.requires_executable_form is True
+
+    s3_entry = get("two_phase.dp.lockhart_martinelli_chisholm")
+    assert s3_entry.evaluate is None
+    assert s3_entry.rank_eligible is True, (
+        "the F-03 tightening must not sweep up correlations legitimately registered "
+        "on source and domain ahead of their executable form"
+    )
 
 
 # --- completeness / structural checker ------------------------------------------

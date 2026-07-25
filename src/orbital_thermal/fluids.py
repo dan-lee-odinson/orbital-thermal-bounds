@@ -35,7 +35,10 @@ except ImportError as exc:  # pragma: no cover
         "or: pip install CoolProp"
     ) from exc
 
+from dataclasses import dataclass
+
 from . import _validate as _v
+from .registry.two_phase import COOLPROP_PIN as _COOLPROP_PIN
 from .registry.two_phase import TWO_PHASE_PROPERTIES as _TWO_PHASE_PROPERTIES
 
 #: Pascals per bar.
@@ -145,6 +148,81 @@ _SAT_T_DOMAIN_K: dict[str, tuple[float, float]] = {
 }
 
 
+# --- OTB-G001 F-10: the pinned backend is enforced, not merely recorded -----------
+
+
+class BackendPinMismatchError(RuntimeError):
+    """Raised when the installed CoolProp version differs from ``COOLPROP_PIN``.
+
+    Before this fix the pin was metadata: ``registry.two_phase.COOLPROP_PIN`` recorded
+    7.2.0, the test asserted that the *literal* said 7.2.0, and ``fluids`` imported
+    whatever CoolProp happened to be installed. An environment resolved without the
+    pin could shift every saturation value while the results were still presented as
+    pinned. Saturation evaluation now fails instead.
+    """
+
+
+#: An explicitly reviewed override of the backend pin, or ``None``.
+#:
+#: Set only through :func:`override_backend_pin`, which requires a review-record
+#: reference. The migration path for a version change is therefore explicit and
+#: separately reviewed, rather than an environment variable that silently disables the
+#: guard -- advancing the pin needs the property-drift re-verification named in
+#: ``COOLPROP_PIN.migration_requires``.
+_BACKEND_PIN_OVERRIDE: tuple[str, str] | None = None
+
+
+def override_backend_pin(version: str, *, review_record: str) -> None:
+    """Accept ``version`` instead of the pinned one, citing the review that allows it.
+
+    ``review_record`` must be a non-empty reference to the record carrying the
+    property-drift re-verification. Passing a blank one raises: an override with no
+    stated review is exactly the silent version shift this guard exists to stop.
+    """
+    global _BACKEND_PIN_OVERRIDE
+    if not version.strip():
+        raise ValueError("override_backend_pin requires a non-empty version")
+    if not review_record.strip():
+        raise ValueError(
+            "override_backend_pin requires a review_record: advancing the backend pin "
+            "needs the property-drift re-verification recorded in "
+            f"COOLPROP_PIN.migration_requires ({_COOLPROP_PIN.migration_requires})"
+        )
+    _BACKEND_PIN_OVERRIDE = (version.strip(), review_record.strip())
+
+
+def clear_backend_pin_override() -> None:
+    """Drop any override and restore strict pin enforcement."""
+    global _BACKEND_PIN_OVERRIDE
+    _BACKEND_PIN_OVERRIDE = None
+
+
+def backend_version() -> str:
+    """The installed CoolProp version string."""
+    return CoolProp.__version__
+
+
+def assert_backend_pin() -> None:
+    """Raise unless the installed CoolProp matches the pin (or a reviewed override).
+
+    Called by every saturation evaluation, so a pinned-property claim cannot be made
+    against an unpinned backend.
+    """
+    installed = backend_version()
+    if installed == _COOLPROP_PIN.pinned_version:
+        return
+    if _BACKEND_PIN_OVERRIDE is not None and installed == _BACKEND_PIN_OVERRIDE[0]:
+        return
+    raise BackendPinMismatchError(
+        f"installed CoolProp {installed} does not match the pinned "
+        f"{_COOLPROP_PIN.backend} {_COOLPROP_PIN.pinned_version}. Saturation values "
+        "from a different backend version are not the pinned values and must not be "
+        f"reported as such. To advance the pin: {_COOLPROP_PIN.migration_requires} "
+        "Then record the review and call override_backend_pin(version, "
+        "review_record=...)."
+    )
+
+
 class SourceGatedFluidError(ValueError):
     """Raised for a two-phase saturation call on a coolant with no registry entry.
 
@@ -208,6 +286,7 @@ def saturation_temperature(P: float, fluid: str = DEFAULT_FLUID) -> float:
     bound ``P_triple < P < P_crit``: outside it there is no saturation state and the
     call raises rather than returning a supercritical or sub-triple value.
     """
+    assert_backend_pin()
     _v.positive("P", P)
     p_crit = critical_pressure(fluid)
     p_triple = triple_pressure(fluid)
@@ -244,34 +323,98 @@ def saturation_enthalpies(
 
 def surface_tension(T: float, fluid: str = DEFAULT_FLUID) -> float:
     """Liquid-vapour surface tension at saturation temperature ``T`` [K], in N/m."""
+    assert_backend_pin()
     assert_two_phase_domain(T, fluid)
     return PropsSI("I", "T", T, "Q", 0.0, fluid)
 
 
-def saturation_properties(P: float, fluid: str = DEFAULT_FLUID) -> dict[str, float]:
-    """Every saturation property the S2 evaporator needs, at pressure ``P`` [Pa].
+@dataclass(frozen=True)
+class SaturationState:
+    """An immutable saturation state, bound to the fluid, pressure and backend that
+    produced it (OTB-G001 F-05).
 
-    Bundles the two-phase state so a caller takes one guarded trip to the pinned
-    backend instead of several unguarded ones.
+    Before this fix the evaporator took an untagged ``dict`` of properties alongside a
+    separate ``fluid`` string and a separate ``LoopState``. Nothing tied the three
+    together, so ammonia properties could be passed with ``fluid="Water"`` and return a
+    finite coefficient with the fluid-applicability flag flipped, or properties
+    evaluated at 0.3 MPa could be checked against a 1.0 MPa guard. The types could not
+    establish that the guarded domain was the domain actually evaluated.
+
+    Carrying fluid, pressure and backend version *inside* the value closes that: a
+    consumer can assert the state it is about to evaluate is the state it just checked.
     """
+
+    fluid: str
+    pressure_Pa: float
+    backend: str
+    backend_version: str
+    T_sat_K: float
+    h_f_J_kg: float
+    h_g_J_kg: float
+    h_fg_J_kg: float
+    rho_f_kg_m3: float
+    rho_g_kg_m3: float
+    mu_f_Pa_s: float
+    mu_g_Pa_s: float
+    k_f_W_mK: float
+    cp_f_J_kgK: float
+    sigma_N_m: float
+    p_reduced: float
+    molar_mass_kg_mol: float
+
+    @property
+    def molar_mass_g_mol(self) -> float:
+        """Molar mass in g/mol, the convention the dimensional Cooper term requires."""
+        return self.molar_mass_kg_mol * 1000.0
+
+    def liquid_reynolds(
+        self, *, mass_flux_kg_m2s: float, quality: float, diameter_m: float
+    ) -> float:
+        """Liquid-fraction Reynolds number ``Re_L = G(1-x)D/mu_f`` for this state.
+
+        Lives here because it is a property of the state plus the channel, and the
+        regime guard must be computed from the same state that will be evaluated.
+        """
+        return mass_flux_kg_m2s * (1.0 - quality) * diameter_m / self.mu_f_Pa_s
+
+    def matches(self, *, fluid: str, pressure_Pa: float, rel_tol: float = 1e-9) -> bool:
+        """Whether this state is the one for ``fluid`` at ``pressure_Pa``."""
+        if fluid.strip().lower() != self.fluid.strip().lower():
+            return False
+        return abs(self.pressure_Pa - pressure_Pa) <= rel_tol * max(
+            abs(self.pressure_Pa), abs(pressure_Pa), 1.0
+        )
+
+
+def saturation_state(P: float, fluid: str = DEFAULT_FLUID) -> SaturationState:
+    """Every saturation property the S2 evaporator needs, bound to its own identity.
+
+    One guarded trip to the pinned backend, returning a value that carries the fluid,
+    the pressure and the backend version it was evaluated at.
+    """
+    assert_backend_pin()
     T_sat = saturation_temperature(P, fluid)
     h_f, h_g, h_fg = saturation_enthalpies(P, fluid)
     rho_f, rho_g = saturated_densities(T_sat, fluid)
-    return {
-        "T_sat_K": T_sat,
-        "h_f_J_kg": h_f,
-        "h_g_J_kg": h_g,
-        "h_fg_J_kg": h_fg,
-        "rho_f_kg_m3": rho_f,
-        "rho_g_kg_m3": rho_g,
-        "mu_f_Pa_s": PropsSI("V", "T", T_sat, "Q", 0.0, fluid),
-        "mu_g_Pa_s": PropsSI("V", "T", T_sat, "Q", 1.0, fluid),
-        "k_f_W_mK": PropsSI("L", "T", T_sat, "Q", 0.0, fluid),
-        "cp_f_J_kgK": PropsSI("C", "T", T_sat, "Q", 0.0, fluid),
-        "sigma_N_m": surface_tension(T_sat, fluid),
-        "p_reduced": P / critical_pressure(fluid),
-        "molar_mass_kg_mol": PropsSI("M", fluid),
-    }
+    return SaturationState(
+        fluid=fluid,
+        pressure_Pa=P,
+        backend=_COOLPROP_PIN.backend,
+        backend_version=backend_version(),
+        T_sat_K=T_sat,
+        h_f_J_kg=h_f,
+        h_g_J_kg=h_g,
+        h_fg_J_kg=h_fg,
+        rho_f_kg_m3=rho_f,
+        rho_g_kg_m3=rho_g,
+        mu_f_Pa_s=PropsSI("V", "T", T_sat, "Q", 0.0, fluid),
+        mu_g_Pa_s=PropsSI("V", "T", T_sat, "Q", 1.0, fluid),
+        k_f_W_mK=PropsSI("L", "T", T_sat, "Q", 0.0, fluid),
+        cp_f_J_kgK=PropsSI("C", "T", T_sat, "Q", 0.0, fluid),
+        sigma_N_m=surface_tension(T_sat, fluid),
+        p_reduced=P / critical_pressure(fluid),
+        molar_mass_kg_mol=PropsSI("M", fluid),
+    )
 
 
 def provenance(fluid: str = DEFAULT_FLUID) -> dict[str, str]:

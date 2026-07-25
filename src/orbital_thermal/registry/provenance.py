@@ -172,10 +172,33 @@ class CorrelationEntry:
     gravity_basis: str = ""
     rank_scope: str = ""
     limitation: str = ""
+    # OTB-G001 fix: the enforceable applicability spec (fluid / geometry / orientation /
+    # regime / provenance). Optional and defaulting to None, so every Stage-1 B1 entry
+    # stays valid; `None` means "declares no enforceable applicability", which is
+    # deliberately distinguishable from an empty spec that declares none.
+    applicability_spec: object = None  # applicability.Applicability | None
 
     @property
     def rank_eligible(self) -> bool:
-        return is_rank_eligible(self.provenance, self.status, has_value=True)
+        """Whether this entry may enter a ranked case.
+
+        OTB-G001 F-03: an entry that needs an evaluated value cannot be rank-eligible
+        while it has no executable form. Before this fix a correlation with
+        ``evaluate=None``, a blank locator and an ambiguous citation still passed the
+        generic guard purely on its ``provenance``/``status`` pair -- the silently
+        permissive path the review was asked to exclude.
+
+        The requirement is opt-in via ``applicability_spec.requires_executable_form``
+        so that entries legitimately registered on source and domain ahead of their
+        executable form (the B1/S1 pattern) are unaffected.
+        """
+        base = is_rank_eligible(self.provenance, self.status, has_value=True)
+        if not base:
+            return False
+        spec = self.applicability_spec
+        if getattr(spec, "requires_executable_form", False) and self.evaluate is None:
+            return False
+        return True
 
 
 class NotRankEligibleError(ValueError):

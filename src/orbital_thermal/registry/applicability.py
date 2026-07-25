@@ -1,0 +1,343 @@
+"""Binding applicability enforcement for registry correlations (OTB-G001 fix).
+
+**The defect class this closes.** Five of the ten OTB-G001 findings were the same
+defect wearing different clothes: *a declared constraint that is recorded but never
+enforced.* The fluid basis lived in a docstring and a note; the geometry basis
+("tubes and annuli") lived in a title and nowhere else (DEBTS D-9); the turbulent
+basis of the Dittus-Boelter term was documented and never checked; the provenance of
+a CHF value was described in prose while any bare float was accepted.
+
+Writing five patches would have left the class alive -- the next declared-but-unchecked
+axis would simply be the sixth. This module is the single mechanism, and every axis a
+correlation constrains goes through it.
+
+**The rule that makes it binding.** An axis that a correlation *declares* but which the
+caller does *not* state is itself a violation, consequence ``BLOCK``. Silence is not
+consent. Without that rule, "declared but never enforced" walks straight back in as
+"declared, enforced only when someone remembers to pass it" -- which is what D-9
+already is.
+
+**Consequences, not annotations.** ``check`` returns typed :class:`Violation` values
+carrying a :class:`Consequence`. A caller that records them without acting on them has
+reintroduced the very defect (that was OTB-G001 F-04); the consumer in
+:mod:`orbital_thermal.two_phase` folds the worst consequence into the case status.
+
+This module is stdlib-only and defines its own consequence vocabulary rather than
+importing the Stage-2 ``RankStatus``, so the registry keeps no dependency on the
+physics layer.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+
+
+class Axis(str, Enum):
+    """The axes on which a correlation may declare applicability."""
+
+    FLUID = "fluid"
+    GEOMETRY = "geometry"
+    ORIENTATION = "orientation"
+    REGIME = "regime"
+    PROVENANCE = "provenance"
+
+
+class Consequence(str, Enum):
+    """What a violation does to a case.
+
+    Deliberately ordered by severity so the worst can be selected: ``DE_RANK`` <
+    ``REJECT`` < ``BLOCK``. ``DE_RANK`` means the case is reported but never ranked;
+    ``REJECT`` means it fails a physical gate; ``BLOCK`` means it cannot be evaluated
+    because a required statement or source is missing.
+    """
+
+    DE_RANK = "de_rank"
+    REJECT = "reject"
+    BLOCK = "block"
+
+
+_SEVERITY: dict[Consequence, int] = {
+    Consequence.DE_RANK: 0,
+    Consequence.REJECT: 1,
+    Consequence.BLOCK: 2,
+}
+
+
+def worst(consequences: list[Consequence] | tuple[Consequence, ...]) -> Consequence | None:
+    """The most severe consequence in ``consequences``, or ``None`` if empty."""
+    if not consequences:
+        return None
+    return max(consequences, key=lambda c: _SEVERITY[c])
+
+
+@dataclass(frozen=True)
+class Violation:
+    """One applicability failure, with the axis, its consequence, and why."""
+
+    axis: Axis
+    consequence: Consequence
+    detail: str
+
+    def __str__(self) -> str:  # pragma: no cover - formatting only
+        return f"[{self.axis.value}/{self.consequence.value}] {self.detail}"
+
+
+#: Provenance states a declared numeric domain may be in.
+#:
+#: ``ESTABLISHED`` -- traceable to a named source.
+#: ``UNESTABLISHED`` -- retained as a useful guard but not found in any consulted
+#: source, so it must never be presented as the authors' declared range
+#: (Director ruling D1; DEBTS D-1).
+#: ``CONFLICTED`` -- two sources disagree; the adopted value and the reason are
+#: recorded on the entry.
+class DomainProvenance(str, Enum):
+    ESTABLISHED = "established"
+    UNESTABLISHED = "unestablished"
+    CONFLICTED = "conflicted"
+
+
+@dataclass(frozen=True)
+class Applicability:
+    """What a correlation is applicable to, in a form that can be enforced.
+
+    Every collection is empty by default, meaning *unconstrained on that axis* -- a
+    correlation only opts in to the axes it actually declares. An axis that is opted
+    into is then binding, including the requirement that the caller state a value for
+    it.
+
+    ``*_basis`` fields carry the citation that establishes each constraint; they exist
+    so an enforced limit can always be traced to why it is enforced.
+    """
+
+    # --- fluid axis ---
+    fluids: frozenset[str] = frozenset()
+    excluded_fluids: frozenset[str] = frozenset()
+    fluids_basis: str = ""
+
+    # --- geometry axis (closes DEBTS D-9) ---
+    geometries: frozenset[str] = frozenset()
+    geometries_basis: str = ""
+
+    # --- orientation / gravity axis ---
+    orientations: frozenset[str] = frozenset()
+    orientations_basis: str = ""
+    gravity_explicit: bool = False
+    gravity_basis: str = ""
+
+    # --- flow-regime axis ---
+    min_liquid_reynolds: float | None = None
+    reynolds_basis: str = ""
+
+    # --- provenance axis ---
+    numeric_domain_provenance: DomainProvenance = DomainProvenance.ESTABLISHED
+    numeric_domain_note: str = ""
+    requires_executable_form: bool = False
+
+    #: Axes deliberately NOT enforced, each with the reason. Recorded rather than
+    #: silently absent, so an unenforced axis is a visible gap and not an oversight.
+    unenforced_axes: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def declared_axes(self) -> tuple[Axis, ...]:
+        """Every axis this correlation actually constrains."""
+        axes: list[Axis] = []
+        if self.fluids or self.excluded_fluids:
+            axes.append(Axis.FLUID)
+        if self.geometries:
+            axes.append(Axis.GEOMETRY)
+        if self.orientations or self.gravity_explicit:
+            axes.append(Axis.ORIENTATION)
+        if self.min_liquid_reynolds is not None:
+            axes.append(Axis.REGIME)
+        if (
+            self.numeric_domain_provenance is not DomainProvenance.ESTABLISHED
+            or self.requires_executable_form
+        ):
+            axes.append(Axis.PROVENANCE)
+        return tuple(axes)
+
+    def check(
+        self,
+        *,
+        fluid: str | None = None,
+        geometry: str | None = None,
+        orientation: str | None = None,
+        liquid_reynolds: float | None = None,
+        gravity_m_s2: float | None = None,
+        has_executable_form: bool = True,
+    ) -> tuple[Violation, ...]:
+        """Every applicability violation for the stated case.
+
+        An empty result means the case is applicable on every declared axis. A
+        declared axis with no stated value yields a ``BLOCK`` violation: an unstated
+        geometry is not a licence to assume a tube.
+
+        ``numeric_domain_provenance`` deliberately yields **no violation**. Director
+        direction on F-08 is that relabelling an unsourced numeric box is "labelling
+        only" and that the limits "remain enforced as guards" -- so the box is enforced
+        numerically by ``assert_in_domain`` and surfaced by :meth:`provenance_caveats`,
+        but it does not by itself change a case's status. Making it de-rank would
+        over-enforce past the ruling and would de-rank every case through Gungor &
+        Winterton regardless of merit, which is not what "demoted" meant.
+        """
+        v: list[Violation] = []
+
+        # --- fluid ---
+        if self.fluids or self.excluded_fluids:
+            if fluid is None:
+                v.append(
+                    Violation(
+                        Axis.FLUID,
+                        Consequence.BLOCK,
+                        "the correlation declares a fluid applicability but the case "
+                        "states no fluid; an unstated fluid cannot be checked against it",
+                    )
+                )
+            else:
+                key = fluid.strip().lower()
+                if key in {f.lower() for f in self.excluded_fluids}:
+                    v.append(
+                        Violation(
+                            Axis.FLUID,
+                            Consequence.DE_RANK,
+                            f"'{fluid}' is explicitly outside the correlation's fluid "
+                            f"basis. {self.fluids_basis}",
+                        )
+                    )
+                elif self.fluids and key not in {f.lower() for f in self.fluids}:
+                    v.append(
+                        Violation(
+                            Axis.FLUID,
+                            Consequence.DE_RANK,
+                            f"'{fluid}' is not in the correlation's development "
+                            f"database ({', '.join(sorted(self.fluids))}). "
+                            f"{self.fluids_basis}",
+                        )
+                    )
+
+        # --- geometry (DEBTS D-9) ---
+        if self.geometries:
+            if geometry is None:
+                v.append(
+                    Violation(
+                        Axis.GEOMETRY,
+                        Consequence.BLOCK,
+                        "the correlation declares a geometry basis "
+                        f"({', '.join(sorted(self.geometries))}) but the case states no "
+                        "geometry; channel geometry is source-required (S0 Sec. 5)",
+                    )
+                )
+            elif geometry.strip().lower() not in {g.lower() for g in self.geometries}:
+                v.append(
+                    Violation(
+                        Axis.GEOMETRY,
+                        Consequence.DE_RANK,
+                        f"geometry '{geometry}' is outside the correlation's basis "
+                        f"({', '.join(sorted(self.geometries))}). {self.geometries_basis}",
+                    )
+                )
+
+        # --- orientation / gravity ---
+        if self.orientations:
+            if orientation is None:
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.BLOCK,
+                        "the correlation declares an orientation basis "
+                        f"({', '.join(sorted(self.orientations))}) but the case states "
+                        "none",
+                    )
+                )
+            elif orientation.strip().lower() not in {o.lower() for o in self.orientations}:
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.DE_RANK,
+                        f"orientation '{orientation}' is outside the correlation's basis "
+                        f"({', '.join(sorted(self.orientations))}). "
+                        f"{self.orientations_basis}",
+                    )
+                )
+
+        if self.gravity_explicit:
+            if gravity_m_s2 is None:
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.BLOCK,
+                        "the correlation is gravity-explicit (its correlating parameter "
+                        "contains g) but the case states no gravitational acceleration. "
+                        f"{self.gravity_basis}",
+                    )
+                )
+            elif gravity_m_s2 <= 0.0:
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.REJECT,
+                        f"gravitational acceleration {gravity_m_s2} m/s^2 is not "
+                        "positive, and the correlating parameter divides by it: the "
+                        "correlation has no zero-gravity limit and cannot be evaluated "
+                        f"for this case. {self.gravity_basis}",
+                    )
+                )
+
+        # --- flow regime ---
+        if self.min_liquid_reynolds is not None:
+            if liquid_reynolds is None:
+                v.append(
+                    Violation(
+                        Axis.REGIME,
+                        Consequence.BLOCK,
+                        "the correlation declares a minimum liquid Reynolds number "
+                        f"({self.min_liquid_reynolds:g}) but the case states none",
+                    )
+                )
+            elif liquid_reynolds < self.min_liquid_reynolds:
+                v.append(
+                    Violation(
+                        Axis.REGIME,
+                        Consequence.REJECT,
+                        f"liquid Reynolds number {liquid_reynolds:.4g} is below the "
+                        f"turbulent threshold {self.min_liquid_reynolds:g} required by "
+                        f"the correlation's convective base. {self.reynolds_basis}",
+                    )
+                )
+
+        # --- provenance ---
+        if self.requires_executable_form and not has_executable_form:
+            v.append(
+                Violation(
+                    Axis.PROVENANCE,
+                    Consequence.BLOCK,
+                    "an evaluated value is needed but the entry carries no executable "
+                    "form; a registry entry without an evaluator cannot supply one",
+                )
+            )
+        return tuple(v)
+
+    def provenance_caveats(self) -> tuple[str, ...]:
+        """Label-level caveats that must travel with a result but do not change status.
+
+        Kept separate from :meth:`check` on purpose. A constraint that cannot be traced
+        to a source is **relabelled**, not weaponised: Director ruling D1 retains it as
+        an enforced guard while forbidding it to be presented as the authors' declared
+        range. These strings are what carry that distinction into a report.
+        """
+        out: list[str] = []
+        if self.numeric_domain_provenance is not DomainProvenance.ESTABLISHED:
+            out.append(
+                f"declared numeric domain is {self.numeric_domain_provenance.value}: "
+                f"retained and ENFORCED as a guard, but it is NOT the authors' "
+                f"declared range. {self.numeric_domain_note}"
+            )
+        for axis_note in self.unenforced_axes:
+            out.append(f"axis not enforced -- {axis_note}")
+        return tuple(out)
+
+
+#: An entry that constrains nothing. Used where a correlation genuinely declares no
+#: applicability axis, so that "no spec" and "no constraints" stay distinguishable.
+UNCONSTRAINED = Applicability()

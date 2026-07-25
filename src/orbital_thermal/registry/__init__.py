@@ -19,6 +19,15 @@ Typical use::
 
 from __future__ import annotations
 
+from .applicability import (
+    UNCONSTRAINED,
+    Applicability,
+    Axis,
+    Consequence,
+    DomainProvenance,
+    Violation,
+    worst,
+)
 from .correlations import CORRELATIONS, CORRELATIONS_BY_ID
 from .properties import PROPERTIES, PROPERTIES_BY_ID
 from .provenance import (
@@ -43,6 +52,13 @@ from .two_phase import (
 )
 
 __all__ = [
+    "Applicability",
+    "Axis",
+    "Consequence",
+    "DomainProvenance",
+    "Violation",
+    "UNCONSTRAINED",
+    "worst",
     "Provenance",
     "Status",
     "PropertyKind",

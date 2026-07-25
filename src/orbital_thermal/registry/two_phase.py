@@ -42,6 +42,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .applicability import Applicability, DomainProvenance
 from .provenance import (
     CorrelationEntry,
     Domain,
@@ -128,22 +129,31 @@ CHISHOLM_RE_TURBULENT_MIN = 2000.0
 #: weakens the claim about the domain, not the range-checking of calls against it.
 PROVISIONAL_DOMAINS: dict[str, str] = {
     "two_phase.htc.gungor_winterton": (
-        "S2: the declared numeric ranges (G 10-600 kg/m2s, q'' 2e3-2.4e5 W/m2, "
-        "quality 0.002-0.997, P 1.9e5-1.6e6 Pa, D 1.224e-3-3.2e-2 m) could not be "
-        "matched to any obtained source. The consulted reference (Thome, Engineering "
-        "Data Book III, Sec. 10.3.3) states the GW86 database as 3,693 points for "
-        "water, R-11, R-12, R-22, R-113, R-114 and ethylene glycol but does not print "
-        "these numeric bounds. The ranges are retained and enforced as the declared "
-        "guard, but they are NOT confirmed against the source."
+        "PROVENANCE-UNESTABLISHED (Director ruling D1). The five numeric limits "
+        "(G 10-600 kg/m2s, q'' 2e3-2.4e5 W/m2, quality 0.002-0.997, P 1.9e5-1.6e6 Pa, "
+        "D 1.224e-3-3.2e-2 m) appear in NONE of the twenty-one consulted sources, "
+        "including Collier & Thome 3rd ed. (1994) Sec. 7.4.3 -- the canonical text by "
+        "the same author whose handbook the implementation was transcribed from, which "
+        "describes the database by point count, fluid list and flow orientation and "
+        "prints no numeric range. Retained and ENFORCED as guards, but they are NOT "
+        "the authors' declared range and must never be presented as such. DEBTS D-1."
+    ),
+    "two_phase.chf.shah_1987": (
+        "PROVENANCE-CONFLICTED on two axes, resolved in favour of Shah describing "
+        "Shah. Mass velocity: the Springer microscale text prints '3.9 to 29.051' "
+        "kg/m2s, Shah's own Fluids 2023 Appendix prints '4 to 2905' -- a factor of "
+        "ten; the latter is adopted. Critical quality: '-2.6 to 1' vs '-0.26 to 0.96'; "
+        "the latter is adopted. Reduced pressure 0.0014-0.96 and diameter 0.315-37.5 "
+        "mm are AGREED by both printings and carry no conflict. Inlet quality is "
+        "single-source and deliberately NOT enforced."
     ),
     "two_phase.chf.shah_2015": (
-        "S2: pr_reduced 0.0014-0.96 was checked against the source and found to be "
-        "the database range of Shah (1987), Int. J. Heat and Fluid Flow 8(4):326-335, "
-        "not of either 2015 Shah CHF paper -- per Shah's own Fluids 2023, 8, 90 "
-        "Sec. 3.1. Combined with the ambiguity of the 'Shah (2015)' citation itself "
-        "(two distinct 2015 CHF papers, annuli vs horizontal channels), the domain "
-        "cannot be attributed to this entry's nominal source. Declared provisional; "
-        "the entry is NOT implemented. See the entry's source note."
+        "DOMAIN DETACHED, not merely provisional. The pr_reduced 0.0014-0.96 band was "
+        "never this entry's: it is Shah (1987)'s database range, per Shah's own Fluids "
+        "2023, 8, 90 Sec. 3.1, and has been re-attributed to two_phase.chf.shah_1987 "
+        "under Director ruling D3. This entry now declares no domain at all, because a "
+        "correlation whose citation resolves to no single paper has no validity range "
+        "to declare."
     ),
 }
 
@@ -153,22 +163,37 @@ PROVISIONAL_DOMAINS: dict[str, str] = {
 # pages are omitted where not confidently known (locator left blank -> confirm later).
 
 _GUNGOR_WINTERTON = Source(
-    citation="Gungor & Winterton (1986), Int. J. Heat Mass Transfer",
+    citation=(
+        "Gungor, K.E. & Winterton, R.H.S. (1986), 'A general correlation for flow "
+        "boiling in tubes and annuli', Int. J. Heat Mass Transfer 29(3):351-358"
+    ),
     locator=(
-        "executable form transcribed from Thome, J.R., 'Engineering Data Book III', "
-        "Ch. 10 'Boiling Heat Transfer Inside Plain Tubes', Sec. 10.3.3, "
-        "Eqs. [10.3.20]-[10.3.23], with supporting definitions [10.3.4]-[10.3.6], "
-        "[10.3.8] and [10.3.15] (chapter updated 2007)"
+        "Executable form confirmed by THREE independent printings, which agree with "
+        "each other and with the shipped code: "
+        "(1) Thome, J.R., 'Engineering Data Book III', Ch. 10, Sec. 10.3.3, "
+        "Eqs. [10.3.20]-[10.3.23] with supporting [10.3.4]-[10.3.6], [10.3.8], "
+        "[10.3.15] (the source the code was transcribed from); "
+        "(2) CFD Letters 10(2) (2018): 49-58, Eq. (3) for E, Eq. (2) for the Cooper "
+        "nucleate term, Eq. (4) for the suppression factor; "
+        "(3) Collier, J.G. & Thome, J.R. (1994), 'Convective Boiling and "
+        "Condensation', 3rd ed., Oxford, Sec. 7.4.3, Eq. (7.36). "
+        "The Cooper (1984) nucleate term is additionally cross-checked against "
+        "Shah (2022), Int. J. Refrigeration 137:103-116 Eq. (25)."
     ),
     note=(
-        "PROVENANCE OF THE IMPLEMENTED FORM (S2). The primary 1986 IJHMT paper was "
-        "NOT obtained; the equations were transcribed from the Thome reference work "
-        "named in the locator, which reproduces them verbatim with equation numbers. "
-        "The Cooper (1984) nucleate term was independently cross-checked against "
-        "Shah (2022), Int. J. Refrigeration 137:103-116 Eq. (25) and agrees exactly. "
-        "No volume, page or DOI is asserted for the 1986 paper because it was not "
-        "consulted. The declared numeric domain below could NOT be confirmed against "
-        "any obtained source and is provisional (see PROVISIONAL_DOMAINS)."
+        "PROVENANCE OF THE IMPLEMENTED FORM. The 1986 primary paper was NOT obtained "
+        "(paywalled; DEBTS D-2). The volume/issue/pages above are confirmed by four "
+        "independent reference lists; NO DOI is asserted because none was obtained. "
+        "Director ruling D2 governs: 'The primary paper was unobtainable at this time, "
+        "but correlation by multiple obtainable sources that can be cited provides the "
+        "evidentiary defense.' Three independent printings all give the convective "
+        "coefficient as 1.37 and the shipped code uses 1.37. Taboas Touceda (2006) "
+        "Anexo I Eqs. (34)/(36) print 1.23; three sources against one makes that a "
+        "transcription error in Taboas, not a variant form -- worth up to 9.43% at the "
+        "top of the declared box. THE FIVE NUMERIC LIMITS ARE A SEPARATE MATTER: they "
+        "appear in none of the twenty-one consulted sources and are labelled "
+        "PROVENANCE-UNESTABLISHED (Director ruling D1; DEBTS D-1). They remain enforced "
+        "as guards but are NOT the authors' declared range."
     ),
 )
 _CHEN = Source(
@@ -242,7 +267,32 @@ _SHAH_2015 = Source(
     ),
 )
 _SHAH_1987 = Source(
-    citation="Shah (1987), Int. J. Heat and Fluid Flow (critical heat flux, historical)",
+    citation=(
+        "Shah, M.M. (1987), 'Improved general correlation for critical heat flux "
+        "during upflow in uniformly heated vertical tubes', Int. J. Heat and Fluid "
+        "Flow 8(4):326-335"
+    ),
+    locator=(
+        "Executable form reconciled across TWO printings: "
+        "[S] 'Flow Boiling and Condensation in Microscale Channels' (Springer, ISBN "
+        "978-3-030-68703-8), Ch. 6 Sec. 6.4, Eqs. (6.51)-(6.65); and "
+        "[A] Shah, M.M. (2023), Fluids 8, 90, Appendix A 'Shah Correlation (1987) for "
+        "CHF in Vertical Tubes', Eqs. (A1)-(A17). "
+        "[A] is Shah printing his own correlation and is ADOPTED wherever the two "
+        "differ; every divergence is recorded in the module note above."
+    ),
+    note=(
+        "PROMOTED to the CHF reference by Director ruling D3 (OTB-G001 F-03): 'Shah "
+        "1987 is the confirmable source - if the 2015 cannot be confirmed, it must be "
+        "replaced.' No DOI is asserted. FIVE transcription divergences between the two "
+        "printings were found and resolved in favour of [A]; two were flagged in the "
+        "fix inputs (the F2 label, the mass-velocity range) and three were not (the "
+        "definition of Y itself, the Bo0 third constant, and the Fx x>0 branch). The "
+        "F2 exponent sign is additionally confirmed by continuity at F1 = 4, and [A]'s "
+        "high-Y F1 rule is confirmed numerically against [S]'s printed 4.452. "
+        "GRAVITY-EXPLICIT: Y contains g, so the correlation has no microgravity limit "
+        "-- see SHAH_1987_APPLICABILITY."
+    ),
 )
 _KATTO_OHNO = Source(
     citation="Katto & Ohno (1984), Int. J. Heat Mass Transfer (generalized CHF)",
@@ -301,6 +351,70 @@ _NIST_WATER = Source(
 #: declared numeric domain -- checked by :func:`fluid_in_gw86_database`.
 GW86_DATABASE_FLUIDS: frozenset[str] = frozenset(
     {"water", "r-11", "r-12", "r-22", "r-113", "r-114", "ethylene glycol"}
+)
+
+
+#: Minimum liquid Reynolds number for the Dittus-Boelter convective base (OTB-G001
+#: F-06a). Set to Stage-1's own turbulent threshold (``pumped_loop._TURBULENT_RE_NUSSELT``)
+#: so the two stages classify flow regime identically rather than by two conventions.
+#:
+#: Provenance, stated honestly: this is an **internal project convention**, not a number
+#: read out of a GW86 source. None of the twenty-one consulted sources prints a Reynolds
+#: validity band for the correlation. The classical Dittus-Boelter fully-turbulent range
+#: (commonly quoted as Re >= 1e4) is STRICTER than this threshold, so the guard here is
+#: the permissive end of the plausible range; tightening it is a recorded option, not a
+#: silent default. See DEBTS D-1 for the same treatment of the numeric box.
+GW86_MIN_LIQUID_REYNOLDS = 3000.0
+
+#: Enforceable applicability of Gungor & Winterton (1986) -- the fix for OTB-G001 F-06
+#: (fluid + regime axes) and DEBTS D-9 (geometry axis).
+GW86_APPLICABILITY = Applicability(
+    fluids=GW86_DATABASE_FLUIDS,
+    fluids_basis=(
+        "Development database agreed by five independent sources -- Collier & Thome "
+        "(1994) 3rd ed. Sec. 7.4.3 (verbatim: 3693 points for 'water, refrigerants "
+        "(R11, R12, R22, R113 and R114) and ethylene glycol'), Thome Engineering Data "
+        "Book III Sec. 10.3.3, Kandlikar (1990) Table 1, Zurcher et al. (1999), and "
+        "Taboas (2006) Anexo I. Ammonia appears in none of them."
+    ),
+    geometries=frozenset({"round_tube", "annulus"}),
+    geometries_basis=(
+        "The 1986 paper is titled 'A general correlation for flow boiling in tubes and "
+        "annuli' (Int. J. Heat Mass Transfer 29(3):351-358). Closes DEBTS D-9, which "
+        "recorded that this geometry basis was stated in titles and docstrings and "
+        "enforced nowhere."
+    ),
+    orientations=frozenset({"vertical_upflow", "vertical_downflow"}),
+    orientations_basis=(
+        "Collier & Thome Sec. 7.4.3 records the database as covering vertical upward "
+        "and downward flows AND horizontal flows -- but the horizontal branch requires "
+        "the Froude/stratification de-rating (Fr_L < 0.05), which this build "
+        "deliberately does not implement because it models gravitational phase "
+        "stratification. The implemented form is therefore the vertical / "
+        "non-stratified one, and horizontal orientation is outside what is implemented."
+    ),
+    min_liquid_reynolds=GW86_MIN_LIQUID_REYNOLDS,
+    reynolds_basis=(
+        "The convective base is Dittus-Boelter on the liquid fraction G(1-x), which is "
+        "a turbulent correlation. Threshold set to Stage-1's own turbulent boundary; "
+        "see GW86_MIN_LIQUID_REYNOLDS for its provenance."
+    ),
+    numeric_domain_provenance=DomainProvenance.UNESTABLISHED,
+    numeric_domain_note=(
+        "The five numeric limits (G 10-600, q'' 2e3-2.4e5, quality 0.002-0.997, "
+        "P 1.9e5-1.6e6, D 1.224e-3-3.2e-2) appear in NONE of the twenty-one consulted "
+        "sources, including Collier & Thome Sec. 7.4.3 by the same author as the "
+        "handbook the code was transcribed from -- which describes the database by "
+        "point count, fluid list and flow orientation and prints no numeric range. "
+        "Retained and enforced as guards under Director ruling D1, but they are NOT "
+        "the authors' declared range. See DEBTS D-1."
+    ),
+    unenforced_axes=(
+        "liquid Prandtl number: no sourced validity band was obtained for the "
+        "Dittus-Boelter base, so no Pr_L limit is enforced rather than an invented one "
+        "(C1). Director direction on F-06 names the Reynolds guard, the seven-fluid "
+        "database and the numeric limits; Pr is outside it.",
+    ),
 )
 
 
@@ -446,6 +560,278 @@ def gungor_winterton_1986_htc(
     return e_factor * alpha_l + s_factor * alpha_nb
 
 
+# --- S2 executable form: Shah (1987) CHF in uniformly heated vertical tubes -----
+#
+# Promoted to the CHF reference by Director ruling D3 (OTB-G001 F-03): "Shah 1987 is
+# the confirmable source - if the 2015 cannot be confirmed, it must be replaced."
+#
+# SOURCES CONSULTED, AND HOW THEY WERE RECONCILED.
+#
+#   [S] Flow Boiling and Condensation in Microscale Channels (Springer,
+#       ISBN 978-3-030-68703-8), Ch. 6 Sec. 6.4, Eqs. (6.51)-(6.65) -- supplied with
+#       the fix inputs, and flagged there as carrying transcription hazards.
+#   [A] Shah, M.M. (2023), Fluids 8, 90, APPENDIX A "Shah Correlation (1987) for CHF
+#       in Vertical Tubes", Eqs. (A1)-(A17) -- obtained from the author's own
+#       publication archive and text-extracted directly.
+#
+# **[A] is Shah printing his own correlation and is adopted as the transcription
+# source wherever the two differ.** The fix inputs themselves name Shah-2023 the
+# better authority for the mass-velocity conflict; the same logic governs every term.
+# Every divergence is recorded rather than silently resolved (C8: access route is not
+# a provenance criterion, transcription fidelity is).
+#
+# THE TWO HAZARDS THE INPUTS FLAGGED -- both resolved against [A]:
+#
+#   1. Eq. (6.65)'s left-hand side renders self-referentially in [S]. [A](A16)/(A17)
+#      confirms it is **F2**. It also shows [S] lost a MINUS SIGN: [A] prints
+#      `F2 = F1^-0.42`, [S] prints `F1^0.42`. Continuity settles this independently of
+#      authority -- F2 is piecewise at F1 = 4, and 4^-0.42 = 0.5588 joins smoothly to
+#      the F1 > 4 value of 0.55, whereas 4^+0.42 = 1.789 would jump down by 3.25x.
+#      The subcooled branch is therefore implemented, not blocked.
+#   2. Mass velocity: [S] "3.9 to 29.051", [A] "4 to 2905" kg/m2s. Recorded
+#      provenance-CONFLICTED; [A] adopted, per the inputs' own instruction.
+#
+# THREE FURTHER DIVERGENCES FOUND HERE, NOT FLAGGED IN THE INPUTS:
+#
+#   3. **Y itself.** [S] prints `Y = Pe * Fe^0.4 * (mu_l/mu_v)^0.6` with
+#      `Fe = 1.54 - 0.032(L/d_h)` -- conflating the ENTRANCE-EFFECT factor F_E with a
+#      FROUDE group. [A](A2) gives `Y = (G D cp_f/k_f)(G^2/(rho_f^2 g D))^0.4
+#      (mu_f/mu_g)^0.6`. Both carry exponent 0.4, which is how the substitution went
+#      unnoticed. F_E is a separate quantity, used in (A7)/(6.58). [A] adopted.
+#   4. **Bo0 third candidate.** [S] `0.0024 Y^-0.105`; [A](A11) `0.00024 Y^-0.105`.
+#      A factor of ten, and Bo0 is the HIGHEST of three candidates, so at large Y this
+#      changes which branch wins. [A] adopted.
+#   5. **Fx for x_crit > 0.** [S]'s expression is not well-formed and contains
+#      "0.24157", a mangling of `F3^-0.29`. [A](A12)/(A13) adopted.
+#
+# CROSS-CHECK CONFIRMING [A]. For Y > 1.4e7, [S] prints `F1 = 1 + 4.452(-x)^0.88`
+# while [A] says to evaluate the Y <= 1.4e7 form at Y = 1.4e7, giving
+# `0.0052 * (1.4e7)^0.41 = 4.428` -- agreeing with [S]'s 4.452 to 0.5%. The two
+# sources describe the same function by different routes and agree numerically. This
+# is asserted as a test.
+#
+# ** THE FINDING NEITHER SOURCE FLAGS: Y IS GRAVITY-EXPLICIT. **
+# Y contains g. As g -> 0, Y -> infinity, and both the branch selection (Y <= 1e6 vs
+# Y > 1e6) and every Y-power term diverge. **Shah (1987) has no microgravity limit.**
+# This is not the generic "1g-derived correlation" caveat -- it is a literal g in the
+# correlating parameter. It is carried as the `gravity_explicit` applicability axis so
+# that a microgravity case cannot quietly evaluate it.
+
+#: Standard gravitational acceleration, m/s^2 (the 1g basis of Shah's Y parameter).
+STANDARD_GRAVITY_M_S2 = 9.80665
+
+#: Enforceable applicability of Shah (1987), the promoted CHF reference (Director
+#: ruling D3 / OTB-G001 F-03).
+SHAH_1987_APPLICABILITY = Applicability(
+    # The 23 fluids are not enumerated in either consulted printing, so the inclusive
+    # list cannot be stated without inventing it (C1). What IS established is the
+    # exclusion, and that is what is enforced.
+    excluded_fluids=frozenset({"ammonia"}),
+    fluids_basis=(
+        "The database covers 23 fluids from 16 studies, but neither consulted printing "
+        "enumerates them, so no inclusive list is asserted. Ammonia is absent from "
+        "every naming of the database in the consulted text -- recorded in the fix "
+        "inputs as 'Ammonia is not among the 23 fluids named anywhere in the consulted "
+        "text'. The same exclusion mechanism as Gungor & Winterton therefore applies."
+    ),
+    geometries=frozenset({"round_tube"}),
+    geometries_basis=(
+        "Shah (1987), 'Improved general correlation for critical heat flux during "
+        "upflow in uniformly heated vertical TUBES', Int. J. Heat and Fluid Flow "
+        "8(4):326-335. The annulus case is a different Shah correlation (2015a)."
+    ),
+    orientations=frozenset({"vertical_upflow"}),
+    orientations_basis="Uniformly heated vertical tubes with UPFLOW, per the title.",
+    gravity_explicit=True,
+    gravity_basis=(
+        "Y contains g explicitly: Y = (G D cp_f/k_f)(G^2/(rho_f^2 g D))^0.4 "
+        "(mu_f/mu_g)^0.6 ([A] Eq. A2). As g -> 0 the Froude group diverges, taking Y "
+        "and the branch selection with it. This correlation has NO microgravity limit "
+        "-- a stronger statement than the standing 1g-basis caveat, and the reason the "
+        "gravity axis exists."
+    ),
+    numeric_domain_provenance=DomainProvenance.CONFLICTED,
+    numeric_domain_note=(
+        "Two axes disagree between the consulted printings and are resolved in favour "
+        "of Shah describing Shah: mass velocity, [S] '3.9 to 29.051' vs [A] '4 to 2905' "
+        "kg/m2s (adopted); critical quality, [S] '-2.6 to 1' vs [A] '-0.26 to 0.96' "
+        "(adopted). Reduced pressure 0.0014-0.96 and diameter 0.315-37.5 mm are AGREED "
+        "by both. Inlet quality -4.00 to 0.85 appears only in [S], which has three "
+        "demonstrated transcription errors, so that axis is recorded and NOT enforced."
+    ),
+    requires_executable_form=True,
+    unenforced_axes=(
+        "inlet quality: the only printing that gives a range is the one with three "
+        "demonstrated transcription errors, so the axis is recorded rather than "
+        "enforced on a single unreliable source (C1).",
+    ),
+)
+
+
+def shah_1987_Y(
+    *,
+    mass_flux_kg_m2s: float,
+    diameter_m: float,
+    cp_f: float,
+    k_f: float,
+    rho_f: float,
+    mu_f: float,
+    mu_g: float,
+    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+) -> float:
+    """Shah's correlating parameter ``Y`` ([A] Eq. A2)::
+
+        Y = (G D cp_f / k_f) * (G^2 / (rho_f^2 g D))^0.4 * (mu_f / mu_g)^0.6
+
+    **Gravity-explicit.** ``gravity_m_s2`` must be positive: the middle group divides
+    by it, so the correlation has no zero-gravity limit. The default is standard
+    gravity because the correlation's database is terrestrial; evaluating it for a
+    microgravity case is an applicability violation, not a parameter change.
+    """
+    if gravity_m_s2 <= 0.0:
+        raise ValueError(
+            f"Shah (1987) is gravity-explicit: its correlating parameter Y divides by "
+            f"g, so g = {gravity_m_s2} m/s^2 has no limit. The correlation cannot be "
+            "evaluated in microgravity; treat the case as out of applicability."
+        )
+    peclet = mass_flux_kg_m2s * diameter_m * cp_f / k_f
+    froude = mass_flux_kg_m2s**2 / (rho_f**2 * gravity_m_s2 * diameter_m)
+    return peclet * froude**0.4 * (mu_f / mu_g) ** 0.6
+
+
+def shah_1987_entrance_factor(length_to_diameter: float) -> float:
+    """Entrance-effect factor ``F_E`` ([A] Eq. A8): ``1.54 - 0.032 (L_E/D)``, floored at 1."""
+    return max(1.0, 1.54 - 0.032 * length_to_diameter)
+
+
+def shah_1987_bo_zero(y: float, p_reduced: float) -> float:
+    """Boiling number at ``x_c = 0`` -- the HIGHEST of [A] Eqs. (A9)-(A11)::
+
+        Bo0 = 15 Y^-0.612
+        Bo0 = 0.082 Y^-0.3   (1 + 1.45 p_r^4.03)
+        Bo0 = 0.00024 Y^-0.105 (1 + 1.15 p_r^3.39)
+
+    The third constant is ``0.00024`` per [A]; [S] prints ``0.0024``. See the module
+    note -- the divergence matters at large Y, where this candidate can win.
+    """
+    return max(
+        15.0 * y**-0.612,
+        0.082 * y**-0.3 * (1.0 + 1.45 * p_reduced**4.03),
+        0.00024 * y**-0.105 * (1.0 + 1.15 * p_reduced**3.39),
+    )
+
+
+def shah_1987_fx(y: float, p_reduced: float, critical_quality: float) -> float:
+    """Quality-correction factor ``Fx`` ([A] Eqs. A12-A17).
+
+    ``x_c > 0`` uses ``F3``; ``x_c < 0`` uses the subcooled ``F1``/``F2`` branch. The
+    exponent on ``F2`` is **negative** (``F1^-0.42``) per [A](A16); see the module note
+    for the continuity argument that confirms it against [S]'s positive exponent.
+    """
+    exponent = 1.0 if p_reduced > 0.6 else 0.0
+
+    if critical_quality >= 0.0:
+        f3 = (1.25e5 / y) ** (0.833 * critical_quality)
+        return f3 * (1.0 + (f3**-0.29 - 1.0) * (p_reduced - 0.6) / 0.35) ** exponent
+
+    # Subcooled branch. [A]: for Y > 1.4e7 use the same expression evaluated at 1.4e7.
+    y_eff = min(y, 1.4e7)
+    f1 = 1.0 + 0.0052 * (-critical_quality) ** 0.88 * y_eff**0.41
+    f2 = f1**-0.42 if f1 <= 4.0 else 0.55
+    return f1 * (1.0 - (1.0 - f2) * (p_reduced - 0.6) / 0.35) ** exponent
+
+
+def shah_1987_critical_boiling_number(
+    *,
+    mass_flux_kg_m2s: float,
+    diameter_m: float,
+    length_to_chf_m: float,
+    p_reduced: float,
+    inlet_quality: float,
+    critical_quality: float,
+    cp_f: float,
+    k_f: float,
+    rho_f: float,
+    mu_f: float,
+    mu_g: float,
+    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+    is_helium: bool = False,
+) -> float:
+    """Critical boiling number ``Bo_crit`` from Shah (1987), dimensionless.
+
+    Combines the upstream-condition correlation (UCC, [A] A1) and the local-condition
+    correlation (LCC, [A] A7) by [A]'s selection rule: helium always uses the UCC;
+    otherwise the UCC is used for ``Y <= 1e6``, and for ``Y > 1e6`` whichever
+    correlation gives the LOWER ``Bo`` -- except that the UCC is used when
+    ``L_E/D > 160 / p_r^1.14``.
+
+    Convert to a heat flux with :func:`shah_1987_chf`. This function performs no
+    applicability checking; callers on the ranking path must go through the entry's
+    ``applicability_spec`` and ``assert_in_domain`` first.
+    """
+    y = shah_1987_Y(
+        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        diameter_m=diameter_m,
+        cp_f=cp_f,
+        k_f=k_f,
+        rho_f=rho_f,
+        mu_f=mu_f,
+        mu_g=mu_g,
+        gravity_m_s2=gravity_m_s2,
+    )
+
+    # Effective length and effective inlet quality ([A], after A5).
+    if inlet_quality <= 0.0:
+        length_eff, x_ie = length_to_chf_m, inlet_quality
+    else:
+        length_eff, x_ie = length_to_chf_m, 0.0
+    ld = length_eff / diameter_m
+
+    # --- UCC ([A] A1), with n from (A3)-(A5) ---
+    if y <= 1.0e4:
+        n = 0.0
+    elif is_helium:
+        n = (diameter_m / length_eff) ** 0.33
+    elif y <= 1.0e6:
+        n = (diameter_m / length_eff) ** 0.54
+    else:
+        n = 0.12 / (1.0 - x_ie) ** 0.5
+    bo_ucc = 0.124 * (diameter_m / length_eff) ** 0.89 * (1.0e4 / y) ** n * (1.0 - x_ie)
+
+    if is_helium:
+        return bo_ucc
+
+    # --- LCC ([A] A7) ---
+    bo_lcc = (
+        shah_1987_entrance_factor(ld)
+        * shah_1987_fx(y, p_reduced, critical_quality)
+        * shah_1987_bo_zero(y, p_reduced)
+    )
+
+    if y <= 1.0e6:
+        return bo_ucc
+    if ld > 160.0 / p_reduced**1.14:
+        return bo_ucc
+    return min(bo_ucc, bo_lcc)
+
+
+def shah_1987_chf(
+    *,
+    mass_flux_kg_m2s: float,
+    h_fg_J_kg: float,
+    **kwargs: float,
+) -> float:
+    """Critical heat flux from Shah (1987), W/m^2.
+
+    ``q_crit = Bo_crit * G * h_fg`` ([A] A6 / [S] 6.56). Remaining keyword arguments
+    are passed to :func:`shah_1987_critical_boiling_number`.
+    """
+    bo = shah_1987_critical_boiling_number(
+        mass_flux_kg_m2s=mass_flux_kg_m2s, **kwargs
+    )
+    return bo * mass_flux_kg_m2s * h_fg_J_kg
+
+
 # --- Two-phase correlation registry (evaluate wired for the S2-implemented ids) --
 
 TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
@@ -470,14 +856,17 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
         ),
         source=_GUNGOR_WINTERTON,
         evaluate=gungor_winterton_1986_htc,
-        applicability="rank-eligible reference flow-boiling HTC (S2 executable). "
-        "Callers on the ranking path must assert_in_domain first. The declared "
-        "numeric domain is PROVISIONAL (see PROVISIONAL_DOMAINS). The horizontal "
-        "Froude/stratification de-rating is deliberately not applied (1g effect; see "
-        "module note). AMMONIA IS NOT IN THE GW86 FLUID DATABASE -- see "
-        "GW86_DATABASE_FLUIDS / fluid_in_gw86_database.",
-        note="reference HTC correlation for two-phase ranking; 1g basis (see limitation); "
-        "S2 executable form transcribed from Thome EDB III Sec. 10.3.3 (see source note)",
+        applicability_spec=GW86_APPLICABILITY,
+        applicability="Reference flow-boiling HTC (executable). Applicability is "
+        "ENFORCED, not annotated, via applicability_spec: seven-fluid development "
+        "database (ammonia excluded), round-tube/annulus geometry, vertical "
+        "orientation, and a liquid-Reynolds turbulence guard on the Dittus-Boelter "
+        "base. The five numeric limits are additionally enforced by assert_in_domain "
+        "but are labelled PROVENANCE-UNESTABLISHED -- they are not the authors' "
+        "declared range. The horizontal Froude/stratification de-rating is "
+        "deliberately not implemented (1g effect; see module note).",
+        note="reference HTC for two-phase ranking; 1g basis (see limitation); executable "
+        "form confirmed by three independent printings (see source locator)",
         **_MICROGRAVITY_1G,
     ),
     CorrelationEntry(
@@ -568,38 +957,65 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
     # ---------------- Critical heat flux (CHF) ----------------
     CorrelationEntry(
         id="two_phase.chf.shah_2015",
-        name="Shah (2015) saturated-flow-boiling CHF",
+        name="Shah (2015) CHF -- ambiguous citation, superseded as the reference",
         kind="chf",
-        provenance=Provenance.PUBLISHED,
-        status=Status.RESOLVED,
-        formula="(general saturated-flow-boiling CHF; executable form deferred to S2)",
-        # Shah's general CHF correlation is stated over a wide reduced-pressure band;
-        # a rank-eligible reference must declare a validity domain (see missing_metadata).
-        domain=Domain(ranges={"pr_reduced": (0.0014, 0.96)}),
+        provenance=Provenance.UNSUPPORTED,
+        # OTB-G001 F-03: was RESOLVED and passed the generic rank-eligibility guard
+        # despite having no evaluator, no locator, an ambiguous citation and a domain
+        # belonging to a different paper. Now SOURCE_REQUIRED, so it cannot rank.
+        status=Status.SOURCE_REQUIRED,
+        formula="(no executable form; citation could not be resolved to a single paper)",
+        # DOMAIN DETACHED (F-03b). The pr_reduced 0.0014-0.96 band was never this
+        # entry's: it is Shah (1987)'s database range and has been re-attributed to
+        # two_phase.chf.shah_1987. Leaving it here would keep asserting a validity
+        # range this entry has no claim to.
+        domain=Domain(),
         source=_SHAH_2015,
         evaluate=None,
-        applicability="reference CHF on a local modeled wall-flux basis, feeding the "
-        "q''/CHF <= 0.5 design band. S2 DID NOT IMPLEMENT IT: the citation is "
-        "ambiguous and the declared domain traces to Shah (1987), not to either 2015 "
-        "paper (see source note). Domain is PROVISIONAL (see PROVISIONAL_DOMAINS). "
-        "The CHF BANDING POLICY ships regardless -- it is a policy gate over a CHF "
-        "value, not a correlation -- but no sourced CHF evaluator backs it, so a case "
-        "needing a computed CHF is blocked, never silently ranked.",
-        note="reference CHF: local modeled wall-flux basis; feeds q''/CHF<=0.5 band; "
-        "S2 attribution blocker -- not implemented, locator intentionally blank",
+        applicability="NOT rank-eligible and NOT the CHF reference. Superseded by "
+        "two_phase.chf.shah_1987 under Director ruling D3. The citation resolves to no "
+        "single paper (two distinct 2015 Shah CHF papers exist, for annuli and for "
+        "horizontal channels), and the pr_reduced band formerly attached here belongs "
+        "to Shah (1987) and has been re-attributed. Kept as a registered, blocked "
+        "entry rather than deleted so the misattribution stays visible.",
+        note="SOURCE_REQUIRED: ambiguous citation, no executable form, domain detached "
+        "and re-attributed to shah_1987 (OTB-G001 F-03); locator intentionally blank",
         **_MICROGRAVITY_1G,
     ),
     CorrelationEntry(
         id="two_phase.chf.shah_1987",
-        name="Shah (1987) CHF (historical ancestor)",
+        name="Shah (1987) CHF in uniformly heated vertical tubes (CHF reference)",
         kind="chf",
-        provenance=Provenance.SENSITIVITY,
-        status=Status.SENSITIVITY,
-        formula="(historical Shah CHF; sensitivity only)",
+        provenance=Provenance.PUBLISHED,
+        status=Status.RESOLVED,
+        formula="Bo_crit = min(UCC, LCC) per Shah's selection rule; "
+        "q_crit = Bo_crit G h_fg. UCC: Bo = 0.124 (D/L_E)^0.89 (1e4/Y)^n (1-x_IE). "
+        "LCC: Bo = F_E Fx Bo0. Y = (G D cp_f/k_f)(G^2/(rho_f^2 g D))^0.4 "
+        "(mu_f/mu_g)^0.6 -- GRAVITY-EXPLICIT.",
+        # Re-attributed from shah_2015 (F-03b), where this band never belonged.
+        # pr_reduced and diameter are AGREED by both printings; mass velocity and
+        # critical quality are CONFLICTED and resolved to Shah (2023). See the entry's
+        # applicability_spec for the conflict record.
+        domain=Domain(
+            ranges={
+                "pr_reduced": (0.0014, 0.96),
+                "D_m": (0.315e-3, 37.5e-3),
+                "G_kg_m2s": (4.0, 2905.0),
+                "critical_quality": (-0.26, 0.96),
+            }
+        ),
         source=_SHAH_1987,
-        evaluate=None,
-        applicability="historical-ancestor CHF sensitivity; NOT rank-eligible",
-        note="SENSITIVITY: historical ancestor of the reference CHF, not a ranked value",
+        evaluate=shah_1987_chf,
+        applicability_spec=SHAH_1987_APPLICABILITY,
+        applicability="CHF reference (Director ruling D3). Applicability is ENFORCED "
+        "via applicability_spec: round-tube geometry, vertical upflow, ammonia "
+        "excluded, and a GRAVITY-EXPLICIT guard -- Y divides by g, so this correlation "
+        "has no microgravity limit and cannot be evaluated at g <= 0. Feeds the "
+        "q''/CHF <= 0.5 rank band on the LOCAL modeled wall flux (ruling A5). "
+        "Evaluating it also requires sourced channel geometry (L and D); geometry is "
+        "source-required per DEBTS D-5, so a case without it is blocked.",
+        note="CHF reference, promoted from sensitivity by ruling D3; executable form "
+        "reconciled across two printings with five divergences recorded (see source note)",
         **_MICROGRAVITY_1G,
     ),
     CorrelationEntry(
