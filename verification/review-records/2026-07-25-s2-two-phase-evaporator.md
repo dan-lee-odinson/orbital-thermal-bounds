@@ -8,9 +8,17 @@
 
 # Review Record: S2 — two-phase acquisition / evaporator
 
+> **Update, 2026-07-25 (fix cycle).** Sol's cross-model review returned **FAIL — 8
+> blockers, 2 major**. Cowork reproduced all ten by execution; **zero appeals**. Dan
+> dispositioned all ten (six `accept`, four `accept_with_modification`, every one
+> `product`). The fixes are recorded in **§ Fix cycle** at the foot of this record, and
+> in `OTB-G001_FIXES_REPORT.md`. Everything above that section describes the **as-built
+> state that was reviewed**, and is left unedited so the review remains legible against
+> what it actually reviewed.
+
 ## Record Metadata
-- **Record status:** **OPEN** — awaiting director disposition of findings F1/F2 and Sol's
-  cross-model review. Not closable by the builder.
+- **Record status:** **OPEN** — fixes applied and verified; awaiting Sol's re-review and
+  Dan's closure. Not closable by the builder.
 - **Date:** 2026-07-25
 - **Reviewed commit:** S2 build commits on branch `stage-2/s2-evaporator` (base `155b10c`).
 - **Reviewer(s):** pending — **project director (Dan Lee-Odinson)** + cross-model (Sol).
@@ -209,3 +217,93 @@ baseline, 16/16 checks witnessed failing, lint clean, coverage 95.88%.
 **Not closable by the builder.** Requires: (i) director disposition of **F1** and **F2**;
 (ii) director judgment on the GW86 secondary-source call recorded above; (iii) Sol's
 cross-model review. `main` is untouched, no tag, no release.
+
+---
+
+# Fix cycle — Sol review FAIL, all ten dispositioned and fixed
+
+**Review verdict:** FAIL — 8 blockers, 2 major, 87 files read, freeze verified.
+**Disposition:** six `accept`, four `accept_with_modification`, all `product`. Zero appeals.
+**Fixed at:** `stage-2/s2-evaporator`, this branch. Full detail in `OTB-G001_FIXES_REPORT.md`.
+
+## The class, and why there are not ten patches
+
+Five findings were one defect wearing different clothes — **a declared constraint that
+is recorded but never enforced**: the CHF value's provenance (F-02), the eligibility of
+an entry with no evaluator (F-03), the fluid basis written to a note and ignored (F-04),
+the turbulent basis documented and never checked (F-06), and "tubes and annuli" enforced
+nowhere (**DEBTS D-9**).
+
+They are closed by **one mechanism** — `src/orbital_thermal/registry/applicability.py` —
+which makes a correlation's declared applicability binding on every axis it declares:
+fluid, geometry, orientation, regime, provenance. Two rules carry the weight:
+
+- **Silence is not consent.** A declared axis with no *stated* value is itself a
+  violation (`BLOCK`). Without it the class returns as "enforced when someone remembers
+  to pass it", which is what D-9 already was.
+- **Consequences, not annotations.** Violations are typed values with a consequence, and
+  the consumer folds the worst into the case status. Recording without acting **is** the
+  defect.
+
+**R1 regression:** `tests/test_applicability_enforcement.py` — five sibling instances
+plus **two controls**, including the case that must still rank, so over-enforcement fails
+as loudly as under-enforcement. **DEBTS D-9 closes as a consequence**, not by a patch.
+
+## Per-finding outcome
+
+| # | Sev | Outcome |
+|---|---|---|
+| F-01 | blocker | ONB criterion must be typed, fluid-valid and **evaluated**; `"banana"` is now no criterion. The `x = 0` boundary is reported as the bulk-equilibrium crossing, not an ONB transition. Entry stays `SOURCE_REQUIRED`. |
+| F-02 | blocker | CHF arrives as a `ChfResult` binding value, source, locator, fluid, geometry, domain, gravity and violations. A bare float is refused by type. |
+| F-03 | blocker | `shah_2015` → `SOURCE_REQUIRED`, band **detached**; **Shah (1987) promoted** to the CHF reference with an executable form and the band re-attributed. Eligibility additionally requires an executable form where declared. |
+| F-04 | blocker | The fluid-applicability failure **alters status**. Ammonia de-ranked through GW86. Steiner–Taborek **not** implemented (S5). |
+| F-05 | blocker | `SaturationState` binds fluid, pressure and backend version; validated against `LoopState`. The dict path was **removed**, not deprecated. |
+| F-06 | blocker | Liquid-Reynolds turbulence guard added; seven-fluid database enforced; numeric limits retained as guards under the F-08 label. |
+| F-07 | blocker | Limiting-case test rebuilt on a **domain-valid** path. Records that the correlation does **not** recover its single-phase base inside the declared domain (~1.2× at the lower corner). No agreement manufactured. |
+| F-08 | blocker | **Labelling only** — maths untouched. Limits relabelled provenance-unestablished; three confirming locators added. |
+| F-09 | major | `check_domain` removed from the public wrapper. |
+| F-10 | major | Backend pin enforced at every saturation evaluation, with a migration path requiring a review record. |
+
+## Shah (1987) transcription — five divergences, all recorded
+
+The supplied Springer extract was reconciled against **Shah's own printing** (*Fluids*
+2023, 8, 90, Appendix A). Both flagged hazards resolved — Eq. (6.65)'s LHS is `F2`, and
+the mass-velocity range is 4–2905 kg/m²s. **Three further divergences were found that
+the inputs did not flag:** the extract's `Y` conflates the entrance-effect factor with a
+**Froude group** (both carry exponent 0.4, which is how it passed unnoticed); its `Bo0`
+third constant is `0.0024` against Shah's `0.00024`; and its `Fx` `x>0` branch is
+malformed. Shah's printing is adopted throughout.
+
+The **F2 exponent sign** also differed (`+0.42` vs `−0.42`) and is settled *independently
+of authority* by **continuity at F1 = 4**: `4^−0.42 = 0.5588` against the branch value
+`0.55`, versus a 3.25× jump for the positive exponent. Shah's high-Y rule is confirmed
+numerically against the extract's printed `4.452` (`0.0052 × 1.4e7^0.41 = 4.428`). Both
+are asserted as tests, so the subcooled branch is **implemented rather than blocked**.
+
+## New finding, not among the ten: Shah (1987) is gravity-explicit
+
+Its correlating parameter contains `g` — `Y = (G D cp/k)(G²/(ρ² g D))^0.4 (μ_f/μ_g)^0.6`
+— so as `g → 0` the correlation diverges and its branch selection with it. **It has no
+microgravity limit**, which is a stronger statement than the standing 1-g caveat. Carried
+as the gravity applicability axis and refused at `g ≤ 0`. **Raised for director
+attention**, since it bears on any future two-phase CHF ranking in orbit.
+
+## Verification
+
+- **Tests:** **697 passed, 3 xfailed, 0 failed** (from 630 at the reviewed commit; +67).
+- **Coverage:** 95.78 % (gate 90 %). `applicability.py` 100 %, `two_phase.py` 96 %,
+  `fluids.py` 98 %.
+- **Lint:** `ruff check src tests scripts` clean.
+- **Witnessed failures:** **32/32** (from 16). Eight were not witnessed on the first run:
+  four were bad mutations of mine, and **four were genuinely weak tests** — the F-03
+  executable-form rule was not load-bearing on `shah_2015` at all (its *status* already
+  blocked it), the F-04 mapping could be broken with every ammonia test green, the Shah
+  F2 test asserted arithmetic rather than the implementation, and the `Bo0` constant
+  could shift by 10× unnoticed. All four now have direct tests.
+
+## Ledger
+
+`dispositions/OTB-G001.yaml`: `action`, `commit` and `verified: true` filled on all ten.
+`classification`, `disposition`, `rationale` and `status` untouched — verified by
+re-parsing and comparing every non-builder field, with all four DIRECTION texts and all
+five rationale seams preserved verbatim (including `degredation`).

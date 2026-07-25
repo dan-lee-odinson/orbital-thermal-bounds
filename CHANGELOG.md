@@ -30,11 +30,8 @@ of any published version. No Phase A or Stage-1 published number is changed.
   S0 §4 claim 1 (status `derived`).
 
 ### Not implemented (recorded as blockers, not guessed)
-- `two_phase.chf.shah_2015` — attribution could not be established: the "Shah (2015)"
-  citation is ambiguous (two distinct 2015 CHF papers, annuli vs horizontal channels) and
-  its declared `pr_reduced` domain traces to Shah (1987). Stays `SOURCE_REQUIRED` with a
-  blank locator; the CHF **banding policy** ships regardless.
-- `two_phase.onb.bergles_rohsenow` — the 1964 criterion is graphical, and its usual
+- `two_phase.onb.bergles_rohsenow` — the 1964 criterion has no closed form (three
+  independent sources: a four-equation system solved graphically), and its usual
   algebraic surrogate is a dimensional water-only fit, out of fluid domain for the
   ammonia reference coolant. The ONB **policy gate** ships regardless.
 
@@ -42,6 +39,34 @@ of any published version. No Phase A or Stage-1 published number is changed.
 - The S1 `test_no_evaluate_callable_in_s1` guard is replaced by a strictly stronger
   successor pinning the **exact** set of implemented ids, plus a new invariant requiring
   every implemented correlation to carry a non-empty `source.locator` (and its converse).
+
+### Added — OTB-G001 fix cycle (Sol review FAIL: 8 blockers, 2 major; all dispositioned)
+- **One applicability enforcement mechanism** (`registry/applicability.py`) making a
+  correlation's declared applicability binding on fluid, geometry, orientation, regime
+  and provenance. Five of the ten findings were the same defect — a declared constraint
+  recorded but never enforced — and are closed by this one mechanism rather than five
+  patches. A declared axis with **no stated value** is itself a violation, which is what
+  closes DEBTS **D-9** (geometry enforced, not merely titled).
+- **`two_phase.chf.shah_1987` promoted to the CHF reference** with an executable form
+  (Director ruling D3), the `pr_reduced` 0.0014–0.96 band re-attributed to it from
+  `shah_2015`, and its 23-fluid / 0.315–37.5 mm database recorded. `shah_2015` moves to
+  `SOURCE_REQUIRED` with **no domain at all** and can no longer pass the eligibility
+  guard. **Shah (1987) is gravity-explicit** — its correlating parameter divides by `g`,
+  so it has no microgravity limit; carried as an enforced applicability axis.
+- **`SaturationState`**: an immutable value binding fluid, pressure and backend version
+  to its properties, validated against the loop state before evaluation. The untagged
+  dict path was removed, not deprecated.
+- **`ChfResult`** and a typed, **evaluated** `OnbCriterion` — a bare CHF float and a
+  merely-present ONB object are both refused.
+- **Enforced backend pin**: a CoolProp version differing from `COOLPROP_PIN` now fails
+  saturation evaluation, with a migration path requiring a review-record reference.
+- Liquid-Reynolds turbulence guard; seven-fluid database enforced; ammonia **de-ranked**
+  through Gungor & Winterton (ruling D4). The `check_domain` bypass was removed from the
+  public HTC wrapper.
+- The GW86 numeric limits are relabelled **provenance-unestablished** (ruling D1) with
+  three confirming locators added; the maths is unchanged.
+- Witness harness extended to **32 mutations**, and it now refuses to run when the
+  installed package is not the tree being mutated.
 
 ## [1.1.0] — 2026-07-04
 

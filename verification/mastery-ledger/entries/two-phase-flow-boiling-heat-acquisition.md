@@ -13,14 +13,23 @@ This is S0 §4 central claim **1** — vapour quality, the boiling heat-transfer
 coefficient, the ONB/saturated-regime policy, and the CHF/dryout rejection bands on
 **local** wall flux — introduced at milestone S2 as S0 §4 requires.
 
-**Why `derived` and not `reproduced`.** The status is deliberately one step below the
-Stage-1 entries. The *policy* layer (regime gate, CHF bands, local-flux discipline,
-domain guards) is fully executable and mutation-witnessed, and the *one* implemented
-correlation reproduces its own analytic limiting case exactly. But the claim as S0
-words it also covers the CHF band's underlying correlation, and **no CHF correlation
-is implemented** — its source attribution could not be established (see below).
-A claim whose CHF leg rests on a blocked entry has not been reproduced end to end, and
-recording it as `reproduced` would overstate the evidence.
+**Why `derived` and not `reproduced`.** The status stays one step below the Stage-1
+entries after the OTB-G001 fix cycle. The CHF leg is no longer blocked — Shah (1987) is
+implemented as the CHF reference under Director ruling D3 — but three things still stand
+between this claim and `reproduced`:
+
+1. **The reference coolant cannot rank through either correlation.** Ammonia is absent
+   from Gungor & Winterton's seven-fluid database *and* from Shah (1987)'s 23-fluid
+   database. Both exclusions are now enforced, so an ammonia case is de-ranked by
+   construction (DEBTS D-6). The claim is executable for water; for the *reference*
+   coolant it is a sensitivity.
+2. **The CHF correlation is gravity-explicit.** Shah (1987)'s `Y` divides by `g`, so it
+   has no microgravity limit at all — see "Known uncertainties".
+3. **Neither correlation's full numeric domain is source-established.** GW86's is
+   provenance-unestablished; Shah (1987)'s is provenance-conflicted on two axes.
+
+A claim whose reference coolant is out of basis on every implemented correlation has not
+been reproduced end to end.
 
 ## Physical question
 
@@ -158,31 +167,40 @@ range with the guard required to fire.
 
 ## Known uncertainties
 
-1. **No CHF correlation is implemented — the claim's dryout leg is blocked.**
-   `two_phase.chf.shah_2015` was not implemented because its attribution could not be
-   established. There is no single "Shah (2015)" general CHF correlation: Shah published
-   two distinct 2015 CHF papers (vertical annuli, *Heat Transfer Engineering*
-   37(6):557–570; horizontal channels, *Int. J. Refrigeration* 59:37–52), and the
-   registry citation identifies neither, though they apply to different geometries. The
-   declared `pr_reduced` range 0.0014–0.96 is verifiably the database range of **Shah
-   (1987)**, *IJHFF* 8(4):326–335, per Shah's own *Fluids* 2023, 8, 90 §3.1 — which
-   still treats the 1987 correlation as the most-verified general one for tubes. The
-   band *policy* ships and is fully tested; the correlation behind it does not exist in
-   this build, so a case needing a computed CHF is **blocked**, never silently ranked.
-2. **The reference coolant is outside the reference correlation's fluid database.** The
-   GW86 database is water, R-11, R-12, R-22, R-113, R-114 and ethylene glycol. **Ammonia
-   is not in it**, and ammonia is the S0 §9.1 reference coolant. Machine-visible via
-   `fluid_in_gw86_database`; surfaced for director disposition, not resolved here.
-3. **Both declared numeric domains are provisional.** The GW86 ranges could not be
-   matched to any obtained source; the CHF range traces to a different paper. Declared
-   provisional in `PROVISIONAL_DOMAINS` and still enforced as the guard.
-4. **No sourced ONB criterion.** Bergles & Rohsenow (1964) is a graphical construction,
-   and its usual algebraic surrogate is a dimensional water-only fit — out of fluid
-   domain for ammonia. The regime gate therefore de-ranks anything not unambiguously in
-   saturated flow boiling.
-5. **Microgravity.** Every correlation reached is 1-g. Not microgravity-validated.
-6. **Model-form.** GW86 has a reported mean deviation of ±21.4% against its own
-   database; screening-level accuracy at best, and worse outside that database.
+1. **The CHF reference is gravity-explicit and has no microgravity limit.** Shah (1987)'s
+   correlating parameter is `Y = (G D cp_f/k_f)(G²/(ρ_f² g D))^0.4 (μ_f/μ_g)^0.6` — it
+   contains `g`. As `g → 0` the Froude group diverges, taking `Y` and the correlation's
+   branch selection (`Y ≤ 10⁶` vs `Y > 10⁶`) with it. This is **stronger than the
+   standing 1-g caveat**: there is no zero-gravity limit to take. Enforced as the
+   `gravity_explicit` applicability axis; evaluation at `g ≤ 0` is refused. **For an
+   orbital project this is the sharpest open question on this entry.**
+2. **The reference coolant is outside BOTH implemented correlations.** Ammonia is absent
+   from GW86's seven-fluid database (agreed by five independent sources) and from Shah
+   (1987)'s 23-fluid database. Zürcher, Thome & Favrat (1999) measured GW86 at **47.6 %**
+   standard deviation against ammonia data, rising past **84 %** above `x = 0.85`. Both
+   exclusions are now **enforced**, so ammonia is de-ranked rather than annotated
+   (Director ruling D4). Steiner–Taborek is scoped for S5 (DEBTS D-6).
+3. **Neither numeric domain is source-established.** GW86's five limits appear in **none
+   of twenty-one consulted sources** and are labelled provenance-unestablished — retained
+   and enforced as guards, but never presented as the authors' declared range (ruling D1,
+   DEBTS D-1). Shah (1987)'s domain is provenance-**conflicted** on two axes (mass
+   velocity, critical quality), resolved in favour of Shah's own printing; its inlet-
+   quality axis is single-source and deliberately **not enforced**.
+4. **The Shah (1987) executable form came from two secondary printings that disagree.**
+   Five divergences were found and resolved in favour of Shah describing Shah, two of
+   them flagged in the fix inputs and **three not** — including the definition of `Y`
+   itself. The F2 exponent sign is confirmed by continuity at `F1 = 4` and the high-Y
+   rule numerically against the other printing, but the 1987 primary was not obtained.
+5. **No sourced ONB criterion.** Bergles & Rohsenow (1964) has no closed form — three
+   independent sources confirm it is a four-equation system solved graphically — and the
+   usual algebraic surrogate is water-only. The regime gate de-ranks anything not
+   unambiguously in saturated flow boiling, and the `x = 0` boundary is reported as the
+   **bulk-equilibrium crossing**, not as an established ONB transition (DEBTS D-3).
+6. **Microgravity, directionally.** Hammer (2021) records that microgravity flow-boiling
+   heat transfer "typically depreciates", implying 1-g correlations are
+   **non-conservative** rather than merely uncertain (DEBTS D-7, standing note D5).
+7. **Model-form.** GW86 has a reported mean deviation of ±21.4 % against its own
+   database; screening-level accuracy at best, and worse outside it.
 
 ## What evidence would invalidate this result
 
@@ -199,14 +217,16 @@ range with the guard required to fire.
 
 ## Open questions / TODO
 
-- **Director disposition needed:** which paper `two_phase.chf.shah_2015` denotes, or
-  whether the entry should be re-pointed at Shah (1987) — which the registry currently
-  classifies as a mere "historical ancestor" sensitivity, a classification this
-  evidence also puts in question.
-- **Director disposition needed:** ammonia vs the GW86 fluid database (uncertainty 2).
-- Confirm the GW86 numeric domain against the primary paper, or re-derive it.
-- Obtain a CHF correlation whose attribution can be established, then implement it and
-  connect it to the (already tested) banding policy.
-- Obtain an ONB criterion valid for ammonia, or record ONB as permanently not modelled.
+- **Director attention — new at the fix cycle:** Shah (1987) is **gravity-explicit**
+  (uncertainty 1). It is enforced as an applicability axis, but it bears directly on
+  whether any two-phase CHF ranking is meaningful in orbit, and on what a future
+  microgravity-specific CHF source would have to supply.
+- **Resolved at the fix cycle:** the `shah_2015` attribution question — ruling D3 makes
+  Shah (1987) the CHF reference, with the `pr_reduced` band re-attributed to it.
+- Adopt an ammonia-valid heat-transfer correlation, or accept that the reference coolant
+  is permanently a sensitivity at this milestone (DEBTS D-6; Steiner–Taborek at S5).
+- Obtain the GW86 1986 primary and confirm or replace the numeric limits (DEBTS D-1/D-2).
+- Obtain the Shah (1987) primary and confirm the five reconciled divergences.
+- Obtain an ONB criterion valid for ammonia, or scope the iterative solve (DEBTS D-3).
 - Director-authored explanation (status `explained` and above).
 - Level **d** qualified external human review — `pending`.
