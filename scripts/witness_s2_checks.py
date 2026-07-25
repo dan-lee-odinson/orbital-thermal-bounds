@@ -48,6 +48,7 @@ TEST_MODULES = (
     "tests/test_two_phase_evaporator.py",
     "tests/test_two_phase_registry.py",
     "tests/test_applicability_enforcement.py",
+    "tests/test_boundary_enforcement.py",
 )
 
 
@@ -284,10 +285,10 @@ MUTATIONS: list[Mutation] = [
         path=TWO_PHASE,
         # The defect was an API AFFORDANCE, so the mutation must restore it in the
         # SIGNATURE. Adding a flag to the body proved nothing on the first run.
-        old="    state,\n    loop: LoopState | None = None,\n) -> float:",
+        old="    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,\n) -> HtcResult:",
         new=(
-            "    state,\n    loop: LoopState | None = None,\n"
-            "    check_domain: bool = True,\n) -> float:"
+            "    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,\n"
+            "    check_domain: bool = True,\n) -> HtcResult:"
         ),
         expect_failing=("test_f09_the_public_wrapper_exposes_no_domain_bypass",),
         notes=(
@@ -474,6 +475,158 @@ MUTATIONS: list[Mutation] = [
             "test_gw86_htc_increases_with_quality_and_with_mass_flux",
             "test_gate1c_saturated_flow_boiling_is_evaluated_and_rank_eligible",
         ),
+    ),
+    # ============================================================ OTB-G001-FIXES
+    # Round-2 guards. Four of these six defects were round-1 fixes built at one call
+    # site instead of at the boundary, so each mutation below reopens the specific
+    # door that was left open.
+    Mutation(
+        name="R2-F01-enforce-gravity-only-at-exactly-zero",
+        guards="F-01: reduced gravity is an applicability violation, not just g <= 0",
+        finding="R2 F-01",
+        path=APPLIC,
+        old="            elif self.reference_gravity_m_s2 is not None:",
+        new="            elif False:",
+        expect_failing=(
+            "test_sibling_f01_reduced_gravity_is_an_applicability_violation",
+        ),
+        notes="Before the fix 1e-12 m/s^2 produced no violation at all.",
+    ),
+    Mutation(
+        name="R2-F01-drop-the-database-gravity-declaration",
+        guards="F-01: the boundary is the database's gravity, and is sourced",
+        finding="R2 F-01",
+        path=REGISTRY,
+        old="    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,",
+        new="    reference_gravity_m_s2=None,",
+        expect_failing=(
+            "test_sibling_f01_reduced_gravity_is_an_applicability_violation",
+            "test_sibling_f01_the_threshold_is_sourced_not_invented",
+        ),
+    ),
+    Mutation(
+        name="R2-F01-disable-the-branch-straddle-test",
+        guards="F-01: gravity moving a case across Shah's own branch threshold",
+        finding="R2 F-01",
+        path=APPLIC,
+        old="                if here != there:",
+        new="                if False:",
+        expect_failing=(
+            "test_sibling_f01_gravity_moving_a_case_across_shahs_branch_is_rejected",
+        ),
+    ),
+    Mutation(
+        name="R2-F02-let-a-ChfResult-be-hand-built",
+        guards="F-02: a CHF result is unconstructible outside the evaluator",
+        finding="R2 F-02",
+        path=TWO_PHASE,
+        old="        if _mint is not _CHF_MINT:",
+        new="        if False:",
+        expect_failing=(
+            "test_sibling_f02_a_fabricated_chf_result_cannot_be_constructed",
+            "test_sibling_f02_a_mutated_chf_result_cannot_be_rebuilt",
+        ),
+        notes="Round 1 wrapped a bare float in labels; a label nothing reads is not a fix.",
+    ),
+    Mutation(
+        name="R2-F02-stop-verifying-the-case-binding",
+        guards="F-02: the consumer verifies the result was produced for THIS case",
+        finding="R2 F-02",
+        path=TWO_PHASE,
+        old="    diffs = chf.binding.agrees_with(binding)",
+        new="    diffs = []",
+        expect_failing=(
+            "test_sibling_f02_a_replayed_chf_result_is_refused_by_the_consumer",
+            "test_sibling_f02_the_binding_covers_every_identifying_field",
+        ),
+        notes="Being unforgeable is not enough if nobody checks who it was made for.",
+    ),
+    Mutation(
+        name="R2-F03-compare-the-fluid-field-to-itself-again",
+        guards="F-03: fluid identity is verified against re-derived properties",
+        finding="R2 F-03",
+        path=TWO_PHASE,
+        old="        state.verify_is(state.fluid if fluid is None else fluid)",
+        new="        state.matches(fluid=state.fluid, pressure_Pa=loop.pressure_Pa)",
+        expect_failing=(
+            "test_sibling_f03_a_relabelled_state_is_refused",
+            "test_sibling_f03_verification_is_not_optional",
+        ),
+        notes="The original guard asked whether the state's fluid equals itself.",
+    ),
+    Mutation(
+        name="R2-F03-make-verification-optional-again",
+        guards="F-03: verification must not be skippable by omitting an argument",
+        finding="R2 F-03",
+        path=TWO_PHASE,
+        old="    try:\n        state.verify_is(state.fluid if fluid is None else fluid)",
+        new="    try:\n        state.verify_is(fluid) if fluid is not None else None",
+        expect_failing=("test_sibling_f03_verification_is_not_optional",),
+        notes=(
+            "This is the shape my own first attempt took, and the probe walked straight "
+            "through it by simply not passing the argument."
+        ),
+    ),
+    Mutation(
+        name="R2-F03-compare-only-the-headline-properties",
+        guards="F-03: the full property set is compared, not a couple of fields",
+        finding="R2 F-03",
+        path=FLUIDS,
+        old='    _VERIFIED_PROPERTIES = (\n        "T_sat_K",',
+        new='    _VERIFIED_PROPERTIES = (\n        "T_sat_K",  # truncated\n    )\n    _UNUSED = (',
+        expect_failing=("test_sibling_f03_the_full_property_set_is_compared",),
+    ),
+    Mutation(
+        name="R2-F04-skip-the-mechanism-in-the-public-wrapper",
+        guards="F-04: enforcement at the boundary, not only in assess_acquisition",
+        finding="R2 F-04",
+        path=TWO_PHASE,
+        # Computes the violations and then DISCARDS them on the way out. This is
+        # precisely the failure mode the handoff excludes -- "checking applicability
+        # and discarding the answer would close this finding and change nothing".
+        old="    return HtcResult(\n        value_W_m2=value,\n        violations=violations,",
+        new="    return HtcResult(\n        value_W_m2=value,\n        violations=(),",
+        expect_failing=(
+            "test_every_public_value_producing_entry_point_enforces_applicability",
+            "test_sibling_f04_a_blocking_axis_raises_rather_than_returning",
+        ),
+        notes="The exact round-1 shape: the check existed, one door did not use it.",
+    ),
+    Mutation(
+        name="R2-F05-accept-any-non-blank-review-record",
+        guards="F-05: the review record must resolve to a real file",
+        finding="R2 F-05",
+        path=FLUIDS,
+        old="    resolved = _resolve_review_record(review_record)",
+        new="    resolved = review_record",
+        expect_failing=("test_sibling_f05_an_unresolvable_review_record_is_refused",),
+        notes="Round 1 made the pin real, then added a door whose lock opens to any key.",
+    ),
+    Mutation(
+        name="R2-F06-unbound-the-inlet-quality-axis",
+        guards="F-06: inlet quality is enforced, so CHF cannot be inflated",
+        finding="R2 F-06",
+        path=REGISTRY,
+        old='                "inlet_quality": (-2.6, 0.85),',
+        new='                "inlet_quality": (-1.0e9, 1.0e9),',
+        expect_failing=(
+            "test_sibling_f06_out_of_range_inlet_quality_is_refused",
+            "test_sibling_f06_the_provenance_is_recorded_as_it_actually_is",
+        ),
+        notes="x_in = -1000 inflated CHF ~1000x and still reported sourced.",
+    ),
+    Mutation(
+        name="R2-F06-stop-passing-inlet-quality-to-the-domain-guard",
+        guards="F-06: the enforced bound is actually reached by the evaluator",
+        finding="R2 F-06",
+        path=TWO_PHASE,
+        old=(
+            "        critical_quality=critical_quality,\n"
+            "        inlet_quality=inlet_quality,\n    )"
+        ),
+        new="        critical_quality=critical_quality,\n    )",
+        expect_failing=("test_sibling_f06_out_of_range_inlet_quality_is_refused",),
+        notes="A declared bound nothing passes a value to is a declared bound, not a guard.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
