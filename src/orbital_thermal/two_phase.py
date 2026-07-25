@@ -46,7 +46,7 @@ This module is stdlib-only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
 
 from . import _validate as _v
@@ -56,6 +56,7 @@ from .registry.two_phase import (
     STANDARD_GRAVITY_M_S2,
     gungor_winterton_1986_htc,
     shah_1987_chf,
+    shah_1987_Y,
 )
 
 #: Registry ids this module evaluates against.
@@ -236,12 +237,28 @@ def loop_state_from(state, *, enthalpy_J_kg: float) -> LoopState:
     )
 
 
-def assert_state_consistent(loop: LoopState, state) -> None:
-    """Raise unless ``state`` is the saturation state of ``loop`` (OTB-G001 F-05).
+def assert_state_consistent(loop: LoopState, state, *, fluid: str | None = None) -> None:
+    """Raise unless ``state`` is genuinely the saturation state of ``loop``.
 
-    Guards the seam the review found: the pressure was checked from the loop state
-    while every property came from an untagged mapping, so the guarded domain and the
-    evaluated domain could differ by 18 % with nothing to detect it.
+    OTB-G001-FIXES **F-03**: the previous guard called
+    ``state.matches(fluid=state.fluid, ...)`` -- it compared the state's fluid field to
+    *itself*, so it was true for every input and no relabelling could ever fail it. An
+    ammonia state relabelled ``"Water"``, every ammonia property intact, passed.
+
+    Three things are now checked, and the second is the one that cannot be faked:
+
+    1. the state's pressure is the loop's pressure;
+    2. the state's **properties really are** those of ``fluid`` -- re-derived from the
+       backend and compared across the full property set, plus the backend and its
+       version (:meth:`~orbital_thermal.fluids.SaturationState.verify_is`);
+    3. the loop's saturation enthalpies came from this state.
+
+    ``fluid`` is the **case's** declared fluid, giving a second, independent statement
+    of identity that the state must agree with. It defaults to the state's own label
+    and step 2 runs **either way** -- making it conditional would rebuild the hole,
+    because a caller that simply omitted the argument would be back to trusting the
+    label. Verification catches a relabelled state even against its own label, since
+    what it compares is the re-derived properties, not the string.
     """
     if not state.matches(fluid=state.fluid, pressure_Pa=loop.pressure_Pa):
         raise NotRankEligibleError(
@@ -250,11 +267,19 @@ def assert_state_consistent(loop: LoopState, state) -> None:
             f"{loop.pressure_Pa:.6g} Pa: the guarded domain would not be the evaluated "
             "domain"
         )
-    if abs(state.h_f_J_kg - loop.h_f_J_kg) > 1e-6 * max(abs(state.h_f_J_kg), 1.0):
-        raise NotRankEligibleError(
-            "the loop state's saturation enthalpies do not come from this saturation "
-            "state; build the loop state with loop_state_from(state, ...)"
-        )
+
+    try:
+        state.verify_is(state.fluid if fluid is None else fluid)
+    except ValueError as exc:
+        raise NotRankEligibleError(str(exc)) from exc
+
+    for name in ("h_f_J_kg", "h_g_J_kg"):
+        mine, theirs = getattr(state, name), getattr(loop, name)
+        if abs(mine - theirs) > 1e-6 * max(abs(mine), 1.0):
+            raise NotRankEligibleError(
+                f"the loop state's {name} does not come from this saturation state; "
+                "build the loop state with loop_state_from(state, ...)"
+            )
 
 
 # --- T6: local wall heat flux discipline ----------------------------------------
@@ -468,16 +493,76 @@ def classify_regime(
 
 
 @dataclass(frozen=True)
+class CaseBinding:
+    """The identity of the case a computed value was produced for.
+
+    OTB-G001-FIXES **F-02**: a result honestly produced for one state could otherwise
+    be replayed against another, because no consumer compared the result's labels to
+    the case in front of it. The binding is what makes that comparison possible.
+    """
+
+    fluid: str
+    pressure_Pa: float
+    geometry_shape: str
+    hydraulic_diameter_m: float
+    orientation: str
+    mass_flux_kg_m2s: float
+    gravity_m_s2: float
+
+    def agrees_with(self, other: CaseBinding, *, rel_tol: float = 1e-9) -> list[str]:
+        """Field-by-field differences against ``other`` (empty list == same case)."""
+        diffs: list[str] = []
+        for name in ("fluid", "geometry_shape", "orientation"):
+            a, b = getattr(self, name), getattr(other, name)
+            if a.strip().lower() != b.strip().lower():
+                diffs.append(f"{name}: {a!r} vs {b!r}")
+        for name in (
+            "pressure_Pa",
+            "hydraulic_diameter_m",
+            "mass_flux_kg_m2s",
+            "gravity_m_s2",
+        ):
+            a, b = getattr(self, name), getattr(other, name)
+            if abs(a - b) > rel_tol * max(abs(a), abs(b), 1.0):
+                diffs.append(f"{name}: {a!r} vs {b!r}")
+        return diffs
+
+
+def case_binding(
+    *, state, geometry: ChannelGeometry, mass_flux_kg_m2s: float, gravity_m_s2: float
+) -> CaseBinding:
+    """Build the :class:`CaseBinding` for an operating point."""
+    return CaseBinding(
+        fluid=state.fluid,
+        pressure_Pa=state.pressure_Pa,
+        geometry_shape=geometry.shape,
+        hydraulic_diameter_m=geometry.hydraulic_diameter_m,
+        orientation=geometry.orientation,
+        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        gravity_m_s2=gravity_m_s2,
+    )
+
+
+#: Module-private minting token. Only :func:`critical_heat_flux` holds it, which is
+#: what makes a :class:`ChfResult` unconstructible from outside the evaluator.
+_CHF_MINT = object()
+
+
+@dataclass(frozen=True)
 class ChfResult:
-    """A CHF value bound to the evidence that produced it (OTB-G001 F-02).
+    """A CHF value bound to the evidence AND the case that produced it.
 
-    A bare ``float`` is no longer accepted on the assessment path. Before this fix the
-    only blocked condition was ``chf_W_m2=None``: any positive number could carry a
-    case to ``RANK_ELIGIBLE`` while carrying no correlation id, source, domain, fluid,
-    geometry or provenance -- a direct bypass of the no-invention rule.
+    OTB-G001-FIXES **F-02**. Round 1 wrapped a bare float in labels; a label nothing
+    reads is not a fix. A hand-built result with ``correlation_id='not.a.real.id'``,
+    ``fluid='Unobtainium'`` and ``value_W_m2=9.9e9`` reported ``is_sourced=True`` and
+    banded ``RANK_ELIGIBLE``. Two things were needed and neither alone suffices:
 
-    Construct via :func:`critical_heat_flux`, which produces one only when every
-    applicability axis and the declared numeric domain are satisfied.
+    * **Unconstructible from outside the evaluator.** Direct construction raises --
+      only :func:`critical_heat_flux` holds the minting token. Fabricating one is not
+      merely detected, it is refused.
+    * **The consumer verifies.** :func:`classify_chf_band` requires the case's own
+      binding and compares it to :attr:`binding`, so a result produced honestly for
+      one state cannot be replayed against another.
     """
 
     value_W_m2: float
@@ -488,11 +573,29 @@ class ChfResult:
     geometry: str
     evaluated_domain: dict[str, float]
     gravity_m_s2: float
+    #: Defaulted only so that a direct construction attempt reaches ``__post_init__``
+    #: and gets the explanatory refusal, rather than an arity error that says nothing
+    #: about why hand-building one is not allowed. A minted result always has it.
+    binding: CaseBinding | None = None
     violations: tuple[Violation, ...] = ()
     #: Label-level caveats that must travel with the value (e.g. a conflicted numeric
     #: domain). Recorded, not status-altering -- Director ruling D1 relabels such a
     #: constraint rather than weaponising it.
     caveats: tuple[str, ...] = ()
+    _mint: InitVar[object] = None
+
+    def __post_init__(self, _mint: object) -> None:
+        if _mint is not _CHF_MINT:
+            raise TypeError(
+                "ChfResult cannot be constructed directly: it asserts that a CHF value "
+                "was produced by a sourced correlation for a specific case, and a "
+                "hand-built one asserts that falsely. Obtain one from "
+                "critical_heat_flux(), which mints it only after every applicability "
+                "axis and the declared numeric domain have been satisfied "
+                "(OTB-G001-FIXES F-02)."
+            )
+        if self.binding is None:
+            raise TypeError("a minted ChfResult must carry the case binding it was produced for")
 
     @property
     def is_sourced(self) -> bool:
@@ -507,6 +610,8 @@ def _check_applicability(
     geometry: ChannelGeometry | None,
     liquid_reynolds: float | None,
     gravity_m_s2: float | None,
+    branch_value: float | None = None,
+    branch_value_at_reference_gravity: float | None = None,
 ) -> tuple[Violation, ...]:
     """Run an entry's applicability spec, if it declares one."""
     spec = entry.applicability_spec
@@ -518,6 +623,8 @@ def _check_applicability(
         orientation=None if geometry is None else geometry.orientation,
         liquid_reynolds=liquid_reynolds,
         gravity_m_s2=gravity_m_s2,
+        branch_value=branch_value,
+        branch_value_at_reference_gravity=branch_value_at_reference_gravity,
         has_executable_form=entry.evaluate is not None,
     )
 
@@ -555,12 +662,30 @@ def critical_heat_flux(
             "so no CHF value is produced"
         )
 
+    # The correlating parameter at the stated gravity and at the gravity the database
+    # was taken at. Both are needed for the branch-straddle test: gravity moving a case
+    # across Shah's own Y >= 1e6 boundary changes the calculation procedure, whereas
+    # crossing it at 1 g under high mass flux is ordinary and must not be flagged.
+    y_kwargs = dict(
+        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        diameter_m=geometry.hydraulic_diameter_m,
+        cp_f=state.cp_f_J_kgK,
+        k_f=state.k_f_W_mK,
+        rho_f=state.rho_f_kg_m3,
+        mu_f=state.mu_f_Pa_s,
+        mu_g=state.mu_g_Pa_s,
+    )
+    y_here = shah_1987_Y(**y_kwargs, gravity_m_s2=gravity_m_s2) if gravity_m_s2 > 0 else None
+    y_ref = shah_1987_Y(**y_kwargs, gravity_m_s2=STANDARD_GRAVITY_M_S2)
+
     violations = _check_applicability(
         entry,
         fluid=state.fluid,
         geometry=geometry,
         liquid_reynolds=None,
         gravity_m_s2=gravity_m_s2,
+        branch_value=y_here,
+        branch_value_at_reference_gravity=y_ref,
     )
     blocking = [
         v for v in violations if v.consequence in (Consequence.BLOCK, Consequence.REJECT)
@@ -578,6 +703,7 @@ def critical_heat_flux(
         D_m=geometry.hydraulic_diameter_m,
         G_kg_m2s=mass_flux_kg_m2s,
         critical_quality=critical_quality,
+        inlet_quality=inlet_quality,
     )
 
     value = shah_1987_chf(
@@ -609,10 +735,17 @@ def critical_heat_flux(
             "critical_quality": critical_quality,
         },
         gravity_m_s2=gravity_m_s2,
+        binding=case_binding(
+            state=state,
+            geometry=geometry,
+            mass_flux_kg_m2s=mass_flux_kg_m2s,
+            gravity_m_s2=gravity_m_s2,
+        ),
         violations=violations,
         caveats=entry.applicability_spec.provenance_caveats()
         if entry.applicability_spec is not None
         else (),
+        _mint=_CHF_MINT,
     )
 
 
@@ -625,22 +758,33 @@ class ChfAssessment:
     reason: str
 
 
-def classify_chf_band(wall_flux: WallHeatFlux, chf: ChfResult) -> ChfAssessment:
+def classify_chf_band(
+    wall_flux: WallHeatFlux, chf: ChfResult, *, binding: CaseBinding
+) -> ChfAssessment:
     """Band a case by ``q'' / CHF`` per S0 Sec. 3 and Director ruling A5.
 
     ``q''/CHF <= 0.5`` rank-eligible; ``0.5 < q''/CHF < 1`` sensitivity-only, reported
     but not ranked; ``q''/CHF >= 1`` dryout, rejected. A **modelling margin, not
     flight certification.**
 
-    ``chf`` must be a :class:`ChfResult`; a bare number is rejected by type. A result
-    carrying applicability violations cannot produce a rank-eligible band however small
-    the ratio.
+    ``binding`` is the **case's own** identity, and the result's binding must match it.
+    That is the consumer half of OTB-G001-FIXES F-02: without it a CHF honestly
+    produced for one state could be handed to the band function alongside a different
+    state's wall flux, and nothing would notice. Being unforgeable is not enough if
+    nobody checks who it was made for.
     """
     if not isinstance(chf, ChfResult):
         raise TypeError(
             "classify_chf_band requires a ChfResult binding value, source, domain, "
             f"fluid, geometry and provenance -- got {type(chf).__name__}. A naked CHF "
             "number is not evidence that a sourced CHF exists (OTB-G001 F-02)."
+        )
+    diffs = chf.binding.agrees_with(binding)
+    if diffs:
+        raise NotRankEligibleError(
+            "the CHF value was produced for a different case than the one being "
+            f"banded: {'; '.join(diffs)}. A CHF is only evidence about the case it was "
+            "evaluated for."
         )
     _v.positive("chf.value_W_m2", chf.value_W_m2)
     ratio = wall_flux.value_W_m2 / chf.value_W_m2
@@ -696,6 +840,26 @@ def classify_chf_band(wall_flux: WallHeatFlux, chf: ChfResult) -> ChfAssessment:
 # --- T3: flow-boiling HTC through the registry ----------------------------------
 
 
+@dataclass(frozen=True)
+class HtcResult:
+    """A flow-boiling coefficient together with the applicability verdict on it.
+
+    OTB-G001-FIXES **F-04**: the wrapper used to return a bare ``float``, so there was
+    nowhere to put violations and the mechanism was simply never called -- applicability
+    was a caller convention that only :func:`assess_acquisition` happened to follow. A
+    ``float`` cannot carry a verdict, so the return type had to change with it.
+    """
+
+    value_W_m2: float
+    violations: tuple[Violation, ...] = ()
+    caveats: tuple[str, ...] = ()
+
+    @property
+    def is_applicable(self) -> bool:
+        """True only when no declared applicability axis was violated."""
+        return not self.violations
+
+
 def flow_boiling_htc(
     *,
     mass_flux_kg_m2s: float,
@@ -703,27 +867,48 @@ def flow_boiling_htc(
     wall_flux: WallHeatFlux,
     geometry: ChannelGeometry,
     state,
+    fluid: str | None = None,
     loop: LoopState | None = None,
-) -> float:
-    """Flow-boiling HTC from ``two_phase.htc.gungor_winterton``, W/m^2/K.
+    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+) -> HtcResult:
+    """Flow-boiling HTC from ``two_phase.htc.gungor_winterton``.
 
-    **Always range-checked.** OTB-G001 F-09 removed the ``check_domain=False`` bypass:
-    nothing in this API distinguished a sensitivity call from a ranking call, so a
-    caller could disable the only guard and get a plausible extrapolated value from the
-    same public function. Explicitly labelled non-ranking analysis calls
-    :func:`~orbital_thermal.registry.two_phase.gungor_winterton_1986_htc` directly,
-    which is an obviously unguarded seam.
+    **This is the enforcement boundary, not a call site.** Everything outside the
+    module reaches the correlation through here, so the applicability mechanism runs
+    here -- previously it ran only inside :func:`assess_acquisition`, which made
+    class-level enforcement a convention a caller could simply not follow. Measured
+    before the fix: this function returned 20,687.1 W/m^2/K for **ammonia**, which is
+    outside Gungor & Winterton's development database, with no violation raised or
+    reported.
 
-    Applicability is checked but **not** raised on here -- the caller receives the HTC
-    and :func:`assess_acquisition` folds the violations into the case status. Callers
-    wanting the enforced verdict should use :func:`assess_acquisition`.
+    Behaviour, and why it is split this way:
 
-    ``state`` is a bound :class:`~orbital_thermal.fluids.SaturationState`; when ``loop``
-    is given it is checked against it, so the guarded domain is the evaluated domain.
+    * ``BLOCK`` or ``REJECT`` on any axis -> **raises**. The value would be meaningless.
+    * ``DE_RANK`` -> **returns** an :class:`HtcResult` carrying the value *and* the
+      violations. It does not raise, because ammonia must remain evaluable as a
+      **sensitivity** (Director ruling D4 de-ranks it rather than blocking it); raising
+      would wrongly escalate every de-ranked coolant to rejected.
+
+    Checking applicability and discarding the answer is explicitly excluded, so the
+    violations are on the return value and every caller moves with them.
+
+    **Always range-checked**; there is no domain bypass. Explicitly labelled non-ranking
+    analysis calls :func:`~orbital_thermal.registry.two_phase.gungor_winterton_1986_htc`
+    directly, which is an obviously unguarded seam.
+
+    ``fluid`` is the case's declared fluid, used to verify the state really is that
+    fluid rather than merely labelled so (F-03).
     """
     entry = get(HTC_ID)
     if loop is not None:
-        assert_state_consistent(loop, state)
+        assert_state_consistent(loop, state, fluid=fluid)
+    else:
+        # No loop to cross-check against, but the state's identity is still verified --
+        # unconditionally, for the same reason as in assert_state_consistent.
+        try:
+            state.verify_is(state.fluid if fluid is None else fluid)
+        except ValueError as exc:
+            raise NotRankEligibleError(str(exc)) from exc
 
     assert_in_domain(
         entry,
@@ -734,7 +919,28 @@ def flow_boiling_htc(
         P_Pa=state.pressure_Pa,
         D_m=geometry.hydraulic_diameter_m,
     )
-    return gungor_winterton_1986_htc(
+
+    violations = _check_applicability(
+        entry,
+        fluid=state.fluid,
+        geometry=geometry,
+        liquid_reynolds=state.liquid_reynolds(
+            mass_flux_kg_m2s=mass_flux_kg_m2s,
+            quality=quality,
+            diameter_m=geometry.hydraulic_diameter_m,
+        ),
+        gravity_m_s2=gravity_m_s2,
+    )
+    blocking = [
+        v for v in violations if v.consequence in (Consequence.BLOCK, Consequence.REJECT)
+    ]
+    if blocking:
+        raise NotRankEligibleError(
+            f"'{entry.id}' is not applicable to this case: "
+            + "; ".join(str(v) for v in blocking)
+        )
+
+    value = gungor_winterton_1986_htc(
         mass_flux_kg_m2s=mass_flux_kg_m2s,
         quality=quality,
         q_flux_W_m2=wall_flux.value_W_m2,
@@ -748,6 +954,12 @@ def flow_boiling_htc(
         h_fg_J_kg=state.h_fg_J_kg,
         p_reduced=state.p_reduced,
         molar_mass_g_mol=state.molar_mass_g_mol,
+    )
+    spec = entry.applicability_spec
+    return HtcResult(
+        value_W_m2=value,
+        violations=violations,
+        caveats=spec.provenance_caveats() if spec is not None else (),
     )
 
 
@@ -783,6 +995,7 @@ def assess_acquisition(
     chf: ChfResult | None = None,
     onb_criterion: OnbCriterion | None = None,
     gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+    fluid: str | None = None,
 ) -> AcquisitionAssessment:
     """Run every S2 gate over one operating point and combine them.
 
@@ -794,8 +1007,14 @@ def assess_acquisition(
     coolant could rank on a correlation outside its documented fluid basis. Recording
     an applicability failure is not enforcing it.
     """
-    assert_state_consistent(loop, state)
+    assert_state_consistent(loop, state, fluid=fluid or state.fluid)
     reasons: list[str] = []
+    binding = case_binding(
+        state=state,
+        geometry=geometry,
+        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        gravity_m_s2=gravity_m_s2,
+    )
 
     regime = classify_regime(
         loop,
@@ -826,7 +1045,7 @@ def assess_acquisition(
         caveats.extend(htc_entry.applicability_spec.provenance_caveats())
     if chf is not None:
         caveats.extend(f"CHF: {c}" for c in chf.caveats)
-    for v in violations:
+    for v in violations:  # noqa: B007 - loop body below folds each into the status
         reasons.append(str(v))
         status = _worst(status, _CONSEQUENCE_TO_STATUS[v.consequence])
 
@@ -846,7 +1065,7 @@ def assess_acquisition(
         )
         status = _worst(status, RankStatus.BLOCKED)
     else:
-        chf_assessment = classify_chf_band(wall_flux, chf)
+        chf_assessment = classify_chf_band(wall_flux, chf, binding=binding)
         reasons.append(chf_assessment.reason)
         status = _worst(status, chf_assessment.status)
         for v in chf.violations:
@@ -856,14 +1075,17 @@ def assess_acquisition(
     htc: float | None = None
     if loop.is_two_phase and loop.quality is not None:
         try:
-            htc = flow_boiling_htc(
+            htc_result = flow_boiling_htc(
                 mass_flux_kg_m2s=mass_flux_kg_m2s,
                 quality=loop.quality,
                 wall_flux=wall_flux,
                 geometry=geometry,
                 state=state,
+                fluid=fluid or state.fluid,
                 loop=loop,
+                gravity_m_s2=gravity_m_s2,
             )
+            htc = htc_result.value_W_m2
         except NotRankEligibleError as exc:
             reasons.append(f"HTC not evaluated: {exc}")
             status = _worst(status, RankStatus.REJECTED)
@@ -890,11 +1112,14 @@ __all__ = [
     "STANDARD_GRAVITY_M_S2",
     "AcquisitionAssessment",
     "Axis",
+    "CaseBinding",
     "ChannelGeometry",
     "ChfAssessment",
     "ChfResult",
     "Consequence",
     "FluxBasis",
+    "HtcResult",
+    "case_binding",
     "LoopState",
     "OnbCriterion",
     "OnbResult",

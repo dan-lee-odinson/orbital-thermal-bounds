@@ -124,6 +124,22 @@ class Applicability:
     orientations_basis: str = ""
     gravity_explicit: bool = False
     gravity_basis: str = ""
+    #: The gravity the correlation's database was taken at. For every 1g-derived
+    #: correlation this is standard gravity, and it is a SOURCED boundary: the database
+    #: exists at that gravity and nowhere else (Director ruling D6 -- "the default is
+    #: standard gravity because the database is terrestrial").
+    reference_gravity_m_s2: float | None = None
+    #: Fractional tolerance on ``reference_gravity_m_s2``. A CONVENTION, not a sourced
+    #: bound: it admits the ordinary variation of Earth surface gravity (~0.3 % between
+    #: equator and pole) with margin, so that terrestrial laboratories anywhere pass.
+    #: The *boundary* is sourced; only this tolerance is chosen.
+    gravity_rel_tol: float = 0.01
+    #: A branch threshold in the correlation's own correlating parameter. Crossing it
+    #: changes the calculation procedure, so if gravity moves a case across it the
+    #: correlation is no longer being evaluated the way the same hardware would be
+    #: evaluated on the ground. Sourced: for Shah (1987) this is ``Y >= 1e6``.
+    branch_threshold: float | None = None
+    branch_threshold_basis: str = ""
 
     # --- flow-regime axis ---
     min_liquid_reynolds: float | None = None
@@ -165,6 +181,8 @@ class Applicability:
         orientation: str | None = None,
         liquid_reynolds: float | None = None,
         gravity_m_s2: float | None = None,
+        branch_value: float | None = None,
+        branch_value_at_reference_gravity: float | None = None,
         has_executable_form: bool = True,
     ) -> tuple[Violation, ...]:
         """Every applicability violation for the stated case.
@@ -283,6 +301,54 @@ class Applicability:
                         f"for this case. {self.gravity_basis}",
                     )
                 )
+            elif self.reference_gravity_m_s2 is not None:
+                ref = self.reference_gravity_m_s2
+                if abs(gravity_m_s2 - ref) > self.gravity_rel_tol * ref:
+                    v.append(
+                        Violation(
+                            Axis.ORIENTATION,
+                            Consequence.DE_RANK,
+                            f"gravitational acceleration {gravity_m_s2:.4g} m/s^2 is "
+                            f"{gravity_m_s2 / ref:.3g} times the gravity the "
+                            f"correlation's database was taken at ({ref:.5g} m/s^2). "
+                            "The database exists at that gravity and nowhere else, so "
+                            "any other value is an extrapolation across the axis the "
+                            "correlating parameter is most sensitive to -- an "
+                            "applicability violation, not a parameter change "
+                            f"(Director ruling D6). {self.gravity_basis}",
+                        )
+                    )
+
+            # Branch-threshold straddle. Not an absolute test on the parameter: the
+            # threshold is crossed legitimately at 1 g by high mass flux (for Shah
+            # (1987), measured at G ~ 1400 kg/m2s with the rest of the reference case,
+            # well inside its declared 4-2905 domain). What is NOT legitimate is
+            # gravity moving a case across it, because then the correlation picks a
+            # different calculation procedure than the same hardware would use on the
+            # ground -- which is what makes the reduced-gravity value untrustworthy
+            # rather than merely unranked.
+            if (
+                self.branch_threshold is not None
+                and branch_value is not None
+                and branch_value_at_reference_gravity is not None
+            ):
+                here = branch_value >= self.branch_threshold
+                there = branch_value_at_reference_gravity >= self.branch_threshold
+                if here != there:
+                    v.append(
+                        Violation(
+                            Axis.ORIENTATION,
+                            Consequence.REJECT,
+                            f"gravity moves this case across the correlation's own "
+                            f"branch threshold: the correlating parameter is "
+                            f"{branch_value:.4g} at the stated gravity against "
+                            f"{branch_value_at_reference_gravity:.4g} at the database's "
+                            f"gravity, and the threshold is "
+                            f"{self.branch_threshold:.4g}. The calculation procedure "
+                            "itself changes, so this is not the same correlation the "
+                            f"ground data validated. {self.branch_threshold_basis}",
+                        )
+                    )
 
         # --- flow regime ---
         if self.min_liquid_reynolds is not None:

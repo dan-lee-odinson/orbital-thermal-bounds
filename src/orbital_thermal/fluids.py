@@ -35,7 +35,9 @@ except ImportError as exc:  # pragma: no cover
         "or: pip install CoolProp"
     ) from exc
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from . import _validate as _v
 from .registry.two_phase import COOLPROP_PIN as _COOLPROP_PIN
@@ -172,12 +174,48 @@ class BackendPinMismatchError(RuntimeError):
 _BACKEND_PIN_OVERRIDE: tuple[str, str] | None = None
 
 
+#: Where a review record cited by :func:`override_backend_pin` must live, and the
+#: naming already in use there (``YYYY-MM-DD-<slug>.md``).
+REVIEW_RECORDS_DIR = "verification/review-records"
+_REVIEW_RECORD_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}-[A-Za-z0-9._-]+\.md$")
+
+
+def _resolve_review_record(review_record: str) -> Path:
+    """Resolve ``review_record`` to a real file, or raise saying why it did not.
+
+    OTB-G001-FIXES F-05: requiring only a non-blank string accepted ``'x'``, ``'...'``,
+    ``'TODO'`` and ``'no such record exists'``. An override whose justification cannot
+    be located is the silent version shift the pin guard exists to stop, so the
+    reference must resolve to a file that is actually present.
+    """
+    name = Path(review_record.strip()).name
+    if not _REVIEW_RECORD_PATTERN.match(name):
+        raise ValueError(
+            f"review_record {review_record!r} does not name a review record: expected "
+            f"a file under {REVIEW_RECORDS_DIR}/ following the naming already in use "
+            "there, YYYY-MM-DD-<slug>.md"
+        )
+
+    root = Path(__file__).resolve().parents[2]
+    candidate = root / REVIEW_RECORDS_DIR / name
+    if not candidate.is_file():
+        available = sorted(p.name for p in (root / REVIEW_RECORDS_DIR).glob("*.md"))
+        raise ValueError(
+            f"review_record {review_record!r} does not resolve: no file "
+            f"{REVIEW_RECORDS_DIR}/{name}. Advancing the backend pin needs a real "
+            f"record of the property-drift re-verification "
+            f"({_COOLPROP_PIN.migration_requires}). Records present: "
+            f"{', '.join(available) if available else '(none)'}"
+        )
+    return candidate
+
+
 def override_backend_pin(version: str, *, review_record: str) -> None:
     """Accept ``version`` instead of the pinned one, citing the review that allows it.
 
-    ``review_record`` must be a non-empty reference to the record carrying the
-    property-drift re-verification. Passing a blank one raises: an override with no
-    stated review is exactly the silent version shift this guard exists to stop.
+    ``review_record`` must **resolve to a real file** under
+    ``verification/review-records/`` -- not merely be a non-empty string. See
+    :func:`_resolve_review_record`.
     """
     global _BACKEND_PIN_OVERRIDE
     if not version.strip():
@@ -188,7 +226,8 @@ def override_backend_pin(version: str, *, review_record: str) -> None:
             "needs the property-drift re-verification recorded in "
             f"COOLPROP_PIN.migration_requires ({_COOLPROP_PIN.migration_requires})"
         )
-    _BACKEND_PIN_OVERRIDE = (version.strip(), review_record.strip())
+    resolved = _resolve_review_record(review_record)
+    _BACKEND_PIN_OVERRIDE = (version.strip(), str(resolved))
 
 
 def clear_backend_pin_override() -> None:
@@ -378,12 +417,80 @@ class SaturationState:
         return mass_flux_kg_m2s * (1.0 - quality) * diameter_m / self.mu_f_Pa_s
 
     def matches(self, *, fluid: str, pressure_Pa: float, rel_tol: float = 1e-9) -> bool:
-        """Whether this state is the one for ``fluid`` at ``pressure_Pa``."""
+        """Whether this state is labelled for ``fluid`` at ``pressure_Pa``.
+
+        A **label** check only. It cannot detect a state whose properties belong to a
+        different fluid, because it never looks at the properties -- use
+        :meth:`verify_is` for that. Callers on the ranking path must not rely on this
+        alone: OTB-G001-FIXES F-03 was exactly a guard that called
+        ``matches(fluid=state.fluid, ...)``, comparing the field to itself.
+        """
         if fluid.strip().lower() != self.fluid.strip().lower():
             return False
         return abs(self.pressure_Pa - pressure_Pa) <= rel_tol * max(
             abs(self.pressure_Pa), abs(pressure_Pa), 1.0
         )
+
+    #: Every physical property carried on the state, compared by :meth:`verify_is`.
+    #: Listed explicitly so a field added later is a visible decision rather than a
+    #: silent gap in the check.
+    _VERIFIED_PROPERTIES = (
+        "T_sat_K",
+        "h_f_J_kg",
+        "h_g_J_kg",
+        "h_fg_J_kg",
+        "rho_f_kg_m3",
+        "rho_g_kg_m3",
+        "mu_f_Pa_s",
+        "mu_g_Pa_s",
+        "k_f_W_mK",
+        "cp_f_J_kgK",
+        "sigma_N_m",
+        "p_reduced",
+        "molar_mass_kg_mol",
+    )
+
+    def verify_is(self, declared_fluid: str, *, rel_tol: float = 1e-9) -> None:
+        """Raise unless this state really is ``declared_fluid`` at its own pressure.
+
+        **Re-derives the state from the backend and compares every property.** A label
+        comparison cannot be trusted here: a state carrying ammonia properties and the
+        string ``"Water"`` is indistinguishable from a real water state by any check
+        that only reads the label. Recomputing is the only test that a relabelling
+        cannot pass, which is what OTB-G001-FIXES F-03 requires.
+
+        The backend and its version are compared too, so a state produced under a
+        different pinned backend cannot be replayed against this one.
+        """
+        label = declared_fluid.strip().lower()
+        if label != self.fluid.strip().lower():
+            raise ValueError(
+                f"saturation state is labelled '{self.fluid}' but the case declares "
+                f"'{declared_fluid}'; the state and the case must agree on the fluid"
+            )
+
+        truth = saturation_state(self.pressure_Pa, declared_fluid)
+
+        if (self.backend, self.backend_version) != (truth.backend, truth.backend_version):
+            raise ValueError(
+                f"saturation state was produced by {self.backend} "
+                f"{self.backend_version}, but the current backend is {truth.backend} "
+                f"{truth.backend_version}; pinned values are not comparable across "
+                "backend versions"
+            )
+
+        mismatched = []
+        for name in self._VERIFIED_PROPERTIES:
+            mine, theirs = getattr(self, name), getattr(truth, name)
+            if abs(mine - theirs) > rel_tol * max(abs(mine), abs(theirs), 1.0):
+                mismatched.append(f"{name}: state {mine!r} vs {declared_fluid} {theirs!r}")
+        if mismatched:
+            raise ValueError(
+                f"saturation state is labelled '{declared_fluid}' but its properties "
+                f"are not {declared_fluid}'s at {self.pressure_Pa:.6g} Pa -- "
+                f"{len(mismatched)} of {len(self._VERIFIED_PROPERTIES)} properties "
+                f"differ: {'; '.join(mismatched[:4])}"
+            )
 
 
 def saturation_state(P: float, fluid: str = DEFAULT_FLUID) -> SaturationState:

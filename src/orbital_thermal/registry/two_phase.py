@@ -144,8 +144,9 @@ PROVISIONAL_DOMAINS: dict[str, str] = {
         "kg/m2s, Shah's own Fluids 2023 Appendix prints '4 to 2905' -- a factor of "
         "ten; the latter is adopted. Critical quality: '-2.6 to 1' vs '-0.26 to 0.96'; "
         "the latter is adopted. Reduced pressure 0.0014-0.96 and diameter 0.315-37.5 "
-        "mm are AGREED by both printings and carry no conflict. Inlet quality is "
-        "single-source and deliberately NOT enforced."
+        "mm are AGREED by both printings and carry no conflict. INLET QUALITY is "
+        "single-source, not conflicted, and is now ENFORCED at the tighter [-2.6, "
+        "0.85] per Director ruling -- see SHAH_1987_INLET_QUALITY_NOTE."
     ),
     "two_phase.chf.shah_2015": (
         "DOMAIN DETACHED, not merely provisional. The pr_reduced 0.0014-0.96 band was "
@@ -648,7 +649,18 @@ SHAH_1987_APPLICABILITY = Applicability(
         "(mu_f/mu_g)^0.6 ([A] Eq. A2). As g -> 0 the Froude group diverges, taking Y "
         "and the branch selection with it. This correlation has NO microgravity limit "
         "-- a stronger statement than the standing 1g-basis caveat, and the reason the "
-        "gravity axis exists."
+        "gravity axis exists. The database is 16 terrestrial studies, so standard "
+        "gravity is where it exists and nowhere else (Director ruling D6)."
+    ),
+    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,
+    branch_threshold=1.0e6,
+    branch_threshold_basis=(
+        "Shah's own transitional criterion: the calculation procedure switches at "
+        "Y >= 10^6 ([S] Eqs. 6.55/6.57/6.58, [A] after Eq. A17). Used as a STRADDLE "
+        "test against the value at standard gravity, not as an absolute bound -- Y "
+        "exceeds 10^6 legitimately at 1 g under high mass flux (measured at G ~ 1400 "
+        "kg/m2s for the reference case, inside the declared 4-2905 range), so an "
+        "absolute test would reject ordinary terrestrial cases."
     ),
     numeric_domain_provenance=DomainProvenance.CONFLICTED,
     numeric_domain_note=(
@@ -656,15 +668,45 @@ SHAH_1987_APPLICABILITY = Applicability(
         "of Shah describing Shah: mass velocity, [S] '3.9 to 29.051' vs [A] '4 to 2905' "
         "kg/m2s (adopted); critical quality, [S] '-2.6 to 1' vs [A] '-0.26 to 0.96' "
         "(adopted). Reduced pressure 0.0014-0.96 and diameter 0.315-37.5 mm are AGREED "
-        "by both. Inlet quality -4.00 to 0.85 appears only in [S], which has three "
-        "demonstrated transcription errors, so that axis is recorded and NOT enforced."
+        "by both. INLET QUALITY is now ENFORCED at [-2.6, 0.85]; see "
+        "SHAH_1987_INLET_QUALITY_NOTE, whose provenance is not what the round-2 "
+        "handoff described."
     ),
     requires_executable_form=True,
-    unenforced_axes=(
-        "inlet quality: the only printing that gives a range is the one with three "
-        "demonstrated transcription errors, so the axis is recorded rather than "
-        "enforced on a single unreliable source (C1).",
-    ),
+)
+
+#: Why the enforced inlet-quality bound is -2.6 and not -4.00 (OTB-G001-FIXES F-06).
+#:
+#: The round-2 handoff stated that the two printings conflict on the inlet-quality lower
+#: bound -- "the Springer microscale text gives -2.6, Shah's own 2023 paper gives -4.00".
+#: **Both attributions are reversed and the two quality axes are conflated.** What the
+#: sources actually print:
+#:
+#:   [S] Springer microscale text: inlet vapour quality  -4.00 to 0.85
+#:                                 critical vapour quality -2.6 to 1
+#:   [A] Shah (2023) Fluids 8, 90 Sec. 3.1: critical quality -0.26 to 0.96;
+#:                                 inlet quality NOT STATED
+#:
+#: So inlet quality is not source-conflicted at all -- it is single-source ([S] only,
+#: the printing carrying three demonstrated transcription errors). The -2.6 figure is
+#: [S]'s CRITICAL-quality bound, a different axis, already enforced separately at [A]'s
+#: tighter -0.26.
+#:
+#: The Director's ruling is applied exactly as given regardless, because it is
+#: implementable and conservative: -2.6 is TIGHTER than the only sourced inlet bound
+#: (-4.00), and CHF is the DENOMINATOR of q''/CHF, so an inflated CHF makes a case look
+#: safer. A tighter bound can only exclude cases, never admit one that -4.00 would have
+#: excluded. The discrepancy is recorded rather than quietly reconciled (C8:
+#: transcription fidelity), because a registry asserting "-2.6 is [S]'s inlet bound"
+#: would state something [S] does not say.
+SHAH_1987_INLET_QUALITY_NOTE = (
+    "ENFORCED at [-2.6, 0.85] per the Director ruling 'Enforce the tighter one, keep "
+    "the correlation usable'. PROVENANCE, which differs from the round-2 handoff's "
+    "description: the only sourced inlet-quality range is [S]'s -4.00 to 0.85 "
+    "(single-source; [A] states none), so the axis is single-source rather than "
+    "conflicted, and -2.6 is [S]'s CRITICAL-quality lower bound. The enforced -2.6 is "
+    "tighter than the sourced -4.00 and is therefore conservative for q''/CHF: it can "
+    "only exclude cases, never admit one."
 )
 
 
@@ -1002,6 +1044,10 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
                 "D_m": (0.315e-3, 37.5e-3),
                 "G_kg_m2s": (4.0, 2905.0),
                 "critical_quality": (-0.26, 0.96),
+                # F-06: unbounded inlet quality let x_in = -1000 inflate CHF ~1000x
+                # and still report sourced. Enforced at the tighter bound; see
+                # SHAH_1987_INLET_QUALITY_NOTE for the true provenance.
+                "inlet_quality": (-2.6, 0.85),
             }
         ),
         source=_SHAH_1987,

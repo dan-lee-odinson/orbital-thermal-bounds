@@ -102,6 +102,17 @@ def _chf(state, geometry=None, **kw) -> tp.ChfResult:
     )
 
 
+def _binding(state, geometry=None, mass_flux_kg_m2s: float = G_REF,
+             gravity_m_s2: float = tp.STANDARD_GRAVITY_M_S2) -> tp.CaseBinding:
+    """The case identity a ChfResult must agree with (OTB-G001-FIXES F-02)."""
+    return tp.case_binding(
+        state=state,
+        geometry=geometry or _geometry(),
+        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        gravity_m_s2=gravity_m_s2,
+    )
+
+
 def _db_base(state, *, mass_flux_kg_m2s: float, quality: float) -> float:
     return dittus_boelter_liquid_htc(
         mass_flux_kg_m2s=mass_flux_kg_m2s,
@@ -181,7 +192,7 @@ def test_gate1c_saturated_flow_boiling_is_evaluated_and_rank_eligible():
         geometry=_geometry(),
         state=state,
         loop=loop,
-    )
+    ).value_W_m2
     assert math.isfinite(htc) and htc > 0.0
 
     single_phase = _db_base(state, mass_flux_kg_m2s=G_REF, quality=loop.quality)
@@ -222,7 +233,7 @@ def test_gate1d_x_to_zero_on_a_domain_valid_path_does_not_reach_the_base():
         geometry=geometry,
         state=state,
         loop=corner_loop,
-    )
+    ).value_W_m2
     base = _db_base(state, mass_flux_kg_m2s=600.0, quality=X_MIN)
     ratio = htc / base
 
@@ -254,7 +265,7 @@ def test_gate1d_the_excess_over_the_base_falls_monotonically_toward_the_corner()
             geometry=geometry,
             state=state,
             loop=_loop(quality, state),
-        )
+        ).value_W_m2
         ratios.append(htc / _db_base(state, mass_flux_kg_m2s=600.0, quality=quality))
 
     assert all(b < a for a, b in pairwise(ratios)), (
@@ -387,9 +398,10 @@ def test_f01_the_base_criterion_refuses_to_pretend_it_evaluates():
 @requires_coolprop
 def test_f02_a_naked_float_is_rejected_by_type():
     """OTB-G001 F-02: any positive number used to carry a case to RANK_ELIGIBLE."""
+    state = _state()
     for naked in (1.0e5, 1.0e9, 1):
         with pytest.raises(TypeError, match=r"requires a ChfResult"):
-            tp.classify_chf_band(_flux(), naked)
+            tp.classify_chf_band(_flux(), naked, binding=_binding(state))
 
 
 @requires_coolprop
@@ -430,7 +442,9 @@ def test_f02_a_chf_result_with_violations_cannot_rank():
     chf = _chf(state)
     assert chf.is_sourced is False
     assert any(v.axis is Axis.FLUID for v in chf.violations)
-    verdict = tp.classify_chf_band(_flux(1.0e3), chf)  # ratio far inside the rank band
+    verdict = tp.classify_chf_band(
+        _flux(1.0e3), chf, binding=_binding(state)
+    )  # ratio far inside the rank band
     assert verdict.ratio < tp.CHF_RANK_MAX
     assert verdict.status is tp.RankStatus.SENSITIVITY_ONLY
 
@@ -565,10 +579,24 @@ def test_f10_the_migration_path_is_explicit_and_requires_a_review_record(monkeyp
 
     monkeypatch.setattr(CoolProp, "__version__", "8.0.0", raising=False)
     try:
-        with pytest.raises(ValueError, match=r"review_record"):
+        # A blank record has its own message, naming the property-drift re-verification
+        # the pin actually requires. Asserted specifically, because otherwise this
+        # branch is indistinguishable from the resolver's generic refusal below and
+        # could be deleted without any test noticing.
+        with pytest.raises(ValueError, match=r"property-drift"):
             _fluids.override_backend_pin("8.0.0", review_record="  ")
 
-        _fluids.override_backend_pin("8.0.0", review_record="verification/…/S9-drift")
+        # OTB-G001-FIXES F-05: a non-blank string is no longer enough. Anything that
+        # does not resolve to a real record is refused.
+        for bogus in ("x", "...", "TODO", "no such record exists",
+                      "2099-01-01-does-not-exist.md"):
+            with pytest.raises(ValueError, match=r"does not (name|resolve)"):
+                _fluids.override_backend_pin("8.0.0", review_record=bogus)
+
+        # A record that actually exists is accepted.
+        _fluids.override_backend_pin(
+            "8.0.0", review_record="2026-07-25-s2-two-phase-evaporator.md"
+        )
         _fluids.assert_backend_pin()  # now accepted
     finally:
         _fluids.clear_backend_pin_override()
@@ -702,7 +730,7 @@ def test_gate4_in_domain_calls_are_accepted():
             geometry=_geometry(),
             state=state,
             loop=_loop(0.3, state),
-        )
+        ).value_W_m2
         > 0.0
     )
     assert _chf(state).value_W_m2 > 0.0
@@ -717,7 +745,7 @@ def test_gate4_in_domain_calls_are_accepted():
 def test_gate5_chf_band_at_or_above_one_is_rejected():
     state = _state()
     chf = _chf(state)
-    verdict = tp.classify_chf_band(_flux(chf.value_W_m2), chf)
+    verdict = tp.classify_chf_band(_flux(chf.value_W_m2), chf, binding=_binding(state))
     assert verdict.ratio == pytest.approx(1.0)
     assert verdict.status is tp.RankStatus.REJECTED
     assert "dryout" in verdict.reason
@@ -727,7 +755,7 @@ def test_gate5_chf_band_at_or_above_one_is_rejected():
 def test_gate5_chf_band_between_half_and_one_is_sensitivity_not_ranked():
     state = _state()
     chf = _chf(state)
-    verdict = tp.classify_chf_band(_flux(0.75 * chf.value_W_m2), chf)
+    verdict = tp.classify_chf_band(_flux(0.75 * chf.value_W_m2), chf, binding=_binding(state))
     assert verdict.ratio == pytest.approx(0.75)
     assert verdict.status is tp.RankStatus.SENSITIVITY_ONLY
 
@@ -736,7 +764,7 @@ def test_gate5_chf_band_between_half_and_one_is_sensitivity_not_ranked():
 def test_gate5_chf_band_at_or_below_half_is_rank_eligible():
     state = _state()
     chf = _chf(state)
-    verdict = tp.classify_chf_band(_flux(0.5 * chf.value_W_m2), chf)
+    verdict = tp.classify_chf_band(_flux(0.5 * chf.value_W_m2), chf, binding=_binding(state))
     assert verdict.ratio == pytest.approx(0.5)
     assert verdict.status is tp.RankStatus.RANK_ELIGIBLE
 
@@ -746,12 +774,13 @@ def test_gate5_band_boundaries_are_closed_on_the_conservative_side():
     state = _state()
     chf = _chf(state)
     v = chf.value_W_m2
-    assert tp.classify_chf_band(_flux(0.5 * v), chf).status is tp.RankStatus.RANK_ELIGIBLE
+    b = _binding(state)
+    assert tp.classify_chf_band(_flux(0.5 * v), chf, binding=b).status is tp.RankStatus.RANK_ELIGIBLE
     assert (
-        tp.classify_chf_band(_flux(0.5001 * v), chf).status
+        tp.classify_chf_band(_flux(0.5001 * v), chf, binding=b).status
         is tp.RankStatus.SENSITIVITY_ONLY
     )
-    assert tp.classify_chf_band(_flux(v), chf).status is tp.RankStatus.REJECTED
+    assert tp.classify_chf_band(_flux(v), chf, binding=b).status is tp.RankStatus.REJECTED
 
 
 @requires_coolprop
@@ -762,7 +791,7 @@ def test_gate5_underivable_local_flux_is_never_silently_averaged():
         power_W=1.0, area_m2=1.0e-3, basis=tp.FluxBasis.CHIP_AVERAGE
     )
     assert averaged.is_rankable_basis is False
-    verdict = tp.classify_chf_band(averaged, chf)
+    verdict = tp.classify_chf_band(averaged, chf, binding=_binding(state))
     assert verdict.ratio < tp.CHF_RANK_MAX
     assert verdict.status is tp.RankStatus.SENSITIVITY_ONLY
     assert "local modeled wall flux" in verdict.reason
@@ -776,7 +805,10 @@ def test_gate5_unsourced_geometry_de_ranks_a_local_flux():
         power_W=1.0, wetted_area_m2=1.0e-3, geometry_sourced=False
     )
     assert unsourced.is_rankable_basis is False
-    assert tp.classify_chf_band(unsourced, chf).status is tp.RankStatus.SENSITIVITY_ONLY
+    assert (
+        tp.classify_chf_band(unsourced, chf, binding=_binding(state)).status
+        is tp.RankStatus.SENSITIVITY_ONLY
+    )
 
 
 def test_gate5_averaged_flux_helper_refuses_to_masquerade_as_local():
@@ -881,7 +913,9 @@ def test_gate5_laminar_liquid_reynolds_rejects_the_case():
         geometry=geometry,
         wall_flux=_flux(Q_MIN),
         mass_flux_kg_m2s=10.0,
-        chf=_chf(state),
+        # The CHF must be evaluated for THIS case: a value produced at a different mass
+        # flux is evidence about a different case and is now refused (F-02).
+        chf=_chf(state, mass_flux_kg_m2s=10.0),
     )
     assert any(
         v.axis is Axis.REGIME and v.consequence is Consequence.REJECT
