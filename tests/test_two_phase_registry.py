@@ -56,10 +56,124 @@ def test_every_correlation_has_a_nonempty_citation():
         assert c.source.citation.strip(), f"{c.id} has an empty citation"
 
 
-def test_no_evaluate_callable_in_s1():
-    # S1 is registry-only: no correlation may carry an executable form yet.
+#: The two-phase ids S2 implemented an executable form for. This is the successor to
+#: the S1 ``test_no_evaluate_callable_in_s1`` guard, which asserted that NO entry
+#: carried an ``evaluate``. S2 exists to add executable forms, so that test had to
+#: fail the moment S2 succeeded -- that was the S1 gate working, not a defect. The
+#: successor below is strictly stronger: it pins the EXACT set, so it still catches
+#: an accidental early implementation of an S3 correlation (e.g. the pressure-drop
+#: entries) and any un-scoped promotion, in both directions.
+#:
+#: ``two_phase.chf.shah_2015`` and ``two_phase.onb.bergles_rohsenow`` are absent on
+#: purpose: S2 was scoped to implement the CHF entry and to attempt the ONB one, and
+#: both were left unimplemented because their sources could not be established. See
+#: their registry source notes.
+S2_IMPLEMENTED_IDS = frozenset({"two_phase.htc.gungor_winterton"})
+
+
+def test_exactly_the_s2_implemented_ids_carry_an_evaluate_callable():
+    """Exactly the S2-implemented ids have an executable form; all others are None."""
+    with_evaluate = {c.id for c in TWO_PHASE_CORRELATIONS if c.evaluate is not None}
+    assert with_evaluate == set(S2_IMPLEMENTED_IDS), (
+        "the set of two-phase correlations carrying an evaluate callable must be "
+        f"exactly {sorted(S2_IMPLEMENTED_IDS)}; found {sorted(with_evaluate)}. "
+        "Adding one means an out-of-scope correlation was implemented; removing one "
+        "means an S2 deliverable regressed."
+    )
+
+
+def test_s2_unimplemented_entries_are_still_none():
+    """The two entries S2 deliberately did not implement carry no executable form."""
+    for cid in ("two_phase.chf.shah_2015", "two_phase.onb.bergles_rohsenow"):
+        entry = get(cid)
+        assert entry.evaluate is None, (
+            f"{cid} must not carry an evaluate callable: its source could not be "
+            "established, and the blocker is the deliverable (no-invention policy)"
+        )
+        assert entry.source is not None and entry.source.note.strip(), (
+            f"{cid} must record WHY it was not implemented in its source note"
+        )
+
+
+def test_s3_pressure_drop_entries_are_not_implemented_early():
+    """The S3 / OTB-G002 pressure-drop work must not leak into this build."""
     for c in TWO_PHASE_CORRELATIONS:
-        assert c.evaluate is None, f"{c.id} must not have an evaluate callable in S1"
+        if c.kind == "dp":
+            assert c.evaluate is None, (
+                f"{c.id} is pressure drop, which belongs to S3 / OTB-G002; "
+                "it must not carry an executable form in S2"
+            )
+
+
+def test_implemented_correlations_have_a_nonempty_locator():
+    """Binding invariant: an executable form requires a read source (Sec. 3.2b).
+
+    Implemented without a locator recording what was actually consulted -> the suite
+    fails. This is what turns the sourcing rule into a mechanism instead of a promise.
+
+    Scope note: this invariant is deliberately applied to the **two-phase** registry
+    only. Stage-1's B1 correlations carry seven ``evaluate`` callables with blank
+    locators; retro-fitting locators onto them is Stage-1 work and out of scope for
+    OTB-G001, so widening this test is a deliberate future decision, not an oversight.
+    """
+    for c in TWO_PHASE_CORRELATIONS:
+        if c.evaluate is not None:
+            assert c.source is not None, f"{c.id} has an evaluate but no source"
+            assert c.source.locator.strip(), (
+                f"{c.id} carries an executable form but its source.locator is blank: "
+                "a correlation may only be implemented from a source that was "
+                "actually consulted, and the locator must record which one"
+            )
+
+
+def test_unimplemented_correlations_keep_a_blank_locator():
+    """The converse: nothing unconsulted acquires a locator (T8 is bounded)."""
+    for c in TWO_PHASE_CORRELATIONS:
+        if c.evaluate is None:
+            assert not c.source.locator.strip(), (
+                f"{c.id} has no executable form, so no paper was consulted for a "
+                "formula from it; its locator must stay blank rather than be filled "
+                "in speculatively"
+            )
+
+
+def test_provisional_domains_are_declared_not_promoted():
+    """A domain that could not be confirmed is declared provisional, not promoted."""
+    from orbital_thermal.registry.two_phase import PROVISIONAL_DOMAINS
+
+    # The CHF entry's domain was checked against the source and found to belong to a
+    # different paper; the HTC entry's numeric ranges could not be matched at all.
+    for cid in ("two_phase.chf.shah_2015", "two_phase.htc.gungor_winterton"):
+        assert cid in PROVISIONAL_DOMAINS, (
+            f"{cid} has an unconfirmed validity domain and must be declared "
+            "provisional rather than quietly treated as confirmed"
+        )
+        assert PROVISIONAL_DOMAINS[cid].strip(), f"{cid}: empty provisional reason"
+
+    # A provisional domain is still enforced as the guard.
+    assert get("two_phase.htc.gungor_winterton").domain.ranges, (
+        "declaring a domain provisional must not remove it: the ranges are still "
+        "the enforced guard"
+    )
+
+
+def test_ammonia_is_not_in_the_gw86_fluid_database():
+    """The reference coolant sits outside the reference HTC's fluid database.
+
+    Machine-visible because it is load-bearing: S0 Sec. 9.1 makes ammonia the
+    reference coolant, while the Gungor & Winterton (1986) database is water, five
+    refrigerants and ethylene glycol. Both are director-level facts; reconciling them
+    is a disposition decision, so this build surfaces the conflict rather than
+    silently de-ranking ammonia or silently ranking it.
+    """
+    from orbital_thermal.registry.two_phase import (
+        GW86_DATABASE_FLUIDS,
+        fluid_in_gw86_database,
+    )
+
+    assert fluid_in_gw86_database("water") is True
+    assert fluid_in_gw86_database("Ammonia") is False
+    assert "ammonia" not in GW86_DATABASE_FLUIDS
 
 
 # --- rank eligibility -----------------------------------------------------------
