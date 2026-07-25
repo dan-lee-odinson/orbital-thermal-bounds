@@ -36,6 +36,7 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from . import _validate as _v
+from .registry.two_phase import TWO_PHASE_PROPERTIES as _TWO_PHASE_PROPERTIES
 
 #: Pascals per bar.
 PA_PER_BAR: float = 1e5
@@ -114,6 +115,163 @@ def saturated_densities(
     rho_liq = PropsSI("D", "T", T, "Q", 0.0, fluid)
     rho_vap = PropsSI("D", "T", T, "Q", 1.0, fluid)
     return rho_liq, rho_vap
+
+
+# --- S2 two-phase saturation backend (Stage 2, milestone S2) --------------------
+# The saturation properties the flow-boiling evaporator needs, evaluated on the
+# pinned CoolProp HEOS backend named by ``registry.two_phase.COOLPROP_PIN``.
+#
+# Every call is guarded twice:
+#
+# 1. against the **declared** validity domain of the corresponding
+#    ``TWO_PHASE_PROPERTIES`` registry entry (ammonia 195.5-405.4 K, water
+#    273.16-647.1 K), so a two-phase call cannot silently leave the registered
+#    domain; and
+# 2. against the **actual** backend triple/critical bounds, so no call can be
+#    evaluated at or above the critical point even where the declared domain
+#    nominally permits it (the declared water upper bound 647.1 K sits a few
+#    millikelvin above the CoolProp critical temperature 647.096 K).
+#
+# A coolant with no ``TWO_PHASE_PROPERTIES`` entry is **source-gated** and raises:
+# S0 Section 9.1 admits ammonia (reference) and water (secondary) only, and an
+# unregistered coolant has no sourced saturation domain to evaluate against.
+
+#: Declared two-phase saturation domains, keyed by lowercased fluid name. Read from
+#: the registry rather than restated, so the domain has exactly one definition.
+_SAT_T_DOMAIN_K: dict[str, tuple[float, float]] = {
+    e.material.lower(): e.domain.ranges["T_K"]
+    for e in _TWO_PHASE_PROPERTIES
+    if "T_K" in e.domain.ranges
+}
+
+
+class SourceGatedFluidError(ValueError):
+    """Raised for a two-phase saturation call on a coolant with no registry entry.
+
+    Not an invented default: S0 Section 9.1 admits ammonia (reference) and water
+    (secondary); every other coolant is source-gated until a registry entry with a
+    sourced validity domain exists.
+    """
+
+
+def two_phase_domain_K(fluid: str = DEFAULT_FLUID) -> tuple[float, float]:
+    """Declared two-phase saturation temperature domain ``(T_min, T_max)`` in K.
+
+    Raises :class:`SourceGatedFluidError` for a coolant with no registry entry.
+    """
+    key = fluid.strip().lower()
+    if key not in _SAT_T_DOMAIN_K:
+        allowed = ", ".join(sorted(_SAT_T_DOMAIN_K))
+        raise SourceGatedFluidError(
+            f"two-phase saturation properties for '{fluid}' are source-gated: no "
+            f"registry entry declares a validity domain for it. Registered "
+            f"two-phase coolants: {allowed}. Add a sourced "
+            "TWO_PHASE_PROPERTIES entry before evaluating it (no-invention policy)."
+        )
+    return _SAT_T_DOMAIN_K[key]
+
+
+def assert_two_phase_domain(T: float, fluid: str = DEFAULT_FLUID) -> None:
+    """Raise unless ``T`` is inside both the declared domain and the real
+    triple/critical bounds of ``fluid``. Never silently extrapolated."""
+    _v.positive("T", T)
+    lo, hi = two_phase_domain_K(fluid)
+    if not (lo <= T <= hi):
+        raise ValueError(
+            f"T = {T} K is outside the declared two-phase domain of {fluid} "
+            f"[{lo}, {hi}] K; the case is out of domain, not extrapolated"
+        )
+    t_crit = critical_temperature(fluid)
+    t_triple = triple_temperature(fluid)
+    if T >= t_crit:
+        raise ValueError(
+            f"T = {T} K is at or above the critical temperature of {fluid} "
+            f"({t_crit:.3f} K); no saturation state exists (no blanket "
+            "supercritical treatment)"
+        )
+    if T < t_triple:
+        raise ValueError(
+            f"T = {T} K is below the triple-point temperature of {fluid} "
+            f"({t_triple:.3f} K); no saturation state exists"
+        )
+
+
+def triple_pressure(fluid: str = DEFAULT_FLUID) -> float:
+    """Triple-point pressure, Pa (lower bound of the saturation curve)."""
+    return PropsSI("p_triple", fluid)
+
+
+def saturation_temperature(P: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Saturation temperature at pressure ``P`` [Pa], in K.
+
+    The inverse of :func:`saturation_pressure`. Enforces the S0 Section 3 loop-state
+    bound ``P_triple < P < P_crit``: outside it there is no saturation state and the
+    call raises rather than returning a supercritical or sub-triple value.
+    """
+    _v.positive("P", P)
+    p_crit = critical_pressure(fluid)
+    p_triple = triple_pressure(fluid)
+    if P >= p_crit:
+        raise ValueError(
+            f"P = {P} Pa is at or above the critical pressure of {fluid} "
+            f"({p_crit:.4g} Pa); no saturation temperature exists (no blanket "
+            "supercritical treatment)"
+        )
+    if P <= p_triple:
+        raise ValueError(
+            f"P = {P} Pa is at or below the triple-point pressure of {fluid} "
+            f"({p_triple:.4g} Pa); no saturation temperature exists"
+        )
+    T_sat = PropsSI("T", "P", P, "Q", 0.0, fluid)
+    assert_two_phase_domain(T_sat, fluid)
+    return T_sat
+
+
+def saturation_enthalpies(
+    P: float, fluid: str = DEFAULT_FLUID
+) -> tuple[float, float, float]:
+    """Saturated ``(h_f, h_g, h_fg)`` at pressure ``P`` [Pa], in J/kg.
+
+    ``h_f`` is the saturated-liquid enthalpy, ``h_g`` the saturated-vapour enthalpy,
+    and ``h_fg = h_g - h_f`` the latent heat of vaporisation. These are the terms
+    behind the vapour quality ``x = (h - h_f) / h_fg`` (S0 Section 3).
+    """
+    T_sat = saturation_temperature(P, fluid)  # validates P and the domain
+    h_f = PropsSI("H", "T", T_sat, "Q", 0.0, fluid)
+    h_g = PropsSI("H", "T", T_sat, "Q", 1.0, fluid)
+    return h_f, h_g, h_g - h_f
+
+
+def surface_tension(T: float, fluid: str = DEFAULT_FLUID) -> float:
+    """Liquid-vapour surface tension at saturation temperature ``T`` [K], in N/m."""
+    assert_two_phase_domain(T, fluid)
+    return PropsSI("I", "T", T, "Q", 0.0, fluid)
+
+
+def saturation_properties(P: float, fluid: str = DEFAULT_FLUID) -> dict[str, float]:
+    """Every saturation property the S2 evaporator needs, at pressure ``P`` [Pa].
+
+    Bundles the two-phase state so a caller takes one guarded trip to the pinned
+    backend instead of several unguarded ones.
+    """
+    T_sat = saturation_temperature(P, fluid)
+    h_f, h_g, h_fg = saturation_enthalpies(P, fluid)
+    rho_f, rho_g = saturated_densities(T_sat, fluid)
+    return {
+        "T_sat_K": T_sat,
+        "h_f_J_kg": h_f,
+        "h_g_J_kg": h_g,
+        "h_fg_J_kg": h_fg,
+        "rho_f_kg_m3": rho_f,
+        "rho_g_kg_m3": rho_g,
+        "mu_f_Pa_s": PropsSI("V", "T", T_sat, "Q", 0.0, fluid),
+        "mu_g_Pa_s": PropsSI("V", "T", T_sat, "Q", 1.0, fluid),
+        "k_f_W_mK": PropsSI("L", "T", T_sat, "Q", 0.0, fluid),
+        "cp_f_J_kgK": PropsSI("C", "T", T_sat, "Q", 0.0, fluid),
+        "sigma_N_m": surface_tension(T_sat, fluid),
+        "p_reduced": P / critical_pressure(fluid),
+        "molar_mass_kg_mol": PropsSI("M", fluid),
+    }
 
 
 def provenance(fluid: str = DEFAULT_FLUID) -> dict[str, str]:
