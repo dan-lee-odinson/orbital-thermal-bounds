@@ -61,13 +61,69 @@ def test_rejects_nonphysical_inputs():
 
 
 
+def _pyproject_version() -> str:
+    """The version declared in ``[project]`` of pyproject.toml.
+
+    Read without ``tomllib`` so the test also runs on Python 3.10, which the package
+    still supports (``requires-python = ">=3.10"``) and where ``tomllib`` is absent.
+    The search is scoped to the ``[project]`` table so a ``version =`` line in some
+    other table cannot be picked up by accident.
+    """
+    import re
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    section = re.search(r"^\[project\]\s*$(.*?)^\[", text, re.M | re.S)
+    assert section, "pyproject.toml has no [project] table"
+    m = re.search(r'^version\s*=\s*"([^"]+)"', section.group(1), re.M)
+    assert m, "[project] declares no static version"
+    return m.group(1)
+
+
 def test_version_is_single_sourced():
-    # __version__ must come from the installed package metadata (pyproject),
-    # not a hardcoded string that can drift (audit item 11a).
-    from importlib.metadata import version
+    """``__version__`` comes from package metadata, never a hardcoded literal.
+
+    That is the invariant (audit item 11a): a second copy of the version in the source
+    can drift away from pyproject's. The check is made in **both** environments rather
+    than skipped in one, because a review packet is reconstructed and run with nothing
+    installed and a skip would leave the invariant unguarded exactly there.
+
+    * **Distribution installed** -- assert ``__version__`` equals the metadata version
+      *and* that both equal the version declared in pyproject. That is strictly
+      stronger than comparing only against the metadata, which cannot detect the two
+      drifting together.
+    * **No distribution** -- ``importlib.metadata`` has nothing to report and
+      ``orbital_thermal`` falls back to its documented ``0.0.0+unknown`` sentinel.
+      Assert that sentinel, and assert the source does **not** hardcode the pyproject
+      version, which is the drift this test exists to prevent.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+    from pathlib import Path
 
     import orbital_thermal
-    assert orbital_thermal.__version__ == version("orbital-thermal")
+
+    declared = _pyproject_version()
+
+    try:
+        installed = version("orbital-thermal")
+    except PackageNotFoundError:
+        # Running from a bare tree (e.g. a reconstructed review packet).
+        assert orbital_thermal.__version__ == "0.0.0+unknown", (
+            "with no installed distribution __version__ must be the documented "
+            f"sentinel, got {orbital_thermal.__version__!r}"
+        )
+        init = Path(orbital_thermal.__file__).read_text()
+        assert f'"{declared}"' not in init, (
+            f"__init__.py hardcodes the version {declared!r}; it must be read from "
+            "package metadata so the two cannot drift"
+        )
+        return
+
+    assert orbital_thermal.__version__ == installed
+    assert installed == declared, (
+        f"installed metadata version {installed!r} does not match the version "
+        f"declared in pyproject.toml ({declared!r}); reinstall, or they have drifted"
+    )
 
 
 def test_sigma_sb_is_binary64_si_derived():

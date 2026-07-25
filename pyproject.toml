@@ -69,6 +69,18 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The suite must collect and run from a bare checkout with NOTHING installed --
+# METHOD Sec. 5.4.1 clause 3 requires a review packet to machine-verify with a clean
+# import and full collection from the packet alone. Without this the src/ layout makes
+# `import orbital_thermal` depend on an ambient `pip install -e .`, which took the
+# packet run to 23 collection errors and 0 tests.
+#
+# It is also a correctness property, not just packaging: this project's worst
+# verification incident was an editable install in a second tree silently repointing
+# the global one, after which every witness mutation became a no-op and the harness
+# reported 0/16 while looking healthy. A suite whose result depends on ambient install
+# state can lie about itself.
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
