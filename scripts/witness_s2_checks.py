@@ -42,6 +42,7 @@ REGISTRY = SRC / "registry" / "two_phase.py"
 APPLIC = SRC / "registry" / "applicability.py"
 PROVENANCE = SRC / "registry" / "provenance.py"
 TWO_PHASE = SRC / "two_phase.py"
+TWO_PHASE_LOOP = SRC / "two_phase_loop.py"
 FLUIDS = SRC / "fluids.py"
 
 TEST_MODULES = (
@@ -49,6 +50,7 @@ TEST_MODULES = (
     "tests/test_two_phase_registry.py",
     "tests/test_applicability_enforcement.py",
     "tests/test_boundary_enforcement.py",
+    "tests/test_two_phase_loop.py",
 )
 
 
@@ -94,17 +96,22 @@ MUTATIONS: list[Mutation] = [
         notes="Attaching maths to an entry whose source was never established.",
     ),
     Mutation(
-        name="implement-an-S3-pressure-drop-entry-early",
-        guards="the S3 scope guard",
+        name="implement-a-named-dP-sensitivity",
+        guards="ruling A4: only the REFERENCE pressure drop is implemented",
         finding="pre-existing",
         path=REGISTRY,
-        old="        source=_LOCKHART_MARTINELLI,\n        evaluate=None,",
-        new="        source=_LOCKHART_MARTINELLI,\n        evaluate=gungor_winterton_1986_htc,",
+        old="        source=_FRIEDEL,\n        evaluate=None,",
+        new="        source=_FRIEDEL,\n        evaluate=gungor_winterton_1986_htc,",
         expect_failing=(
-            "test_s3_pressure_drop_entries_are_not_implemented_early",
+            "test_only_the_reference_pressure_drop_is_implemented",
+            "test_the_named_dp_sensitivities_stay_unimplemented",
             "test_exactly_the_s2_implemented_ids_carry_an_evaluate_callable",
         ),
-        notes="S3 / OTB-G002 work must not leak into this build.",
+        notes=(
+            "Successor to the S2-era 'no dP entry may be implemented' mutation, which "
+            "went obsolete the moment S3 legitimately implemented the reference. "
+            "Friedel and Mueller-Steinhagen-Heck are sensitivities and stay unbuilt."
+        ),
     ),
     Mutation(
         name="blank-the-locator-of-an-implemented-correlation",
@@ -117,37 +124,6 @@ MUTATIONS: list[Mutation] = [
         notes="An implemented correlation must record the source actually consulted.",
     ),
     # ------------------------------------------------------- F-03 provenance / eligibility
-    Mutation(
-        name="F03-let-an-entry-with-no-evaluator-rank",
-        guards="F-03: an entry needing an evaluated value is ineligible without one",
-        finding="F-03",
-        path=PROVENANCE,
-        old=(
-            '        if getattr(spec, "requires_executable_form", False) '
-            "and self.evaluate is None:"
-        ),
-        new="        if False:",
-        expect_failing=("test_f03_the_executable_form_rule_is_load_bearing_on_its_own",),
-        notes=(
-            "The silently permissive generic path. NOTE: shah_2015 is now also "
-            "SOURCE_REQUIRED, so its status alone blocks it and it cannot witness this "
-            "rule -- the first witness run caught that, and the named test exercises "
-            "the rule directly on an entry that would otherwise rank."
-        ),
-    ),
-    Mutation(
-        name="F03-drop-the-requires-executable-form-declaration",
-        guards="F-03: the CHF reference declares that it needs an executable form",
-        finding="F-03",
-        path=REGISTRY,
-        old="    requires_executable_form=True,",
-        new="    requires_executable_form=False,",
-        expect_failing=("test_f03_requires_executable_form_is_what_blocks_it",),
-        notes=(
-            "The mechanism-level sibling test builds its own spec and cannot see a "
-            "registry change; only the wiring test can."
-        ),
-    ),
     # ------------------------------------------------------------- F-04 fluid axis
     Mutation(
         name="F04-record-applicability-violations-without-acting-on-them",
@@ -485,8 +461,8 @@ MUTATIONS: list[Mutation] = [
         guards="F-01: reduced gravity is an applicability violation, not just g <= 0",
         finding="R2 F-01",
         path=APPLIC,
-        old="            elif self.reference_gravity_m_s2 is not None:",
-        new="            elif False:",
+        old="        if self.reference_gravity_m_s2 is not None:",
+        new="        if False:",
         expect_failing=(
             "test_sibling_f01_reduced_gravity_is_an_applicability_violation",
         ),
@@ -627,6 +603,163 @@ MUTATIONS: list[Mutation] = [
         new="        critical_quality=critical_quality,\n    )",
         expect_failing=("test_sibling_f06_out_of_range_inlet_quality_is_refused",),
         notes="A declared bound nothing passes a value to is a declared bound, not a guard.",
+    ),
+    # ================================================================ S3 / OTB-G002
+    Mutation(
+        name="S3-DIR02-let-an-entry-with-no-executable-form-rank",
+        guards="DIR-02: eligibility requires an executable form, generically",
+        finding="S3 DIR-02",
+        path=PROVENANCE,
+        old="        return self.has_executable_form",
+        new="        return True",
+        expect_failing=(
+            "test_dir02_eligibility_requires_an_executable_form_generically",
+        ),
+        notes=(
+            "Round 1 demoted one entry's status; the permissive rule survived. NOTE: "
+            "the class-level sweep cannot witness this while no shipped entry is "
+            "status-eligible but formless -- the desired end state -- so the "
+            "synthetic-entry test is what holds the rule."
+        ),
+    ),
+    Mutation(
+        name="S3-DIR02-forget-where-the-B1-forms-live",
+        guards="DIR-02: 'implemented elsewhere' is distinguishable from 'unimplemented'",
+        finding="S3 DIR-02",
+        path=REPO / "src" / "orbital_thermal" / "registry" / "correlations.py",
+        old='        executable_form="orbital_thermal.solid_network.spreading_resistance",',
+        new="",
+        expect_failing=("test_dir02_eligibility_requires_an_executable_form_generically",),
+        notes="Without the location the generic rule would wrongly demote a B1 entry.",
+    ),
+    Mutation(
+        name="S3-drop-the-composition-axis",
+        guards="LM's two-component basis, which this loop violates",
+        finding="S3 DP-APPL",
+        path=REGISTRY,
+        old='    compositions=frozenset({"two_component"}),',
+        new="    compositions=frozenset(),",
+        expect_failing=(
+            "test_sibling_composition_single_component_is_outside_the_basis",
+            "test_this_loop_violates_the_correlation_on_two_axes_at_once",
+        ),
+    ),
+    Mutation(
+        name="S3-drop-the-horizontal-orientation-basis",
+        guards="LM's horizontal basis, which this loop violates",
+        finding="S3 DP-APPL",
+        path=REGISTRY,
+        old=(
+            '    orientations=frozenset({"horizontal"}),\n    orientations_basis=(\n       '
+            ' "Collier & Thome p. 54'
+        ),
+        new=(
+            '    orientations=frozenset(),\n    orientations_basis=(\n        "Collier & Th'
+            'ome p. 54'
+        ),
+        expect_failing=(
+            "test_sibling_orientation_vertical_is_outside_the_basis",
+            "test_this_loop_violates_the_correlation_on_two_axes_at_once",
+        ),
+    ),
+    Mutation(
+        name="S3-drop-the-database-gravity-on-the-dP-leg",
+        guards="D12: gravity is an enforced axis on the pressure-drop leg too",
+        finding="S3 D12",
+        path=REGISTRY,
+        old=(
+            "    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,\n    numeric_domain_provenan"
+            "ce=DomainProvenance.UNESTABLISHED,\n    numeric_domain_note=(\n        \"The d"
+            "eclared P_Pa ceiling"
+        ),
+        new=(
+            "    reference_gravity_m_s2=None,\n    numeric_domain_provenance=DomainProvenan"
+            "ce.UNESTABLISHED,\n    numeric_domain_note=(\n        \"The declared P_Pa ceil"
+            "ing"
+        ),
+        expect_failing=(
+            "test_sibling_gravity_is_a_declared_axis_consistent_with_shah_1987",
+        ),
+        notes="The two legs must be consistent; this is what the D12 test pins.",
+    ),
+    Mutation(
+        name="S3-let-the-static-term-quietly-vanish-in-microgravity",
+        guards="D12: omission makes it silently microgravity",
+        finding="S3 D12",
+        path=REGISTRY,
+        old=(
+            "    if gravity_m_s2 <= 0.0:\n        raise ValueError(\n            f\"static "
+            "head is evaluated at g ="
+        ),
+        new=(
+            "    if False:\n        raise ValueError(\n            f\"static head is evalua"
+            "ted at g ="
+        ),
+        expect_failing=(
+            "test_sibling_gravity_zero_g_refuses_rather_than_contributing_zero",
+        ),
+        notes="The rejected option, which is exact and still wrong (D12).",
+    ),
+    Mutation(
+        name="S3-hard-code-the-bore-band",
+        guards="D11: the band is read from the registry, not chosen",
+        finding="S3 D11",
+        path=TWO_PHASE_LOOP,
+        old="        rng = entry.domain.ranges.get(\"D_m\")",
+        new="        rng = (0.5e-3, 50e-3)",
+        expect_failing=("test_the_bore_band_is_read_from_the_registry_not_hard_coded",),
+    ),
+    Mutation(
+        name="S3-drop-the-provenance-label-from-the-sweep-output",
+        guards="D11: the label appears in the OUTPUT, not a comment",
+        finding="S3 D11",
+        path=TWO_PHASE_LOOP,
+        old='        lines = [head, self.provenance_label]',
+        new="        lines = [head]",
+        expect_failing=("test_the_negative_result_is_the_result",),
+    ),
+    Mutation(
+        name="S3-let-the-condenser-size-itself",
+        guards="D10: no condensation coefficient is computed or estimated at S3",
+        finding="S3 D10",
+        path=TWO_PHASE_LOOP,
+        old=(
+            "        raise NotRankEligibleError(\n            \"condenser area cannot be co"
+            "mputed at S3"
+        ),
+        new=(
+            "        return 1.0\n        raise NotRankEligibleError(\n            \"condens"
+            "er area cannot be computed at S3"
+        ),
+        expect_failing=("test_the_condenser_refuses_to_size_itself",),
+        notes="A plausible area is worse than a blocker: it would look like a result.",
+    ),
+    Mutation(
+        name="S3-accept-a-pump-inlet-at-saturation",
+        guards="D8: the subcooling margin must be strictly positive",
+        finding="S3 D8",
+        path=TWO_PHASE_LOOP,
+        old="    if margin <= required_margin_K:",
+        new="    if margin < -1.0e9:",
+        expect_failing=("test_pump_inlet_at_saturation_is_the_cavitation_condition",),
+    ),
+    Mutation(
+        name="S3-let-a-sweep-silently-drop-its-failures",
+        guards="D7: a negative result is a result, so failures are recorded",
+        finding="S3 D7",
+        path=TWO_PHASE_LOOP,
+        old="        if not band.contains(d):\n            points.append(",
+        new="        if not band.contains(d):\n            continue\n            points.append(",
+        expect_failing=("test_a_bore_outside_the_band_is_recorded_not_dropped",),
+    ),
+    Mutation(
+        name="S3-DIR01-blur-the-geometry-vocabulary",
+        guards="DIR-01: round_tube and channel are defined and disjoint",
+        finding="S3 DIR-01",
+        path=REGISTRY,
+        old='    "channel": (\n        "A NON-circular passage',
+        new='    "channel": (\n        "A circular passage',
+        expect_failing=("test_dir01_round_tube_and_channel_are_defined_and_disjoint",),
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
