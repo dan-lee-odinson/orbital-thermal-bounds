@@ -761,6 +761,101 @@ MUTATIONS: list[Mutation] = [
         new='    "channel": (\n        "A circular passage',
         expect_failing=("test_dir01_round_tube_and_channel_are_defined_and_disjoint",),
     ),
+    # ========================================== OTB-G002 machine-verification fixes
+    Mutation(
+        name="V01-admit-a-declaration-instead-of-a-fact",
+        guards="V-01: rank-eligibility needs a form that can be REACHED",
+        finding="V-01",
+        path=PROVENANCE,
+        old="        return resolve_executable_form(self.executable_form) is not None",
+        new="        return bool(self.executable_form.strip())",
+        expect_failing=(
+            "test_v01_a_declaration_that_cannot_be_honoured_is_not_eligible",
+        ),
+        notes=(
+            "The exact pre-fix expression. 'x' made an entry rank-eligible. Nothing "
+            "shipped broken, which is precisely why it needed saying: the same "
+            "standard let round-1 F-03 return as DIR-02."
+        ),
+    ),
+    Mutation(
+        name="V01-let-a-declaration-reach-outside-the-package",
+        guards="V-01: a declared form must live inside orbital_thermal",
+        finding="V-01",
+        path=PROVENANCE,
+        old='    if path.startswith(_EXECUTABLE_FORM_ROOT) and "." in path:',
+        new='    if "." in path:',
+        expect_failing=(
+            "test_v01_a_declaration_that_cannot_be_honoured_is_not_eligible",
+        ),
+    ),
+    Mutation(
+        name="V01-accept-a-non-callable-attribute",
+        guards="V-01: the resolved target must actually be callable",
+        finding="V-01",
+        path=PROVENANCE,
+        old="        if callable(candidate):\n            resolved = candidate",
+        new="        if candidate is not None:\n            resolved = candidate",
+        expect_failing=(
+            "test_v01_a_declaration_that_cannot_be_honoured_is_not_eligible",
+        ),
+    ),
+    Mutation(
+        name="V01-stop-reporting-unresolved-declarations",
+        guards="V-01: the loud half -- a broken declaration is named, not just silent",
+        finding="V-01",
+        path=PROVENANCE,
+        old="        elif resolve_executable_form(declared) is None:",
+        new="        elif False:",
+        expect_failing=("test_v01_the_reporter_actually_names_a_broken_declaration",),
+        notes=(
+            "The shipped-declarations sweep cannot witness this while nothing is "
+            "broken -- the harness caught that -- so a synthetic broken declaration "
+            "holds it. Fails closed at the boundary AND loud in the test, because "
+            "they do "
+            "different jobs: the boundary refuses, the test says which declaration "
+            "broke. Neither alone was judged sufficient."
+        ),
+    ),
+    Mutation(
+        name="V02-reassert-that-the-printed-equation-was-illegible",
+        guards="V-02: the artifact must not say something false about the source",
+        finding="V-02",
+        path=REGISTRY,
+        old=(
+            "        \"S3 PROVENANCE. Eqs. (2.67), (2.68), (2.69) and the Chisholm C "
+            "table were READ \""
+        ),
+        new="        \"S3 PROVENANCE. Eq. (2.68) is NOT legible -- its operators are lost. READ \"",
+        expect_failing=(
+            "test_v02_no_provenance_field_claims_the_equation_was_illegible",
+        ),
+        notes="Eq. (2.68) is sharply printed on p. 53; the PDF's text layer is what was degraded.",
+    ),
+    Mutation(
+        name="V02-delete-the-true-limitation-along-with-the-false-claim",
+        guards="V-02 control: the real caveat survives the correction",
+        finding="V-02",
+        path=REGISTRY,
+        old='        "LIMITATION OF THE FILE, NOT THE SOURCE: this PDF\'s embedded text layer is "',
+        new=(
+            '        "" or "LIMITATION OF THE FILE, NOT THE SOURCE: this PDF\'s embed'
+            'ded text layer is "'
+        ),
+        expect_failing=("test_v02_control_the_true_limitation_is_still_recorded",),
+        notes="Removing a false claim must not also remove the true caveat next to it.",
+    ),
+    Mutation(
+        name="V02-relabel-the-cross-check-as-the-equations-source",
+        guards="V-02: the identity confirms the printed equation, it is not its source",
+        finding="V-02",
+        path=REGISTRY,
+        old='        "INDEPENDENT CONFIRMATION of the printed equation, not its source. "',
+        new='        "the source of the equation. "',
+        expect_failing=(
+            "test_v02_control_the_derivation_survives_relabelled_as_confirmation",
+        ),
+    ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
         guards="gate combination (a permissive gate must not outvote a strict one)",
