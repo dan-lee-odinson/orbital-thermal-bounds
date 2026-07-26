@@ -170,6 +170,10 @@ CORRELATIONS: list[CorrelationEntry] = [
     # Thermal: spreading and contact resistance
     CorrelationEntry(
         id="thermal.spreading_resistance",
+        # DIR-02: the executable form has always lived in a module, not on the entry.
+        # Recording where makes "implemented elsewhere" distinguishable from
+        # "not implemented", which `evaluate=None` alone could not express.
+        executable_form="orbital_thermal.solid_network.spreading_resistance",
         name="Spreading (constriction) resistance model",
         kind="spreading",
         provenance=Provenance.PUBLISHED,
@@ -193,6 +197,8 @@ CORRELATIONS: list[CorrelationEntry] = [
     # Hydraulic: minor losses and maldistribution
     CorrelationEntry(
         id="hydraulic.minor_losses",
+        # DIR-02: evaluated by the `minor_loss_K` term of the pressure-drop function.
+        executable_form="orbital_thermal.pumped_loop.pressure_drop",
         name="Minor-loss K-factor method",
         kind="minor_loss",
         provenance=Provenance.PUBLISHED,

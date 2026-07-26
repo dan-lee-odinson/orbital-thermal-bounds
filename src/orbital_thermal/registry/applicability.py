@@ -37,6 +37,11 @@ class Axis(str, Enum):
     """The axes on which a correlation may declare applicability."""
 
     FLUID = "fluid"
+    #: Single- vs two-component flow. Distinct from FLUID: Lockhart-Martinelli was
+    #: developed for **two-component** systems (air-liquid), and a single-component
+    #: system (a fluid boiling in its own vapour) is outside it however well the
+    #: individual fluid is covered.
+    COMPOSITION = "composition"
     GEOMETRY = "geometry"
     ORIENTATION = "orientation"
     REGIME = "regime"
@@ -115,6 +120,10 @@ class Applicability:
     excluded_fluids: frozenset[str] = frozenset()
     fluids_basis: str = ""
 
+    # --- composition axis ---
+    compositions: frozenset[str] = frozenset()
+    compositions_basis: str = ""
+
     # --- geometry axis (closes DEBTS D-9) ---
     geometries: frozenset[str] = frozenset()
     geometries_basis: str = ""
@@ -160,6 +169,8 @@ class Applicability:
         axes: list[Axis] = []
         if self.fluids or self.excluded_fluids:
             axes.append(Axis.FLUID)
+        if self.compositions:
+            axes.append(Axis.COMPOSITION)
         if self.geometries:
             axes.append(Axis.GEOMETRY)
         if self.orientations or self.gravity_explicit:
@@ -177,6 +188,7 @@ class Applicability:
         self,
         *,
         fluid: str | None = None,
+        composition: str | None = None,
         geometry: str | None = None,
         orientation: str | None = None,
         liquid_reynolds: float | None = None,
@@ -233,6 +245,31 @@ class Applicability:
                             f"{self.fluids_basis}",
                         )
                     )
+
+        # --- composition ---
+        if self.compositions:
+            if composition is None:
+                v.append(
+                    Violation(
+                        Axis.COMPOSITION,
+                        Consequence.BLOCK,
+                        "the correlation declares a composition basis "
+                        f"({', '.join(sorted(self.compositions))}) but the case states "
+                        "none",
+                    )
+                )
+            elif composition.strip().lower() not in {
+                c.lower() for c in self.compositions
+            }:
+                v.append(
+                    Violation(
+                        Axis.COMPOSITION,
+                        Consequence.DE_RANK,
+                        f"composition '{composition}' is outside the correlation's "
+                        f"basis ({', '.join(sorted(self.compositions))}). "
+                        f"{self.compositions_basis}",
+                    )
+                )
 
         # --- geometry (DEBTS D-9) ---
         if self.geometries:
@@ -301,23 +338,41 @@ class Applicability:
                         f"for this case. {self.gravity_basis}",
                     )
                 )
-            elif self.reference_gravity_m_s2 is not None:
-                ref = self.reference_gravity_m_s2
-                if abs(gravity_m_s2 - ref) > self.gravity_rel_tol * ref:
-                    v.append(
-                        Violation(
-                            Axis.ORIENTATION,
-                            Consequence.DE_RANK,
-                            f"gravitational acceleration {gravity_m_s2:.4g} m/s^2 is "
-                            f"{gravity_m_s2 / ref:.3g} times the gravity the "
-                            f"correlation's database was taken at ({ref:.5g} m/s^2). "
-                            "The database exists at that gravity and nowhere else, so "
-                            "any other value is an extrapolation across the axis the "
-                            "correlating parameter is most sensitive to -- an "
-                            "applicability violation, not a parameter change "
-                            f"(Director ruling D6). {self.gravity_basis}",
-                        )
+        # The gravity the DATABASE was taken at is a separate declaration from whether
+        # the FORMULA contains g, and is checked independently. Nesting it under
+        # `gravity_explicit` was a real defect: Lockhart-Martinelli's multiplier carries
+        # no g, but its database is still terrestrial, so a 1e-6 m/s^2 case slipped
+        # through unflagged until the D12 consistency test caught it.
+        if self.reference_gravity_m_s2 is not None:
+            ref = self.reference_gravity_m_s2
+            if gravity_m_s2 is None and not self.gravity_explicit:
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.BLOCK,
+                        "the correlation's database was taken at a stated gravity "
+                        f"({ref:.5g} m/s^2) but the case states none",
                     )
+                )
+            elif (
+                gravity_m_s2 is not None
+                and gravity_m_s2 > 0.0
+                and abs(gravity_m_s2 - ref) > self.gravity_rel_tol * ref
+            ):
+                v.append(
+                    Violation(
+                        Axis.ORIENTATION,
+                        Consequence.DE_RANK,
+                        f"gravitational acceleration {gravity_m_s2:.4g} m/s^2 is "
+                        f"{gravity_m_s2 / ref:.3g} times the gravity the "
+                        f"correlation's database was taken at ({ref:.5g} m/s^2). "
+                        "The database exists at that gravity and nowhere else, so any "
+                        "other value is an extrapolation across the axis the "
+                        "correlating parameter is most sensitive to -- an "
+                        "applicability violation, not a parameter change "
+                        f"(Director ruling D6). {self.gravity_basis}",
+                    )
+                )
 
             # Branch-threshold straddle. Not an absolute test on the parameter: the
             # threshold is crossed legitimately at 1 g by high mass flux (for Shah

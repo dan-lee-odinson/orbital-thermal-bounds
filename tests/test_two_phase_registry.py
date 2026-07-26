@@ -45,7 +45,6 @@ _NON_RANKABLE_IDS = [
     "two_phase.dp.muller_steinhagen_heck",
     "two_phase.chf.shah_2015",
     "two_phase.chf.katto_ohno",
-    "two_phase.pump.npsh",
 ]
 _GRAVITY_KINDS = {"htc", "dp", "chf"}
 
@@ -72,7 +71,13 @@ def test_every_correlation_has_a_nonempty_citation():
 #: both were left unimplemented because their sources could not be established. See
 #: their registry source notes.
 S2_IMPLEMENTED_IDS = frozenset(
-    {"two_phase.htc.gungor_winterton", "two_phase.chf.shah_1987"}
+    {
+        "two_phase.htc.gungor_winterton",
+        "two_phase.chf.shah_1987",
+        # S3 (OTB-G002) adds the reference pressure drop and the pump-inlet criterion.
+        "two_phase.dp.lockhart_martinelli_chisholm",
+        "two_phase.pump.npsh",
+    }
 )
 
 
@@ -100,14 +105,32 @@ def test_s2_unimplemented_entries_are_still_none():
         )
 
 
-def test_s3_pressure_drop_entries_are_not_implemented_early():
-    """The S3 / OTB-G002 pressure-drop work must not leak into this build."""
-    for c in TWO_PHASE_CORRELATIONS:
-        if c.kind == "dp":
-            assert c.evaluate is None, (
-                f"{c.id} is pressure drop, which belongs to S3 / OTB-G002; "
-                "it must not carry an executable form in S2"
-            )
+#: The one pressure-drop correlation S3 implements. A4 makes Lockhart-Martinelli/
+#: Chisholm the REFERENCE and Friedel and Mueller-Steinhagen-Heck named SENSITIVITIES;
+#: this milestone implements the reference only.
+S3_IMPLEMENTED_DP_IDS = frozenset({"two_phase.dp.lockhart_martinelli_chisholm"})
+
+
+def test_only_the_reference_pressure_drop_is_implemented():
+    """Successor to the S2 guard that no dp entry carried an executable form.
+
+    That guard had to fail the moment S3 succeeded -- which is the gate working, not a
+    defect. The successor is strictly stronger: it pins the EXACT dp set, so it still
+    catches an out-of-scope sensitivity being implemented, in both directions.
+    """
+    implemented = {c.id for c in TWO_PHASE_CORRELATIONS if c.kind == "dp" and c.evaluate}
+    assert implemented == set(S3_IMPLEMENTED_DP_IDS), (
+        "A4 names Friedel and Mueller-Steinhagen-Heck as sensitivities, not references; "
+        f"expected exactly {sorted(S3_IMPLEMENTED_DP_IDS)}, found {sorted(implemented)}"
+    )
+
+
+def test_the_named_dp_sensitivities_stay_unimplemented():
+    """Friedel and Mueller-Steinhagen-Heck are untouched by S3 (ruling A4)."""
+    for cid in ("two_phase.dp.friedel", "two_phase.dp.muller_steinhagen_heck"):
+        entry = get(cid)
+        assert entry.evaluate is None, f"{cid} is a named sensitivity, not a reference"
+        assert entry.rank_eligible is False
 
 
 def test_implemented_correlations_have_a_nonempty_locator():
@@ -288,10 +311,24 @@ def test_assert_rank_eligible_raises_on_sensitivity():
         assert_rank_eligible(chen)
 
 
-def test_assert_rank_eligible_raises_on_npsh():
+def test_npsh_moved_off_source_required_by_ruling_d8():
+    """Successor to the S2 guard that the NPSH entry was blocked.
+
+    Director ruling D8 adopts a SUBCOOLING-margin criterion on the AMS-02 flight
+    precedent, so the entry is now sourced and implemented. The quantitative
+    NPSHA/NPSH3 route is deliberately NOT implemented -- it needs a specific pump --
+    and the entry's note must carry the warning that NPSHA = NPSHR is the onset of
+    damage rather than a safe point.
+    """
     npsh = get("two_phase.pump.npsh")
-    with pytest.raises(NotRankEligibleError):
-        assert_rank_eligible(npsh)
+    assert npsh.status is Status.RESOLVED
+    assert npsh.evaluate is not None
+    assert npsh.rank_eligible is True
+    assert_rank_eligible(npsh)  # must not raise
+
+    note = npsh.source.note
+    assert "NPSH3" in note and "onset of damage" in note.lower()
+    assert "not implemented" in note.lower()
 
 
 def test_assert_rank_eligible_passes_on_reference():
@@ -361,25 +398,69 @@ def test_f03_the_executable_form_rule_is_load_bearing_on_its_own():
     assert with_evaluator.rank_eligible is True
 
 
-def test_f03_requires_executable_form_is_what_blocks_it():
-    """The eligibility tightening is opt-in, so B1/S1 entries are unaffected.
+def test_dir02_eligibility_requires_an_executable_form_generically():
+    """DIR-02, closed at the boundary rather than by demoting one entry.
 
-    ``lockhart_martinelli_chisholm`` is RESOLVED with no evaluator and is *meant* to
-    stay rank-eligible on source and domain -- that is the B1/S1 registration pattern.
-    It is the control for this rule: the fix must bite on the entry that declares it
-    needs an executable form, and only on that one.
+    OTB-G001 round 1 named this class and fixed it by moving one entry's status; the
+    permissive rule stayed. DIR-02 is its third occurrence, so the rule itself changed:
+    an entry that cannot supply an evaluated value is not rank-eligible, and the check
+    is no longer opt-in via ``requires_executable_form``.
+
+    "Can supply a value" spans a callable on the entry OR a named module
+    implementation, which is what lets the rule be generic without demoting the B1
+    entries whose executable form has always lived in a module. Those are the control:
+    they were never unimplemented, only undocumented.
     """
-    from orbital_thermal.registry.two_phase import SHAH_1987_APPLICABILITY
+    import dataclasses
 
-    assert SHAH_1987_APPLICABILITY.requires_executable_form is True
+    # Sibling 1 -- a RESOLVED, PUBLISHED entry with no executable form anywhere.
+    stripped = dataclasses.replace(
+        get("two_phase.chf.shah_1987"), evaluate=None, executable_form=""
+    )
+    assert stripped.status is Status.RESOLVED
+    assert stripped.has_executable_form is False
+    assert stripped.rank_eligible is False, (
+        "status alone must no longer admit an entry that cannot supply a value"
+    )
+    with pytest.raises(NotRankEligibleError):
+        assert_rank_eligible(stripped)
 
-    s3_entry = get("two_phase.dp.lockhart_martinelli_chisholm")
-    assert s3_entry.evaluate is None
-    assert s3_entry.rank_eligible is True, (
-        "the F-03 tightening must not sweep up correlations legitimately registered "
-        "on source and domain ahead of their executable form"
+    # Sibling 2 -- the same entry with a module implementation named is admitted.
+    elsewhere = dataclasses.replace(
+        stripped, executable_form="orbital_thermal.registry.two_phase.shah_1987_chf"
+    )
+    assert elsewhere.has_executable_form is True
+    assert elsewhere.rank_eligible is True
+
+    # Control -- the two B1 entries evaluated by a module were never unimplemented,
+    # and the generic rule must not sweep them up.
+    for cid in ("thermal.spreading_resistance", "hydraulic.minor_losses"):
+        entry = get(cid)
+        assert entry.evaluate is None
+        assert entry.executable_form, f"{cid} must record where its form lives"
+        assert entry.rank_eligible is True, (
+            f"{cid} is implemented in a module; the DIR-02 rule must not demote it"
+        )
+
+
+def test_dir02_no_entry_is_rank_eligible_without_an_executable_form():
+    """The class-level statement: the property holds across the whole registry."""
+    from orbital_thermal.registry import CORRELATIONS
+
+    offenders = [
+        c.id
+        for c in list(CORRELATIONS) + list(TWO_PHASE_CORRELATIONS)
+        if c.rank_eligible and not c.has_executable_form
+    ]
+    assert offenders == [], (
+        f"these entries claim rank-eligibility but can supply no value: {offenders}"
     )
 
+
+def test_dir02_the_vocabulary_splits_resolved_from_implemented():
+    """``RESOLVED`` stopped carrying two meanings (the vocabulary half of DIR-02)."""
+    assert hasattr(Status, "IMPLEMENTATION_REQUIRED")
+    assert Status.IMPLEMENTATION_REQUIRED.value == "implementation_required"
 
 # --- completeness / structural checker ------------------------------------------
 

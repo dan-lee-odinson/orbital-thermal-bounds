@@ -228,6 +228,29 @@ _BERGLES_ROHSENOW = Source(
 _LOCKHART_MARTINELLI = Source(
     citation="Lockhart & Martinelli (1949), Chem. Eng. Progress; Chisholm (1967), "
     "Int. J. Heat Mass Transfer",
+    locator=(
+        "Executable form read from the source pages: Collier, J.G. & Thome, J.R., "
+        "'Convective Boiling and Condensation', 3rd ed., Sec. 2.4 'The separated flow "
+        "model', pp. 49-55 -- Eq. (2.67) for X, Eq. (2.69) for phi_g^2, Eq. (2.68) for "
+        "phi_f^2, and the regime table on p. 53 for the Chisholm C values."
+    ),
+    note=(
+        "S3 PROVENANCE. The source pages were read directly, not a transcription of "
+        "them, and their text layer is DEGRADED. Eqs. (2.67) and (2.69) and the C table "
+        "are legible and are implemented as printed. Eq. (2.68) is NOT legible -- its "
+        "operators are lost -- and is established by derivation rather than recall: "
+        "phi_g^2 = phi_f^2 X^2 follows from the definitions plus (2.67), so the legible "
+        "(2.69) forces phi_f^2 = 1 + C/X + 1/X^2. That identity is asserted as a test. "
+        "The four Chisholm C values match the repo's pinned CHISHOLM_C exactly, which "
+        "independently confirms an S1 value. "
+        "CHISHOLM (1967) IS NOT THE VALIDITY EXTENSION: per p. 52 it corrects the "
+        "treatment 'by allowing for the interfacial shear force (S) between the "
+        "phases', i.e. the annular-flow void-fraction inconsistency. Chisholm (1963) "
+        "supplies C = 1.36 at critical pressure, and MARTINELLI-NELSON (1948) is the "
+        "single-component / pressure extension (p. 54, Table 2.2, 1.01-221.2 bar). "
+        "Neither Martinelli-Nelson nor Chisholm (1967) is in hand, so neither is "
+        "implemented and no numeric pressure ceiling is attributed to the source."
+    ),
 )
 _FRIEDEL = Source(
     citation="Friedel (1979), European Two-Phase Flow Group Meeting (Paper E2)",
@@ -247,8 +270,11 @@ _SHAH_2015 = Source(
         "Engineering 37(6):557-570; and 'A general correlation for CHF in horizontal "
         "channels', Int. J. Refrigeration 59:37-52. The citation string above "
         "identifies neither, and the two apply to different geometries (annuli vs "
-        "channels). The S2 evaporator geometry is channels, so the choice is not "
-        "immaterial.\n"
+        "horizontal channels), so the choice is not immaterial. DIR-01 CORRECTION: an "
+        "earlier version of this note asserted 'the S2 evaporator geometry is "
+        "channels' -- an unsourced claim about a device that does not exist. Director "
+        "ruling D9 settles the family as the SMALL-BORE ROUND TUBE, which is why "
+        "neither 2015 paper is a clean fit and why Shah (1987), for round tubes, is.\n"
         "(2) THE DECLARED DOMAIN BELONGS TO A DIFFERENT PAPER. The declared "
         "pr_reduced range 0.0014-0.96 is verifiably the database range of Shah "
         "(1987), 'Improved general correlation for critical heat flux in uniformly "
@@ -299,7 +325,28 @@ _KATTO_OHNO = Source(
     citation="Katto & Ohno (1984), Int. J. Heat Mass Transfer (generalized CHF)",
 )
 _NPSH = Source(
-    citation="Hydraulic Institute / pump-cavitation NPSH practice (NPSH_avail vs NPSH_req)",
+    citation=(
+        "van Es, J. et al. (2009), 'AMS02 Tracker Thermal Control System: overview and "
+        "test results', NLR-TP-2009-699 / IAC-09.C2.7.1 -- flight precedent for a "
+        "mechanically pumped two-phase loop; ANSI/HI 9.6.1-2012 recorded but NOT adopted"
+    ),
+    locator=(
+        "Criterion adopted per Director ruling D8 from the AMS-02 Tracker Thermal "
+        "Control System, a mechanically pumped two-phase CO2 loop operating on ISS "
+        "since 2011: condenser exit state guarantees the fluid 'is sub-cooled well "
+        "below the saturation point so arrives in liquid phase back at the pump'."
+    ),
+    note=(
+        "WHY SUBCOOLING AND NOT AN NPSHR MARGIN. ANSI/HI 9.6.1-2012 defines "
+        "NPSHA = h_atm + h_s - h_vp (with h_vp at the HIGHEST SUSTAINED operating "
+        "temperature), NPSH margin = NPSHA - NPSH3, and margin ratio = NPSHA / NPSH3. "
+        "It gives NO route to NPSH3 without a specific pump, and no pump is selected "
+        "here, so the quantitative route is RECORDED AND NOT IMPLEMENTED (DEBTS D-4). "
+        "ITS WARNING, WHICH ANY FUTURE NPSHR GUARD MUST CARRY: NPSH3 is the point at "
+        "which 3 % of first-stage head has ALREADY been lost to cavitation, so "
+        "NPSHA = NPSHR is the ONSET OF DAMAGE, not a safe operating point -- a future "
+        "guard must enforce a margin over it, never equality."
+    ),
 )
 
 # Saturation-backend sources (NIST via CoolProp HEOS; per-fluid reference EOS cited).
@@ -345,6 +392,50 @@ _NIST_WATER = Source(
 # 9.1 reference coolant. This is recorded as a machine-visible applicability flag,
 # not buried in prose; it is a finding for director disposition, not a defect this
 # build is authorised to resolve by changing a director ruling.
+
+# --- DIR-01: the geometry vocabulary, defined rather than assumed ----------------
+#
+# The S2 build asserted that "the S2 evaporator geometry is channels" -- an unsourced
+# claim about a device that does not exist, which this project had no authority to
+# write. Director ruling D9 settles the family: the modelled evaporator is the
+# SMALL-BORE ROUND TUBE, which both adopted correlations' declared geometry bases
+# already cover (Gungor & Winterton {round_tube, annulus}; Shah (1987) {round_tube}).
+# The note was the error, not the correlations, and nothing at S2 needs re-basing.
+#
+# The vocabulary is defined here so that a 2.6 mm bore cannot be simultaneously inside
+# one declared basis and outside another purely because two notes used different words
+# for the same thing.
+
+#: What each geometry token means. A correlation's declared ``geometries`` set draws
+#: from these, and a case states exactly one of them.
+GEOMETRY_VOCABULARY: dict[str, str] = {
+    "round_tube": (
+        "A circular-bore tube of any diameter, characterised by that bore. The modelled "
+        "evaporator family (Director ruling D9). 'Small-bore' is a description of where "
+        "in the range a case sits, NOT a separate geometry: a 2.6 mm round tube and a "
+        "26 mm round tube are the same geometry at different bores, and the bore is "
+        "checked against each correlation's declared D_m domain."
+    ),
+    "annulus": (
+        "The gap between two concentric tubes, characterised by an equivalent diameter. "
+        "Inside Gungor & Winterton's declared basis; outside Shah (1987)'s, which is "
+        "round tubes only."
+    ),
+    "channel": (
+        "A NON-circular passage -- rectangular, chevron-plate, or a parallel array of "
+        "them -- characterised by a hydraulic diameter. Deliberately DISJOINT from "
+        "round_tube: the term was previously used loosely for both, which is what let "
+        "an unsourced claim about the evaporator's geometry pass unnoticed. No adopted "
+        "correlation declares this basis, so a channel case is out of applicability on "
+        "the geometry axis for every correlation in this registry."
+    ),
+}
+
+
+def geometry_is_defined(shape: str) -> bool:
+    """Whether ``shape`` is a defined geometry token (DIR-01)."""
+    return shape.strip().lower() in GEOMETRY_VOCABULARY
+
 
 #: Fluids in the Gungor & Winterton (1986) development database (Thome, Engineering
 #: Data Book III, Section 10.3.3). A coolant absent from this list is outside the
@@ -874,6 +965,248 @@ def shah_1987_chf(
     return bo * mass_flux_kg_m2s * h_fg_J_kg
 
 
+# --- S3 executable form: Lockhart-Martinelli separated-flow multiplier ----------
+#
+# SOURCE CONSULTED. Collier, J.G. & Thome, J.R., "Convective Boiling and Condensation",
+# 3rd ed., Sec. 2.4 "The separated flow model", pp. 49-55 -- read as the source pages,
+# not as a transcription of them. The text layer of those pages is DEGRADED (subscripts
+# and operators are lost in places), so what was legible and what was not is recorded
+# below rather than smoothed over.
+#
+# LEGIBLE, and implemented from:
+#   * Eq. (2.69): phi_g^2 = 1 + C X + X^2
+#   * Eq. (2.67): X^2 = (dp/dz)_f / (dp/dz)_g, the liquid-alone over gas-alone ratio
+#   * The Chisholm C table (p. 53): tt 20, vt 12, tv 10, vv 5. These MATCH the repo's
+#     pinned CHISHOLM_C exactly -- an independent confirmation of an S1 value.
+#
+# NOT LEGIBLE, and how (2.68) is nevertheless established rather than remembered:
+#   Eq. (2.68) renders as "1 + _ + _2" with the operators lost. It is FORCED by the two
+#   legible facts above. By definition phi_f^2 = (dp/dz)_TP/(dp/dz)_f and
+#   phi_g^2 = (dp/dz)_TP/(dp/dz)_g, so with (2.67), phi_g^2 = phi_f^2 X^2. Substituting
+#   the legible (2.69):
+#       phi_f^2 = (1 + C X + X^2)/X^2 = 1 + C/X + 1/X^2
+#   which is exactly the shape (2.68) prints. The identity is asserted as a test.
+#
+# ** THE VALIDITY STATEMENT, VERBATIM (p. 54) **
+#   "The correlation was developed for horizontal two-phase flow of two-component
+#    systems at low pressures (close to atmospheric) and its application to situations
+#    outside this range of conditions is not recommended."
+#
+# Three axes, all explicit -- horizontal, two-component, near-atmospheric -- and no
+# number is given for "close to atmospheric". They are declared on the entry and are
+# what makes it a machine-visible blocker for this project's loop, which is
+# single-component ammonia, not horizontal, and runs to 20 bar.
+#
+# ** WHAT CHISHOLM (1967) ACTUALLY DOES -- and why the entry is still blocked. **
+# The S3 handoff presumed Chisholm (1967) is the extension past those conditions. The
+# source does not support that. Collier & Thome attribute:
+#   * Chisholm (1967), p. 52 -- "has corrected the above treatment by allowing for the
+#     INTERFACIAL SHEAR FORCE (S) between the phases": it fixes the annular-flow
+#     void-fraction inconsistency, not the validity range.
+#   * Chisholm (1963), p. 54 -- supplies C = 1.36 at the CRITICAL pressure level, used
+#     inside Martinelli-Nelson's construction.
+#   * Martinelli-Nelson (1948), p. 54 -- IS the single-component / pressure extension
+#     ("enable the application of the model to single component systems"), with
+#     tabulated phi_lo from 1.01 to 221.2 bar (Table 2.2).
+# So the route from "horizontal, two-component, atmospheric" to this project's loop is
+# Martinelli-Nelson (1948) -- which is not in the registry, not in hand, and not what
+# ruling A4 names. Under C1 it is not reconstructed. The gap is the deliverable.
+
+#: Flow-regime labels for selecting the Chisholm ``C`` (Collier & Thome p. 53).
+CHISHOLM_REGIMES = ("turbulent", "laminar")
+
+
+def chisholm_C(liquid_regime: str, gas_regime: str) -> float:
+    """The Chisholm constant ``C`` for a regime pair (Collier & Thome p. 53 table).
+
+    The source names the regimes viscous/turbulent; the registry's pinned
+    ``CHISHOLM_C`` uses laminar/turbulent for the same distinction, and the four values
+    (20, 12, 10, 5) agree with the printed table exactly.
+    """
+    key = (liquid_regime.strip().lower(), gas_regime.strip().lower())
+    if key not in CHISHOLM_C:
+        raise ValueError(
+            f"no Chisholm C for regime pair {key}; the source tabulates only "
+            f"{sorted(CHISHOLM_C)}"
+        )
+    return CHISHOLM_C[key]
+
+
+def martinelli_parameter_X(dp_dz_liquid: float, dp_dz_gas: float) -> float:
+    """Martinelli parameter ``X`` from the two single-phase gradients (Eq. 2.67).
+
+    ``X^2 = (dp/dz)_f / (dp/dz)_g`` -- each phase considered to flow alone in the
+    channel. Both gradients must be positive.
+    """
+    if dp_dz_liquid <= 0.0 or dp_dz_gas <= 0.0:
+        raise ValueError(
+            f"both single-phase gradients must be positive to form X; got "
+            f"liquid={dp_dz_liquid}, gas={dp_dz_gas}"
+        )
+    return math.sqrt(dp_dz_liquid / dp_dz_gas)
+
+
+def lockhart_martinelli_phi_f2(X: float, C: float) -> float:
+    """Liquid-based two-phase multiplier ``phi_f^2 = 1 + C/X + 1/X^2`` (Eq. 2.68).
+
+    Multiplies the **liquid-alone** frictional gradient. See the module note for how
+    this form is established from the legible (2.67)/(2.69) rather than recalled.
+    """
+    if X <= 0.0:
+        raise ValueError(f"Martinelli parameter X must be positive, got {X}")
+    return 1.0 + C / X + 1.0 / X**2
+
+
+def lockhart_martinelli_phi_g2(X: float, C: float) -> float:
+    """Gas-based two-phase multiplier ``phi_g^2 = 1 + C X + X^2`` (Eq. 2.69, legible)."""
+    if X <= 0.0:
+        raise ValueError(f"Martinelli parameter X must be positive, got {X}")
+    return 1.0 + C * X + X**2
+
+
+def lockhart_martinelli_frictional_gradient(
+    *, dp_dz_liquid: float, dp_dz_gas: float, liquid_regime: str, gas_regime: str
+) -> float:
+    """Two-phase frictional pressure gradient, Pa/m, by the separated-flow model.
+
+    ``(dp/dz)_TP = phi_f^2 (dp/dz)_f``. Performs **no** applicability checking: the
+    entry's declared axes -- horizontal, two-component, near-atmospheric -- are
+    enforced by the caller through ``applicability_spec``, and for this project's loop
+    they do not hold.
+    """
+    X = martinelli_parameter_X(dp_dz_liquid, dp_dz_gas)
+    C = chisholm_C(liquid_regime, gas_regime)
+    return lockhart_martinelli_phi_f2(X, C) * dp_dz_liquid
+
+
+def accelerational_pressure_drop(
+    *,
+    mass_flux_kg_m2s: float,
+    quality_in: float,
+    quality_out: float,
+    rho_f: float,
+    rho_g: float,
+) -> float:
+    """Acceleration pressure drop across a section, Pa (S0 Sec. 3).
+
+    The momentum change as the mixture accelerates while evaporating, in the
+    homogeneous (equal-velocity) limit::
+
+        dP_accel = G^2 [ (x/rho_g + (1-x)/rho_f)_out - (...)_in ]
+
+    Stated in the homogeneous limit deliberately: the separated-flow acceleration term
+    needs a void fraction, and the void-fraction relation in the consulted source is
+    the one Collier & Thome show to be INCONSISTENT for annular flow (p. 52, the
+    discrepancy Chisholm (1967) corrects and which is not in hand). Using the
+    homogeneous limit is a named modelling choice with a stated direction of error,
+    rather than a separated-flow void fraction the source itself disowns.
+    """
+    def _v(x: float) -> float:
+        return x / rho_g + (1.0 - x) / rho_f
+
+    return mass_flux_kg_m2s**2 * (_v(quality_out) - _v(quality_in))
+
+
+def static_pressure_drop(
+    *,
+    rho_mixture_kg_m3: float,
+    height_m: float,
+    gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+) -> float:
+    """Static (gravitational) pressure drop ``rho g h``, Pa (Director ruling D12).
+
+    **This term IS gravity**, and in orbit it is exactly zero -- not small, zero. D12
+    nonetheless makes gravity an *enforced applicability axis* rather than letting the
+    term be dropped: omitting it would build a microgravity model out of a 1g-derived
+    frictional correlation whose error there is unvalidated and probably
+    non-conservative (DEBTS D-7), leaving a model microgravity-exact in one term and
+    terrestrial in the next with nothing marking the seam.
+
+    So this computes ``rho g h`` honestly at the gravity it is given, and the
+    applicability axis on the entry is what refuses a case whose gravity the
+    frictional correlation cannot speak to. Omission makes it silently microgravity;
+    enforcement makes it loudly terrestrial.
+    """
+    if gravity_m_s2 <= 0.0:
+        raise ValueError(
+            f"static head is evaluated at g = {gravity_m_s2} m/s^2. The term is exactly "
+            "zero in free fall, but the frictional correlation it is added to is "
+            "1g-derived, so the loop as a whole is not evaluable there: treat the case "
+            "as out of applicability rather than summing a microgravity-exact term "
+            "with a terrestrial one (Director ruling D12)."
+        )
+    return rho_mixture_kg_m3 * gravity_m_s2 * height_m
+
+
+def pump_inlet_subcooling_margin(
+    *, saturation_temperature_K: float, inlet_temperature_K: float
+) -> float:
+    """Pump-inlet subcooling margin ``T_sat(P_inlet) - T_inlet``, K (ruling D8).
+
+    Positive means the inlet is subcooled liquid and the pump is fed liquid; zero or
+    negative means the fluid is at or past saturation at the inlet, which is the
+    cavitation condition this criterion exists to exclude.
+
+    The criterion is the AMS-02 Tracker Thermal Control System's, a mechanically pumped
+    two-phase loop flying since 2011, whose condenser exit state guarantees the fluid
+    "is sub-cooled well below the saturation point so arrives in liquid phase back at
+    the pump". It is a **feasibility** criterion, not a pump-selection one: see the
+    entry's source note for why the quantitative NPSHA/NPSH3 route is recorded and not
+    implemented, and for the NPSH3 warning any future guard must carry.
+    """
+    return saturation_temperature_K - inlet_temperature_K
+
+
+#: Enforceable applicability of Lockhart-Martinelli/Chisholm, taken verbatim from the
+#: validity statement on p. 54 of the consulted source.
+LOCKHART_MARTINELLI_APPLICABILITY = Applicability(
+    compositions=frozenset({"two_component"}),
+    compositions_basis=(
+        "Collier & Thome Sec. 2.4 p. 54, verbatim: 'The correlation was developed for "
+        "horizontal two-phase flow of TWO-COMPONENT systems at low pressures (close to "
+        "atmospheric) and its application to situations outside this range of "
+        "conditions is not recommended.' This project's loop is SINGLE-component "
+        "(ammonia boiling in its own vapour), so every case is outside it. The route to "
+        "single-component systems named by the same source is Martinelli-Nelson (1948), "
+        "which is not in the registry and not in hand."
+    ),
+    geometries=frozenset({"round_tube"}),
+    geometries_basis=(
+        "The Martinelli studies were of flow in horizontal TUBES (Sec. 2.4.3). Narrowed "
+        "to round_tube, consistent with Director ruling D9."
+    ),
+    orientations=frozenset({"horizontal"}),
+    orientations_basis=(
+        "Collier & Thome p. 54, same sentence: developed for HORIZONTAL flow. The "
+        "static-head term is identically zero for horizontal flow, which is why the "
+        "correlation could ignore it -- and is exactly why applying it to a "
+        "non-horizontal loop needs the static term back (Director ruling D12)."
+    ),
+    gravity_explicit=False,
+    gravity_basis=(
+        "The frictional multiplier itself carries no g -- unlike Shah (1987), whose Y "
+        "divides by it. But the correlation's database is terrestrial and the loop it "
+        "is used in has a static head, so gravity is declared and enforced here too "
+        "(D12): consistency between the two legs is the point of the ruling."
+    ),
+    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,
+    numeric_domain_provenance=DomainProvenance.UNESTABLISHED,
+    numeric_domain_note=(
+        "The declared P_Pa ceiling of 2e6 Pa is NOT traceable to the source. Collier & "
+        "Thome say only 'close to atmospheric' and give no number, so no numeric "
+        "ceiling can be attributed to them -- and none is invented to replace it. The "
+        "range is retained as an enforced guard under Director ruling D1 and labelled "
+        "provenance-unestablished. The composition and orientation axes above are the "
+        "constraints that actually bite for this project, and those ARE verbatim."
+    ),
+    unenforced_axes=(
+        "the pressure ceiling: 'close to atmospheric' is qualitative in the source, so "
+        "the numeric bound is enforced but unattributable rather than replaced by a "
+        "chosen number (C1).",
+    ),
+)
+
+
 # --- Two-phase correlation registry (evaluate wired for the S2-implemented ids) --
 
 TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
@@ -960,14 +1293,27 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
         kind="dp",
         provenance=Provenance.PUBLISHED,
         status=Status.RESOLVED,
-        formula="phi^2 separated-flow multiplier with Chisholm C (see CHISHOLM_C); "
-        "executable form deferred to S2",
-        domain=Domain(ranges={"P_Pa": (0.1e6, 2.0e6)}),  # low/moderate pressure
+        formula="phi_f^2 = 1 + C/X + 1/X^2 (Eq. 2.68); phi_g^2 = 1 + C X + X^2 "
+        "(Eq. 2.69); X^2 = (dp/dz)_f/(dp/dz)_g (Eq. 2.67); C from the pinned "
+        "CHISHOLM_C table",
+        # Retained and enforced, but NOT traceable to the source -- see the spec's
+        # numeric_domain_note. The source says only "close to atmospheric".
+        domain=Domain(ranges={"P_Pa": (0.1e6, 2.0e6)}),
         source=_LOCKHART_MARTINELLI,
-        evaluate=None,
-        applicability="rank-eligible reference two-phase dP at low/moderate P; uses the "
-        "pinned CHISHOLM_C regime rule; formula deferred to S2",
-        note="reference dP; pinned Chisholm C = CHISHOLM_C keyed by (liquid_regime, gas_regime)",
+        evaluate=lockhart_martinelli_frictional_gradient,
+        applicability_spec=LOCKHART_MARTINELLI_APPLICABILITY,
+        applicability="Reference two-phase frictional dP (S3 executable). The multiplier "
+        "and the Chisholm C values are SOURCED. Its declared applicability is verbatim "
+        "from the source -- HORIZONTAL, TWO-COMPONENT, near-atmospheric -- and this "
+        "project's loop meets NONE of the three: single-component ammonia, "
+        "non-horizontal, to 20 bar. So the entry is implemented as far as the sourced "
+        "form allows and REFUSES outside it; every case here is a machine-visible "
+        "blocker. The extension the handoff expected from Chisholm (1967) does not "
+        "exist: that paper corrects the interfacial-shear/void-fraction inconsistency. "
+        "The single-component route named by the same source is Martinelli-Nelson "
+        "(1948), which is not in the registry and not in hand.",
+        note="reference dP; Chisholm C = CHISHOLM_C keyed by (liquid_regime, gas_regime), "
+        "confirmed against the source table; validity axes are the blocker, not the maths",
         **_MICROGRAVITY_1G,
     ),
     CorrelationEntry(
@@ -1080,16 +1426,23 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
     # ---------------- Pump inlet (NPSH) ----------------
     CorrelationEntry(
         id="two_phase.pump.npsh",
-        name="Pump-inlet NPSH margin (cavitation feasibility)",
+        name="Pump-inlet liquid feasibility (subcooling margin)",
         kind="npsh",
-        provenance=Provenance.ASSUMED,
-        status=Status.SOURCE_REQUIRED,
-        formula="NPSH_avail > NPSH_req + margin",
+        provenance=Provenance.PUBLISHED,
+        status=Status.RESOLVED,
+        formula="dT_sub = T_sat(P_inlet) - T_inlet > 0; feasible when the margin is "
+        "positive and the inlet state is liquid",
+        domain=Domain(),
         source=_NPSH,
-        evaluate=None,
-        applicability="pump-class NPSH_req source-gated; NOT rank-eligible until sourced",
-        note="NPSH_avail>NPSH_req+margin; pump-class NPSH_req source-gated; if unsourced, "
-        "idealized pump-inlet boundary (cavitation feasibility not modeled)",
+        evaluate=pump_inlet_subcooling_margin,
+        applicability="Pump-inlet cavitation feasibility as a SUBCOOLING MARGIN "
+        "(Director ruling D8), on the AMS-02 flight precedent. Moved off "
+        "SOURCE_REQUIRED. The quantitative NPSHA/NPSH3 route is recorded in the source "
+        "note and deliberately NOT implemented: it needs a specific pump, and none is "
+        "selected. A future NPSHR guard must enforce a margin over NPSH3, never "
+        "equality -- NPSH3 is already 3 % head loss to cavitation.",
+        note="subcooling margin at the pump inlet; NPSHR route recorded, not implemented "
+        "(DEBTS D-4)",
     ),
 ]
 
@@ -1148,6 +1501,12 @@ TWO_PHASE_BY_ID: dict[str, PropertyEntry | CorrelationEntry] = {
 #: Correlation kinds that must carry the gravity-basis metadata when RESOLVED.
 _GRAVITY_KINDS = frozenset({"htc", "dp", "chf"})
 
+#: Kinds that are feasibility CRITERIA rather than fitted correlations. They are
+#: exempt from the "rank-eligible entries must declare a numeric domain" rule: a
+#: subcooling margin is a sign test, not a fit with a validity window, and inventing a
+#: range for it to satisfy a structural checker is exactly what C1 forbids.
+_CRITERION_KINDS = frozenset({"npsh", "onb"})
+
 
 def missing_metadata(
     entries: list[PropertyEntry | CorrelationEntry],
@@ -1181,8 +1540,12 @@ def missing_metadata(
                 if not e.limitation:
                     problems.append(f"{e.id}: missing limitation")
 
-            # 3) a rank-eligible correlation must state a validity domain.
-            if e.rank_eligible and not e.domain.ranges:
+            # 3) a rank-eligible *fitted correlation* must state a validity domain.
+            #    Criteria are exempt and named here rather than silently skipped: a
+            #    subcooling margin is a sign test on a physical quantity, not a fit with
+            #    a range of applicability, so demanding a numeric domain of it would
+            #    force an invented one (C1).
+            if e.rank_eligible and not e.domain.ranges and e.kind not in _CRITERION_KINDS:
                 problems.append(f"{e.id}: rank-eligible correlation with empty Domain")
 
     return problems

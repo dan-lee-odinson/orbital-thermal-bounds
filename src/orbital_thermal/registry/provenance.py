@@ -42,6 +42,12 @@ class Status(str, Enum):
     BACKEND_REQUIRED = "backend_required"
     UNSUPPORTED = "unsupported"
     NOT_RANK_ELIGIBLE = "not_rank_eligible"
+    #: Sourced, domain-fixed, and settled -- but **no executable form exists anywhere
+    #: yet**. DIR-02: ``RESOLVED`` was carrying two meanings, "the sourcing question is
+    #: settled" and "this can supply an evaluated value", and an entry that was only the
+    #: first was admitted as though it were the second. Splitting the vocabulary is the
+    #: fix; the eligibility rule below is what makes it binding.
+    IMPLEMENTATION_REQUIRED = "implementation_required"
 
 
 class PropertyKind(str, Enum):
@@ -177,28 +183,40 @@ class CorrelationEntry:
     # stays valid; `None` means "declares no enforceable applicability", which is
     # deliberately distinguishable from an empty spec that declares none.
     applicability_spec: object = None  # applicability.Applicability | None
+    #: Where the executable form lives when it is not the ``evaluate`` callable --
+    #: e.g. ``"orbital_thermal.solid_network.spreading_resistance"``. Some B1 entries
+    #: are evaluated by a module function rather than by a callable hung on the entry;
+    #: before DIR-02 that was indistinguishable from "not implemented at all", because
+    #: both simply had ``evaluate=None``. Naming the location is what separates them.
+    executable_form: str = ""
+
+    @property
+    def has_executable_form(self) -> bool:
+        """Whether an executable form exists anywhere -- on the entry or in a module."""
+        return self.evaluate is not None or bool(self.executable_form.strip())
 
     @property
     def rank_eligible(self) -> bool:
         """Whether this entry may enter a ranked case.
 
-        OTB-G001 F-03: an entry that needs an evaluated value cannot be rank-eligible
-        while it has no executable form. Before this fix a correlation with
-        ``evaluate=None``, a blank locator and an ambiguous citation still passed the
-        generic guard purely on its ``provenance``/``status`` pair -- the silently
-        permissive path the review was asked to exclude.
+        **DIR-02 -- closed generically, at the boundary.** An entry that cannot supply
+        an evaluated value is not rank-eligible, full stop. This is deliberately *not*
+        opt-in: the previous version gated on
+        ``applicability_spec.requires_executable_form``, so an entry simply not
+        declaring that flag was admitted -- which is the same call-site-not-boundary
+        shape that produced OTB-G001-FIXES, and DIR-02 is its third occurrence.
 
-        The requirement is opt-in via ``applicability_spec.requires_executable_form``
-        so that entries legitimately registered on source and domain ahead of their
-        executable form (the B1/S1 pattern) are unaffected.
+        "Can supply a value" means :attr:`has_executable_form`, which is true for a
+        callable on the entry *or* a named module implementation. That distinction is
+        what lets the rule be generic without demoting the B1 entries whose executable
+        form has always lived in a module (``thermal.spreading_resistance``,
+        ``hydraulic.minor_losses``) -- they were never unimplemented, only
+        undocumented, and the fix records where they live rather than changing what
+        they do.
         """
-        base = is_rank_eligible(self.provenance, self.status, has_value=True)
-        if not base:
+        if not is_rank_eligible(self.provenance, self.status, has_value=True):
             return False
-        spec = self.applicability_spec
-        if getattr(spec, "requires_executable_form", False) and self.evaluate is None:
-            return False
-        return True
+        return self.has_executable_form
 
 
 class NotRankEligibleError(ValueError):
