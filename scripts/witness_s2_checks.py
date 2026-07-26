@@ -856,6 +856,127 @@ MUTATIONS: list[Mutation] = [
             "test_v02_control_the_derivation_survives_relabelled_as_confirmation",
         ),
     ),
+    # ------------------------------------------------- OTB-G002 reviewer findings
+    Mutation(
+        name="F01-hold-the-mass-flux-constant-across-bore",
+        guards="F-01: the swept variable must reach the physics it is supposed to move",
+        finding="F-01",
+        path=TWO_PHASE_LOOP,
+        old="    mass_flux = mass_flow_kg_s / area_m2",
+        new="    mass_flux = mass_flow_kg_s / (math.pi * 2.0e-3**2 / 4.0)",
+        expect_failing=(
+            "test_f01_mass_flux_moves_with_bore",
+            "test_f01_control_the_derivation_is_arithmetically_right",
+            "test_f01_the_sweep_records_the_flux_it_used_at_every_point",
+        ),
+        notes="The exact defect: hydraulics pinned to one bore while the sweep varied bore.",
+    ),
+    Mutation(
+        name="F01-decouple-the-phase-reynolds-numbers-from-bore",
+        guards="F-01: both phase Reynolds numbers are derived from the bore",
+        finding="F-01",
+        path=TWO_PHASE_LOOP,
+        old="    re_f, re_g = g_f * diameter_m / mu_f, g_g * diameter_m / mu_g",
+        new="    re_f, re_g = 5.0e3, 5.0e3",
+        expect_failing=(
+            "test_f01_both_phase_reynolds_numbers_move_with_bore",
+            "test_f01_control_the_derivation_is_arithmetically_right",
+        ),
+        notes=(
+            "Pinning only the length scale is NOT enough to break the monotone test -- "
+            "the mass flux still varies, so Re still moves. Pinned outright instead."
+        ),
+    ),
+    Mutation(
+        name="F01-stop-recording-the-flux-on-each-sweep-point",
+        guards="F-01: a sweep must be able to show that its hydraulics moved",
+        finding="F-01",
+        path=TWO_PHASE_LOOP,
+        old=(
+            "                    mass_flux_kg_m2s=dp.hydraulics.mass_flux_kg_m2s\n"
+            "                    if dp.hydraulics is not None\n"
+            "                    else None,"
+        ),
+        new="                    mass_flux_kg_m2s=None,",
+        expect_failing=("test_f01_the_sweep_records_the_flux_it_used_at_every_point",),
+        notes=(
+            "Nothing in the pre-fix sweep output could have revealed the constant flux. "
+            "This is the reporting half, witnessed separately from the derivation."
+        ),
+    ),
+    Mutation(
+        name="F02-let-a-single-component-fluid-be-declared-two-component",
+        guards="F-02: declarations that are not derivable must still be consistency-checked",
+        finding="F-02",
+        path=APPLIC,
+        old=(
+            "        if fluid.strip().lower() in pure and "
+            'composition.strip().lower() == "two_component":'
+        ),
+        new='        if False and fluid.strip().lower() in pure:',
+        expect_failing=(
+            "test_f02_a_single_component_fluid_declared_two_component_is_a_contradiction",
+            "test_f02_the_contradiction_check_is_at_the_boundary_not_the_sweep",
+        ),
+    ),
+    Mutation(
+        name="F02-let-horizontal-flow-carry-a-static-head",
+        guards="F-02: the static head is identically zero in horizontal flow",
+        finding="F-02",
+        path=APPLIC,
+        old='        if orientation.strip().lower() == "horizontal" and abs(height_m) > 0.0:',
+        new='        if False and orientation.strip().lower() == "horizontal":',
+        expect_failing=("test_f02_horizontal_with_a_static_height_is_a_contradiction",),
+    ),
+    Mutation(
+        name="F02-classify-every-flow-as-turbulent-regardless-of-reynolds",
+        guards="F-02: regime is computed from the state, never declared",
+        finding="F-02",
+        path=TWO_PHASE_LOOP,
+        old='    return "laminar" if reynolds <= _LAMINAR_RE_MAX else "turbulent"',
+        new='    return "" or "turbulent"',
+        expect_failing=("test_f02_flow_regime_is_computed_never_declared",),
+        notes="A regime that cannot come out laminar is a label wearing a computation's clothes.",
+    ),
+    Mutation(
+        name="F03-break-the-single-phase-limit-with-a-floor-on-the-multiplier",
+        guards="F-03: as x -> 0 the two-phase dP must recover the Stage-1 single-phase dP",
+        finding="F-03",
+        path=REGISTRY,
+        old="    return 1.0 + C / X + 1.0 / X**2",
+        new="    return 1.0 + C / X + 1.0 / X**2 + 0.05",
+        expect_failing=(
+            "test_f03_x_to_zero_recovers_the_stage1_single_phase_pressure_drop",
+            "test_f03_the_approach_to_the_single_phase_limit_is_order_sqrt_x",
+            "test_f03_the_multiplier_itself_tends_to_one",
+        ),
+        notes=(
+            "A 5% offset is invisible at the working quality and fatal at the limit -- "
+            "which is exactly why the limit needed a test rather than a spot check."
+        ),
+    ),
+    Mutation(
+        name="F04-guard-non-finite-inputs-with-a-sign-test-again",
+        guards="F-04: NaN passes every comparison, so > 0 is not a finiteness check",
+        finding="F-04",
+        path=TWO_PHASE_LOOP,
+        old="            _v.positive(name, value)",
+        new="            if value <= 0.0:\n                raise ValueError(f'{name} must be > 0')",
+        expect_failing=(
+            "test_f04_a_non_finite_input_is_refused_not_returned_as_nan",
+            "test_f04_a_non_finite_gravity_or_height_is_refused",
+        ),
+        notes="The exact pre-fix expression: a sign test that NaN walks straight through.",
+    ),
+    Mutation(
+        name="F04-let-quality-leave-the-unit-interval",
+        guards="F-04: quality is a mass fraction, so 1.7 and -0.5 are not answers",
+        finding="F-04",
+        path=TWO_PHASE_LOOP,
+        old="            _v.in_range(name, value, 0.0, 1.0)",
+        new="            _v.in_range(name, value, -1.0e9, 1.0e9)",
+        expect_failing=("test_f04_an_impossible_quality_is_refused",),
+    ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
         guards="gate combination (a permissive gate must not outvote a strict one)",
