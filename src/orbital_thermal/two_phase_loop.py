@@ -35,13 +35,15 @@ rank-eligible number. See :mod:`orbital_thermal.registry.two_phase` for the sour
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from . import _validate as _v
 from .registry import NotRankEligibleError, assert_in_domain, get
-from .registry.applicability import Consequence, Violation
+from .registry.applicability import Consequence, Violation, case_contradictions
 from .registry.two_phase import (
     STANDARD_GRAVITY_M_S2,
+    TWO_PHASE_PROPERTIES,
     accelerational_pressure_drop,
     lockhart_martinelli_frictional_gradient,
     pump_inlet_subcooling_margin,
@@ -52,6 +54,14 @@ DP_ID = "two_phase.dp.lockhart_martinelli_chisholm"
 NPSH_ID = "two_phase.pump.npsh"
 HTC_ID = "two_phase.htc.gungor_winterton"
 CHF_ID = "two_phase.chf.shah_1987"
+
+#: The pure coolants the registry carries a saturation backend for. Read from the
+#: registry rather than restated, so it tracks the entries. Every one of them is a
+#: single substance, which is what makes "this fluid, and also two-component flow" a
+#: contradiction rather than merely an out-of-basis case (F-02).
+REGISTERED_SINGLE_COMPONENT_FLUIDS: frozenset[str] = frozenset(
+    e.material.lower() for e in TWO_PHASE_PROPERTIES
+)
 
 
 # --- the bore band, DERIVED from the registry (ruling D11) -----------------------
@@ -164,6 +174,143 @@ def required_length_m(
 # --- pressure drop, assembled at a boundary that enforces ------------------------
 
 
+# --- hydraulic state DERIVED from bore (OTB-G002 F-01) ---------------------------
+
+
+@dataclass(frozen=True)
+class HydraulicState:
+    """The hydraulic state a bore implies, derived rather than supplied.
+
+    OTB-G002 **F-01**: the sweep previously took mass flux and both phase-alone
+    gradients as scalars *outside* the diameter loop and passed them unchanged at every
+    point. Mass flux is ``m_dot / (pi D^2 / 4)``, so it moves with bore by construction
+    -- a factor of 683 across the adopted 1.224-32 mm band at a fixed 0.01 kg/s -- and
+    Reynolds number, both phase-alone gradients, the Martinelli parameter and the whole
+    acceleration term follow from it. Held constant, friction varied only through length
+    and acceleration did not vary with bore at all.
+    """
+
+    diameter_m: float
+    mass_flux_kg_m2s: float
+    quality: float
+    reynolds_liquid: float
+    reynolds_gas: float
+    liquid_regime: str
+    gas_regime: str
+    dp_dz_liquid_Pa_m: float
+    dp_dz_gas_Pa_m: float
+
+
+#: Liquid/gas regime boundary, reusing Stage-1's own laminar threshold so the two stages
+#: classify flow regime by one convention rather than two.
+_LAMINAR_RE_MAX = 2300.0
+
+
+def _regime(reynolds: float) -> str:
+    return "laminar" if reynolds <= _LAMINAR_RE_MAX else "turbulent"
+
+
+def hydraulic_state_from_bore(
+    *,
+    mass_flow_kg_s: float,
+    diameter_m: float,
+    quality: float,
+    rho_f: float,
+    rho_g: float,
+    mu_f: float,
+    mu_g: float,
+    rel_roughness: float = 0.0,
+) -> HydraulicState:
+    """Derive the whole hydraulic state from the bore and the mass flow.
+
+    Each phase is taken to flow **alone** in the channel at its own mass flow, which is
+    the Lockhart-Martinelli postulate (Collier & Thome Sec. 2.4.3(a)): the phase-alone
+    frictional gradients are ``f rho v^2 / (2 D)`` with ``f`` from Stage-1's own
+    single-phase friction machinery, and the **flow regimes are computed from Reynolds
+    number, never declared** (F-02).
+
+    **A named modelling difference.** The source's own basis is a Blasius-type friction
+    factor (its Eq. 2.60, ``f = K (rho u D / mu)^-n``); Stage 1 uses ``64/Re`` in laminar
+    flow and Haaland in turbulent. Measured against Blasius over its declared 4e3-1e5
+    window the two agree to **0.3-2.3 %**, and reusing Stage-1's machinery keeps one
+    friction convention across the project rather than two. Recorded rather than
+    silently substituted.
+    """
+    from . import pumped_loop as _pl
+
+    _validate_hydraulic_inputs(
+        mass_flow_kg_s=mass_flow_kg_s,
+        diameter_m=diameter_m,
+        rho_f=rho_f,
+        rho_g=rho_g,
+        mu_f=mu_f,
+        mu_g=mu_g,
+        quality=quality,
+        rel_roughness=rel_roughness,
+    )
+
+    area_m2 = math.pi * diameter_m**2 / 4.0
+    mass_flux = mass_flow_kg_s / area_m2
+
+    # Each phase flowing alone, at its own share of the mass flux.
+    g_f, g_g = mass_flux * (1.0 - quality), mass_flux * quality
+    if g_f <= 0.0 or g_g <= 0.0:
+        raise ValueError(
+            f"quality {quality} leaves one phase with no mass flow, so the "
+            "Lockhart-Martinelli 'each phase flowing alone' construction has no "
+            "meaning; the two-phase multiplier is undefined at x = 0 and x = 1"
+        )
+
+    re_f, re_g = g_f * diameter_m / mu_f, g_g * diameter_m / mu_g
+    f_f = _pl.friction_factor(re_f, rel_roughness)
+    f_g = _pl.friction_factor(re_g, rel_roughness)
+    v_f, v_g = g_f / rho_f, g_g / rho_g
+
+    return HydraulicState(
+        diameter_m=diameter_m,
+        mass_flux_kg_m2s=mass_flux,
+        quality=quality,
+        reynolds_liquid=re_f,
+        reynolds_gas=re_g,
+        liquid_regime=_regime(re_f),
+        gas_regime=_regime(re_g),
+        dp_dz_liquid_Pa_m=f_f * rho_f * v_f**2 / (2.0 * diameter_m),
+        dp_dz_gas_Pa_m=f_g * rho_g * v_g**2 / (2.0 * diameter_m),
+    )
+
+
+#: Inputs that may legitimately be zero, and (``height_m``) negative -- a loop leg can
+#: descend. They still have to be numbers.
+_NONNEGATIVE_INPUTS = frozenset({"rel_roughness"})
+_SIGNED_INPUTS = frozenset({"height_m"})
+
+
+def _validate_hydraulic_inputs(**values: float) -> None:
+    """Reject non-finite and non-physical hydraulic inputs (OTB-G002 F-04).
+
+    NaN comparisons are always false, so ``> 0`` guards passed NaN straight through and
+    the boundary returned ``total_Pa = nan`` marked applicable. Finiteness is therefore
+    checked **explicitly** -- a sign test does not exclude NaN -- and quality is bounded
+    to ``[0, 1]`` because it is a mass fraction.
+
+    **Every** hydraulic entry point validates through here. The first version of this fix
+    left ``hydraulic_state_from_bore`` and ``two_phase_pressure_drop`` validating the same
+    inputs independently, which the witness harness caught: breaking one guard left two
+    others standing, so no mutation could show any single one was load-bearing. Three
+    copies of a check is the per-instance pattern C9 forbids, and an unwitnessable check
+    is the symptom of it.
+    """
+    for name, value in values.items():
+        if name.startswith("quality"):
+            _v.in_range(name, value, 0.0, 1.0)
+        elif name in _SIGNED_INPUTS:
+            _v.finite(name, value)
+        elif name in _NONNEGATIVE_INPUTS:
+            _v.nonneg(name, value)
+        else:
+            _v.positive(name, value)
+
+
 @dataclass(frozen=True)
 class PressureDropResult:
     """Total two-phase pressure drop, its components, and its applicability verdict."""
@@ -174,6 +321,9 @@ class PressureDropResult:
     static_Pa: float
     violations: tuple[Violation, ...] = ()
     caveats: tuple[str, ...] = ()
+    #: The state the bore implied. Carried so a sweep can show that its hydraulics
+    #: actually moved -- the absence of which was F-01.
+    hydraulics: HydraulicState | None = None
 
     @property
     def is_applicable(self) -> bool:
@@ -187,22 +337,23 @@ class PressureDropResult:
 
 def two_phase_pressure_drop(
     *,
-    dp_dz_liquid_Pa_m: float,
-    dp_dz_gas_Pa_m: float,
-    liquid_regime: str,
-    gas_regime: str,
+    mass_flow_kg_s: float,
+    diameter_m: float,
     length_m: float,
-    mass_flux_kg_m2s: float,
     quality_in: float,
     quality_out: float,
     rho_f: float,
     rho_g: float,
+    mu_f: float,
+    mu_g: float,
     pressure_Pa: float,
     composition: str,
     geometry_shape: str,
     orientation: str,
+    fluid: str | None = None,
     height_m: float = 0.0,
     gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+    rel_roughness: float = 0.0,
 ) -> PressureDropResult:
     """Frictional + acceleration + static pressure drop, with enforcement.
 
@@ -223,7 +374,39 @@ def two_phase_pressure_drop(
     entry = get(DP_ID)
     spec = entry.applicability_spec
 
+    # F-04: finiteness and physicality FIRST, before anything can produce a number.
+    _validate_hydraulic_inputs(
+        mass_flow_kg_s=mass_flow_kg_s,
+        diameter_m=diameter_m,
+        length_m=length_m,
+        rho_f=rho_f,
+        rho_g=rho_g,
+        mu_f=mu_f,
+        mu_g=mu_g,
+        pressure_Pa=pressure_Pa,
+        quality_in=quality_in,
+        quality_out=quality_out,
+        height_m=height_m,
+        gravity_m_s2=gravity_m_s2,
+    )
+
     assert_in_domain(entry, context="S3 two-phase pressure drop", P_Pa=pressure_Pa)
+
+    # F-01/F-02: the hydraulic state and both flow regimes are DERIVED from the bore.
+    # The frictional multiplier is local in x; it is evaluated at the section's mean
+    # quality rather than integrated over it (the source integrates, its Eq. 2.54) --
+    # a stated screening simplification, consistent with the acceleration term.
+    x_mean = 0.5 * (quality_in + quality_out)
+    hydraulics = hydraulic_state_from_bore(
+        mass_flow_kg_s=mass_flow_kg_s,
+        diameter_m=diameter_m,
+        quality=x_mean,
+        rho_f=rho_f,
+        rho_g=rho_g,
+        mu_f=mu_f,
+        mu_g=mu_g,
+        rel_roughness=rel_roughness,
+    )
 
     violations: tuple[Violation, ...] = ()
     if spec is not None:
@@ -234,6 +417,16 @@ def two_phase_pressure_drop(
             gravity_m_s2=gravity_m_s2,
             has_executable_form=entry.has_executable_form,
         )
+    # F-02: the declarations that cannot be derived are cross-checked against each
+    # other, so they are not independently assertable.
+    violations = violations + case_contradictions(
+        fluid=fluid,
+        composition=composition,
+        orientation=orientation,
+        height_m=height_m,
+        single_component_fluids=REGISTERED_SINGLE_COMPONENT_FLUIDS,
+    )
+
     blocking = [
         v for v in violations if v.consequence in (Consequence.BLOCK, Consequence.REJECT)
     ]
@@ -245,22 +438,21 @@ def two_phase_pressure_drop(
 
     frictional = (
         lockhart_martinelli_frictional_gradient(
-            dp_dz_liquid=dp_dz_liquid_Pa_m,
-            dp_dz_gas=dp_dz_gas_Pa_m,
-            liquid_regime=liquid_regime,
-            gas_regime=gas_regime,
+            dp_dz_liquid=hydraulics.dp_dz_liquid_Pa_m,
+            dp_dz_gas=hydraulics.dp_dz_gas_Pa_m,
+            liquid_regime=hydraulics.liquid_regime,
+            gas_regime=hydraulics.gas_regime,
         )
         * length_m
     )
     accel = accelerational_pressure_drop(
-        mass_flux_kg_m2s=mass_flux_kg_m2s,
+        mass_flux_kg_m2s=hydraulics.mass_flux_kg_m2s,
         quality_in=quality_in,
         quality_out=quality_out,
         rho_f=rho_f,
         rho_g=rho_g,
     )
     # Mixture density in the homogeneous limit, consistent with the acceleration term.
-    x_mean = 0.5 * (quality_in + quality_out)
     rho_mix = 1.0 / (x_mean / rho_g + (1.0 - x_mean) / rho_f)
     static = static_pressure_drop(
         rho_mixture_kg_m3=rho_mix, height_m=height_m, gravity_m_s2=gravity_m_s2
@@ -273,6 +465,7 @@ def two_phase_pressure_drop(
         static_Pa=static,
         violations=violations,
         caveats=spec.provenance_caveats() if spec is not None else (),
+        hydraulics=hydraulics,
     )
 
 
@@ -435,6 +628,11 @@ class BorePoint:
     required_length_m: float
     pressure_drop: PressureDropResult | None
     blocked_reason: str = ""
+    #: The mass flux this bore implied, surfaced on the point itself so a sweep is
+    #: self-evidencing: whether its hydraulics actually moved across bore is readable
+    #: without reaching into the nested result. F-01 was precisely the case where they
+    #: did not, and nothing in the output would have shown it.
+    mass_flux_kg_m2s: float | None = None
 
     @property
     def evaluated(self) -> bool:
@@ -484,21 +682,20 @@ def sweep_bore(
     h_in_J_kg: float,
     h_out_J_kg: float,
     wall_flux_W_m2: float,
-    dp_dz_liquid_Pa_m: float,
-    dp_dz_gas_Pa_m: float,
-    liquid_regime: str,
-    gas_regime: str,
-    mass_flux_kg_m2s: float,
     quality_in: float,
     quality_out: float,
     rho_f: float,
     rho_g: float,
+    mu_f: float,
+    mu_g: float,
     pressure_Pa: float,
     composition: str,
     geometry_shape: str,
     orientation: str,
+    fluid: str | None = None,
     height_m: float = 0.0,
     gravity_m_s2: float = STANDARD_GRAVITY_M_S2,
+    rel_roughness: float = 0.0,
 ) -> BoreSweep:
     """Sweep bore across the registry-derived band, deriving length at each point.
 
@@ -538,24 +735,34 @@ def sweep_bore(
         )
         try:
             dp = two_phase_pressure_drop(
-                dp_dz_liquid_Pa_m=dp_dz_liquid_Pa_m,
-                dp_dz_gas_Pa_m=dp_dz_gas_Pa_m,
-                liquid_regime=liquid_regime,
-                gas_regime=gas_regime,
+                mass_flow_kg_s=mass_flow_kg_s,
+                diameter_m=d,
                 length_m=length,
-                mass_flux_kg_m2s=mass_flux_kg_m2s,
                 quality_in=quality_in,
                 quality_out=quality_out,
                 rho_f=rho_f,
                 rho_g=rho_g,
+                mu_f=mu_f,
+                mu_g=mu_g,
                 pressure_Pa=pressure_Pa,
                 composition=composition,
                 geometry_shape=geometry_shape,
                 orientation=orientation,
+                fluid=fluid,
                 height_m=height_m,
                 gravity_m_s2=gravity_m_s2,
+                rel_roughness=rel_roughness,
             )
-            points.append(BorePoint(diameter_m=d, required_length_m=length, pressure_drop=dp))
+            points.append(
+                BorePoint(
+                    diameter_m=d,
+                    required_length_m=length,
+                    pressure_drop=dp,
+                    mass_flux_kg_m2s=dp.hydraulics.mass_flux_kg_m2s
+                    if dp.hydraulics is not None
+                    else None,
+                )
+            )
         except NotRankEligibleError as exc:
             points.append(
                 BorePoint(
@@ -563,6 +770,7 @@ def sweep_bore(
                     required_length_m=length,
                     pressure_drop=None,
                     blocked_reason=str(exc),
+                    mass_flux_kg_m2s=mass_flow_kg_s / (math.pi * d * d / 4.0),
                 )
             )
 
@@ -585,6 +793,9 @@ __all__ = [
     "DP_ID",
     "HTC_ID",
     "NPSH_ID",
+    "REGISTERED_SINGLE_COMPONENT_FLUIDS",
+    "HydraulicState",
+    "hydraulic_state_from_bore",
     "BoreBand",
     "BorePoint",
     "BoreSweep",

@@ -462,3 +462,67 @@ class Applicability:
 #: An entry that constrains nothing. Used where a correlation genuinely declares no
 #: applicability axis, so that "no spec" and "no constraints" stay distinguishable.
 UNCONSTRAINED = Applicability()
+
+
+# --- contradictions between a case's own declarations (OTB-G002 F-02) -------------
+
+
+def case_contradictions(
+    *,
+    fluid: str | None = None,
+    composition: str | None = None,
+    orientation: str | None = None,
+    height_m: float | None = None,
+    single_component_fluids: frozenset[str] = frozenset(),
+) -> tuple[Violation, ...]:
+    """Violations where a case's own declarations contradict each other.
+
+    Distinct from :meth:`Applicability.check`, which compares a case against a
+    correlation's declared basis. This compares the case against **itself**: some
+    declarations are not derivable from the numbers, so they stay declarations -- but
+    they must not be *freely* assertable (Director ruling on F-02, "derive what is
+    derivable, and make the rest mutually consistency-checked rather than independently
+    assertable").
+
+    Two contradictions are checkable today:
+
+    * a **single-component fluid** declared as ``two_component`` flow. Composition
+      cannot be recovered from densities -- ammonia and some mixture can present the
+      same numbers -- but a case naming a pure registered coolant *and* claiming two
+      components has contradicted itself.
+    * ``horizontal`` orientation with a **non-zero static height**. The static head is
+      identically zero in horizontal flow; a non-zero height says the flow is not
+      horizontal, whatever the label says.
+
+    Lives here rather than in a caller so that every boundary gets the same check from
+    one place (C9: boundary fixes are class-level, never per-instance).
+    """
+    v: list[Violation] = []
+
+    if fluid is not None and composition is not None:
+        pure = {f.strip().lower() for f in single_component_fluids}
+        if fluid.strip().lower() in pure and composition.strip().lower() == "two_component":
+            v.append(
+                Violation(
+                    Axis.COMPOSITION,
+                    Consequence.REJECT,
+                    f"the case declares fluid '{fluid}', a single-component coolant "
+                    "registered as a pure substance, and simultaneously declares "
+                    "two_component flow. Those cannot both be true, so the case is "
+                    "self-contradictory rather than merely out of basis.",
+                )
+            )
+
+    if orientation is not None and height_m is not None:
+        if orientation.strip().lower() == "horizontal" and abs(height_m) > 0.0:
+            v.append(
+                Violation(
+                    Axis.ORIENTATION,
+                    Consequence.REJECT,
+                    f"the case declares horizontal orientation but supplies a static "
+                    f"height of {height_m:.6g} m. The static head is identically zero "
+                    "in horizontal flow, so a non-zero height contradicts the label.",
+                )
+            )
+
+    return tuple(v)
