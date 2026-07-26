@@ -56,15 +56,31 @@ refusing outside it, with the gap named.
 
 ### 2.2 What was implemented, and how each part was established
 
-The source's **text layer is degraded**, so legibility is recorded rather than smoothed:
+> **CORRECTED after machine verification (V-02).** The paragraph that stood here
+> asserted that **Eq. (2.68) was not legible in the source**. That was **false**, and it
+> is the finding V-02 raised. Eq. (2.68) is sharply printed on p. 53:
+> `φ_f² = 1 + C/X + 1/X²`. What was degraded is the **PDF's embedded text layer** — an
+> automated extraction returns `"1 + _ + _2"` — not the source. Describing an extraction
+> as the source is exactly the failure the "read the page" rule exists to prevent. The
+> original text is replaced rather than annotated, because a provenance claim that is
+> false should not survive in the record even with a correction beside it.
 
-- **Legible, implemented as printed** — Eq. (2.69) `φ_g² = 1 + CX + X²`; Eq. (2.67)
-  `X² = (dp/dz)_f/(dp/dz)_g`; the p. 53 Chisholm **C** table. Those four values
-  (20, 12, 10, 5) **match the repo's pinned `CHISHOLM_C` exactly** — an independent
-  confirmation of an S1 value.
-- **Not legible: Eq. (2.68).** Its operators are lost. It is **derived, not recalled**:
-  `φ_g² = φ_f² X²` follows from the definitions plus (2.67), so the legible (2.69)
-  forces `φ_f² = 1 + C/X + 1/X²`. **That identity is asserted as a test.**
+Everything below was **read from the rendered pages**:
+
+- **Eq. (2.68)**, p. 53 — `φ_f² = 1 + C/X + 1/X²`
+- **Eq. (2.69)**, p. 53 — `φ_g² = 1 + CX + X²`
+- **Eq. (2.67)**, p. 52 — `X² = (dp/dz F)_f / (dp/dz F)_g`
+- the p. 53 Chisholm **C** table — 20 / 12 / 10 / 5, which **match the repo's pinned
+  `CHISHOLM_C` exactly**, an independent confirmation of an S1 value
+
+**The real limitation, which is worth recording:** this PDF's text layer is degraded, so
+anything taken from it must be read from the rendered page.
+
+**The derivation is retained, re-labelled.** `φ_g² = φ_f² X²` follows from the
+definitions plus (2.67), and reproduces the printed (2.68) from the printed (2.69). It is
+an **independent confirmation** of the printed equation — a genuine cross-check that
+would catch a transcription slip in either — **not the equation's source**. The test
+asserting it is kept.
 
 Also implemented: the **acceleration** term and the **static** term. The acceleration
 term is stated in the homogeneous limit deliberately — the separated-flow version needs
@@ -209,6 +225,27 @@ the `v1.1.0` suites untouched.
 
 Nothing else in the handoff was found to be wrong. The baseline numbers, the bore band,
 the ruling summaries and the scope boundaries all matched.
+
+### 8.1 And one thing **this build** got wrong — added after machine verification
+
+**The illegibility claim about Eq. (2.68) (V-02).** It was false: the equation is
+sharply printed and the *PDF's text layer* is what was degraded. See §2.2, which has
+been corrected.
+
+It matters more than its consequence suggests. The number was right, the `formula` and
+`locator` fields were accurate, and nothing wrong shipped — but the **method** for that
+one equation was derivation under a false premise, carrying a justification (*"the
+source is illegible here"*) that would have travelled with a wrong answer just as
+readily as a right one, and nothing in the artifact would have prompted anyone to go and
+look at the page.
+
+**Scope of the lapse, verified independently rather than assumed.** Every other
+assertion this build makes about that source was re-checked against the **rendered
+pages**, not the extraction: Eq. (2.67) and the Chisholm (1967) interfacial-shear
+attribution on p. 52; the p. 53 C table; the p. 54 validity sentence, the
+Martinelli–Nelson (1948) attribution and Chisholm (1963)'s `C = 1.36`; and Table 2.2's
+1.01–221.2 bar range on p. 55. **All correct, and Eq. (2.68) was the only place the text
+layer was treated as the source.** That confirms Cowork's own check independently.
 
 ---
 

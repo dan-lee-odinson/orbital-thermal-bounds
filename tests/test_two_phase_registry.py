@@ -457,6 +457,122 @@ def test_dir02_no_entry_is_rank_eligible_without_an_executable_form():
     )
 
 
+#: V-01 R1 regression. The class is *"the boundary admits a DECLARATION where the rule
+#: needs a FACT"* -- DIR-02's own fix, one level down. Five sibling instances of a
+#: declaration that cannot be honoured, plus the control that must survive.
+@pytest.mark.parametrize(
+    "declared,why",
+    [
+        ("x", "not a dotted path at all -- the single character the probe used"),
+        ("orbital_thermal.no_such_module.no_such_fn", "well-formed, module absent"),
+        ("orbital_thermal.solid_network.no_such_fn", "module exists, attribute absent"),
+        (
+            "orbital_thermal.registry.two_phase.CHISHOLM_C",
+            "attribute exists but is a dict, not callable",
+        ),
+        ("os.path.join", "resolvable and callable, but outside the package"),
+    ],
+)
+def test_v01_a_declaration_that_cannot_be_honoured_is_not_eligible(declared, why):
+    """An entry may rank only if an executable form can actually be REACHED.
+
+    Before this fix ``has_executable_form`` was ``bool(self.executable_form.strip())``,
+    so any non-empty string admitted the entry. Nothing shipped broken -- both real
+    declarations resolved -- but "the current entries happen to be correct" was the
+    standard that let round-1 F-03 come back as DIR-02, and it is not the standard now.
+    """
+    import dataclasses
+
+    entry = dataclasses.replace(
+        get("two_phase.chf.shah_1987"), evaluate=None, executable_form=declared
+    )
+    assert entry.has_executable_form is False, why
+    assert entry.rank_eligible is False, why
+    with pytest.raises(NotRankEligibleError):
+        assert_rank_eligible(entry)
+
+
+def test_v01_control_the_module_implemented_b1_entries_still_rank():
+    """The control that matters: the fix must not demote what it was built around."""
+    for cid in ("thermal.spreading_resistance", "hydraulic.minor_losses"):
+        entry = get(cid)
+        assert entry.evaluate is None
+        assert entry.has_executable_form is True, f"{cid} declaration must resolve"
+        assert entry.rank_eligible is True
+
+
+def test_v01_a_declaration_that_does_resolve_is_accepted():
+    """The other control: a real module implementation is honoured."""
+    import dataclasses
+
+    entry = dataclasses.replace(
+        get("two_phase.chf.shah_1987"),
+        evaluate=None,
+        executable_form="orbital_thermal.registry.two_phase.shah_1987_chf",
+    )
+    assert entry.has_executable_form is True
+    assert entry.rank_eligible is True
+
+
+def test_v01_every_shipped_declaration_resolves():
+    """The loud half of the fix.
+
+    ``has_executable_form`` fails CLOSED and says nothing, which is right at a boundary
+    but useless as a diagnostic: a typo would silently de-rank an entry. This names the
+    offender instead. Both halves ship because they do different jobs -- see
+    ``OTB-G002_FIXES_REPORT.md`` for why neither alone was judged sufficient.
+    """
+    from orbital_thermal.registry import ALL_ENTRIES
+    from orbital_thermal.registry.provenance import unresolved_executable_forms
+
+    assert unresolved_executable_forms(ALL_ENTRIES) == []
+
+
+def test_v01_the_reporter_actually_names_a_broken_declaration():
+    """The reporter needs its own test, for the same reason the sweep above does.
+
+    ``test_v01_every_shipped_declaration_resolves`` cannot witness the reporter while
+    every shipped declaration resolves -- there is nothing for it to find, so breaking
+    it changes nothing. The mutation harness caught that. This drives a synthetic
+    broken declaration through it, which is the only way to hold the diagnostic.
+    """
+    import dataclasses
+
+    from orbital_thermal.registry.provenance import unresolved_executable_forms
+
+    base = get("two_phase.chf.shah_1987")
+    broken = [
+        dataclasses.replace(
+            base, evaluate=None, executable_form="orbital_thermal.nope.nope"
+        ),
+        dataclasses.replace(base, evaluate=None, executable_form="os.path.join"),
+    ]
+    problems = unresolved_executable_forms(broken)
+    assert len(problems) == 2
+    assert any("does not resolve" in p for p in problems)
+    assert any("outside" in p for p in problems)
+    # ...and a healthy entry produces nothing.
+    assert unresolved_executable_forms([get("thermal.spreading_resistance")]) == []
+
+
+def test_v01_resolution_is_platform_independent():
+    """R3: resolution must not depend on host import semantics.
+
+    The same path resolves to the same object on repeat calls, and case is significant
+    -- a filesystem that happens to be case-insensitive must not make
+    ``ORBITAL_THERMAL...`` resolve.
+    """
+    from orbital_thermal.registry.provenance import resolve_executable_form
+
+    path = "orbital_thermal.solid_network.spreading_resistance"
+    first = resolve_executable_form(path)
+    assert first is not None and callable(first)
+    assert resolve_executable_form(path) is first, "resolution must be stable/cached"
+    assert resolve_executable_form(path.upper()) is None
+    assert resolve_executable_form("") is None
+    assert resolve_executable_form("   ") is None
+
+
 def test_dir02_the_vocabulary_splits_resolved_from_implemented():
     """``RESOLVED`` stopped carrying two meanings (the vocabulary half of DIR-02)."""
     assert hasattr(Status, "IMPLEMENTATION_REQUIRED")

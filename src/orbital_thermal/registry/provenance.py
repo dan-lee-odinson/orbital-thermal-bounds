@@ -89,6 +89,75 @@ def is_rank_eligible(provenance: Provenance, status: Status, has_value: bool) ->
     return status in _RANKABLE_STATUS and provenance in _RANKABLE_PROVENANCE and has_value
 
 
+#: Only paths inside this package may be declared as an executable form. A registry
+#: entry naming an arbitrary importable target would let a declaration reach outside
+#: the project entirely, and there is no case for it: every implementation a registry
+#: entry can legitimately point at is in here.
+_EXECUTABLE_FORM_ROOT = "orbital_thermal."
+
+#: Resolution cache. Resolving is an import, so it is paid once per path.
+_EXECUTABLE_FORM_CACHE: dict[str, object] = {}
+
+
+def resolve_executable_form(path: str) -> object | None:
+    """Resolve a dotted ``module.attribute`` path to a callable, or ``None``.
+
+    Returns ``None`` -- never raises -- when the path is empty, malformed, outside
+    :data:`_EXECUTABLE_FORM_ROOT`, names a module or attribute that does not exist, or
+    resolves to something that is not callable. Each of those is a declaration that
+    cannot be honoured, and the caller's job is to refuse eligibility, not to crash.
+
+    Resolution is deliberately **lazy**: the modules that implement registry entries
+    import the registry (``solid_network`` and ``pumped_loop`` both do), so resolving
+    at registry construction time would be circular.
+    """
+    path = (path or "").strip()
+    if not path:
+        return None
+    if path in _EXECUTABLE_FORM_CACHE:
+        return _EXECUTABLE_FORM_CACHE[path]
+
+    resolved: object | None = None
+    if path.startswith(_EXECUTABLE_FORM_ROOT) and "." in path:
+        module_name, _, attribute = path.rpartition(".")
+        try:
+            import importlib
+
+            candidate = getattr(importlib.import_module(module_name), attribute, None)
+        except ImportError:
+            candidate = None
+        if callable(candidate):
+            resolved = candidate
+
+    _EXECUTABLE_FORM_CACHE[path] = resolved
+    return resolved
+
+
+def unresolved_executable_forms(
+    entries: list[PropertyEntry | CorrelationEntry],
+) -> list[str]:
+    """Every entry whose declared ``executable_form`` does not resolve, and why.
+
+    The loud half of the V-01 fix. :attr:`CorrelationEntry.has_executable_form` fails
+    closed and says nothing; this names the offender, so a broken declaration is a
+    reported defect rather than a silently de-ranked entry.
+    """
+    problems: list[str] = []
+    for e in entries:
+        declared = getattr(e, "executable_form", "")
+        if not declared.strip():
+            continue
+        if not declared.strip().startswith(_EXECUTABLE_FORM_ROOT):
+            problems.append(
+                f"{e.id}: executable_form {declared!r} is outside {_EXECUTABLE_FORM_ROOT}*"
+            )
+        elif resolve_executable_form(declared) is None:
+            problems.append(
+                f"{e.id}: executable_form {declared!r} does not resolve to a callable"
+            )
+    return problems
+
+
 @dataclass(frozen=True)
 class Source:
     """A citation for a value or correlation."""
@@ -192,8 +261,27 @@ class CorrelationEntry:
 
     @property
     def has_executable_form(self) -> bool:
-        """Whether an executable form exists anywhere -- on the entry or in a module."""
-        return self.evaluate is not None or bool(self.executable_form.strip())
+        """Whether an executable form can actually be **reached**.
+
+        V-01: the first version of this returned true for any non-empty
+        ``executable_form`` string, so ``"x"`` -- or a well-formed but non-existent
+        dotted path -- made an entry rank-eligible. That admits a *declaration* where
+        the rule needs a *fact*, which is the same shape as the defect it was written
+        to close, one level down.
+
+        A declared path is now resolved (see :func:`resolve_executable_form`). The
+        resolution is **lazy and cached**: doing it while the registry module is being
+        built would be circular, because the implementing modules import the registry.
+
+        Resolution failure returns ``False`` rather than raising, so this stays a
+        total predicate and the boundary **fails closed** -- an entry whose declaration
+        does not resolve simply cannot rank. That is deliberately quiet, and is paired
+        with a registry-integrity test that fails **loudly** and names the offender;
+        see the reasoning recorded in ``OTB-G002_FIXES_REPORT.md``.
+        """
+        if self.evaluate is not None:
+            return True
+        return resolve_executable_form(self.executable_form) is not None
 
     @property
     def rank_eligible(self) -> bool:

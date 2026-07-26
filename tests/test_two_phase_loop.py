@@ -22,6 +22,7 @@ loop, because the reference correlation does not apply to it at all.
 from __future__ import annotations
 
 import math
+import pathlib
 from itertools import pairwise
 
 import pytest
@@ -83,20 +84,94 @@ DP_KW = dict(
 # =============================================================================
 
 
-def test_the_multiplier_identity_that_establishes_eq_2_68():
-    """``phi_g^2 = phi_f^2 X^2`` — how the illegible (2.68) was established.
+def test_the_multiplier_identity_confirms_the_printed_eq_2_68():
+    """``phi_g^2 = phi_f^2 X^2`` — an independent confirmation of the printed (2.68).
 
-    (2.68)'s operators are lost in the source's text layer. It is not reconstructed
-    from memory: by definition ``phi_f^2 = (dp/dz)_TP/(dp/dz)_f`` and
-    ``phi_g^2 = (dp/dz)_TP/(dp/dz)_g``, so with the legible (2.67) the legible (2.69)
-    forces ``phi_f^2 = 1 + C/X + 1/X^2``. This asserts that identity holds in the
-    implementation, which is what makes the derivation checkable rather than asserted.
+    Eq. (2.68) is **read from the printed page**: ``phi_f^2 = 1 + C/X + 1/X^2``. This
+    identity is not its source; it is a cross-check that the printed (2.68) and the
+    printed (2.69) are consistent with the definition of ``X`` in (2.67), which is
+    worth having because it would catch a transcription slip in either one.
+
+    (An earlier version of this docstring called (2.68) illegible. It is not — the
+    PDF's *text layer* is degraded, the page is sharp. See V-02.)
     """
     for X in (0.05, 0.5, 1.0, 3.0, 20.0):
         for C in (5.0, 10.0, 12.0, 20.0):
             assert lockhart_martinelli_phi_g2(X, C) == pytest.approx(
                 lockhart_martinelli_phi_f2(X, C) * X**2, rel=1e-12
             )
+
+
+#: V-02 R1 regression. The class is *"the artifact says something false about the
+#: source, in the fields whose job is to be true about it"*. The provenance fields are
+#: the sibling set: the entry note, the applicability text, the module comment, the
+#: implementation docstring and this test module. The control is that the true
+#: limitation -- the degraded TEXT LAYER -- is still recorded, because deleting the
+#: false claim must not also delete the real caveat.
+_ILLEGIBILITY_CLAIMS = (
+    "not legible",
+    "NOT legible",
+    "operators are lost",
+    "operators lost",
+    "rather than recalled",
+    "derivation rather than recall",
+)
+
+
+def _provenance_text() -> dict[str, str]:
+    entry = get(loop.DP_ID)
+    import orbital_thermal.registry.two_phase as reg
+
+    return {
+        "entry.source.note": entry.source.note,
+        "entry.applicability": entry.applicability,
+        "entry.formula": entry.formula,
+        "module docstring/comments": pathlib.Path(reg.__file__).read_text(
+            encoding="utf-8"
+        ),
+        "phi_f2 docstring": lockhart_martinelli_phi_f2.__doc__ or "",
+    }
+
+
+@pytest.mark.parametrize("claim", _ILLEGIBILITY_CLAIMS)
+def test_v02_no_provenance_field_claims_the_equation_was_illegible(claim):
+    """Eq. (2.68) is sharply printed on p. 53. The artifact must not say otherwise.
+
+    What was degraded is the PDF's embedded **text layer**, not the source. An
+    automated extraction returning ``"1 + _ + _2"`` is a transcription -- just one
+    nobody typed -- so describing it as the source was exactly the failure the "read
+    the page" rule exists to prevent. It landed on the right number, which is why it
+    needed catching: had it not, a false justification would have shipped attached to
+    it and nothing would have prompted anyone to look at the page.
+    """
+    for where, text in _provenance_text().items():
+        assert claim not in text, f"illegibility claim {claim!r} survives in {where}"
+
+
+def test_v02_the_equation_is_recorded_as_read_from_the_page():
+    text = _provenance_text()
+    assert "READ FROM THE RENDERED PAGES" in text["entry.source.note"]
+    assert "as printed" in text["entry.formula"]
+
+
+def test_v02_control_the_true_limitation_is_still_recorded():
+    """Removing the false claim must not remove the real caveat.
+
+    The text layer *is* degraded, and that is worth knowing: it is why anything from
+    this source must be read from the rendered page.
+    """
+    note = _provenance_text()["entry.source.note"]
+    assert "text layer" in note
+    assert "degraded" in note
+    assert "rendered page" in note
+    assert "transcription" in note
+
+
+def test_v02_control_the_derivation_survives_relabelled_as_confirmation():
+    """The cross-check is a good test and is kept -- as confirmation, not as source."""
+    note = _provenance_text()["entry.source.note"]
+    assert "INDEPENDENT CONFIRMATION" in note
+    assert "not its source" in note
 
 
 def test_the_chisholm_constants_match_the_source_table():

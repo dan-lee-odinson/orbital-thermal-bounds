@@ -235,12 +235,15 @@ _LOCKHART_MARTINELLI = Source(
         "phi_f^2, and the regime table on p. 53 for the Chisholm C values."
     ),
     note=(
-        "S3 PROVENANCE. The source pages were read directly, not a transcription of "
-        "them, and their text layer is DEGRADED. Eqs. (2.67) and (2.69) and the C table "
-        "are legible and are implemented as printed. Eq. (2.68) is NOT legible -- its "
-        "operators are lost -- and is established by derivation rather than recall: "
-        "phi_g^2 = phi_f^2 X^2 follows from the definitions plus (2.67), so the legible "
-        "(2.69) forces phi_f^2 = 1 + C/X + 1/X^2. That identity is asserted as a test. "
+        "S3 PROVENANCE. Eqs. (2.67), (2.68), (2.69) and the Chisholm C table were READ "
+        "FROM THE RENDERED PAGES and are implemented as printed. "
+        "LIMITATION OF THE FILE, NOT THE SOURCE: this PDF's embedded text layer is "
+        "degraded -- automated extraction drops subscripts and operators, returning "
+        "'1 + _ + _2' for the perfectly clear printed Eq. (2.68) -- so anything taken "
+        "from it must be read from the rendered page. An extraction is a transcription. "
+        "The identity phi_g^2 = phi_f^2 X^2, which reproduces the printed (2.68) from "
+        "the printed (2.69) and (2.67), is retained and asserted as a test: it is an "
+        "INDEPENDENT CONFIRMATION of the printed equation, not its source. "
         "The four Chisholm C values match the repo's pinned CHISHOLM_C exactly, which "
         "independently confirms an S1 value. "
         "CHISHOLM (1967) IS NOT THE VALIDITY EXTENSION: per p. 52 it corrects the "
@@ -968,24 +971,27 @@ def shah_1987_chf(
 # --- S3 executable form: Lockhart-Martinelli separated-flow multiplier ----------
 #
 # SOURCE CONSULTED. Collier, J.G. & Thome, J.R., "Convective Boiling and Condensation",
-# 3rd ed., Sec. 2.4 "The separated flow model", pp. 49-55 -- read as the source pages,
-# not as a transcription of them. The text layer of those pages is DEGRADED (subscripts
-# and operators are lost in places), so what was legible and what was not is recorded
-# below rather than smoothed over.
+# 3rd ed., Sec. 2.4 "The separated flow model", pp. 49-55, read from the RENDERED PAGES.
 #
-# LEGIBLE, and implemented from:
-#   * Eq. (2.69): phi_g^2 = 1 + C X + X^2
-#   * Eq. (2.67): X^2 = (dp/dz)_f / (dp/dz)_g, the liquid-alone over gas-alone ratio
+# ** A LIMITATION OF THE FILE, NOT OF THE SOURCE. ** The PDF's embedded text layer is
+# degraded: automated extraction drops subscripts and operators, returning things like
+# "1 + _ + _2" for a perfectly clear printed equation. The printed pages themselves are
+# sharp. So anything taken from this source must be read from the rendered page, and an
+# extraction is a transcription -- just one nobody typed.
+#
+# READ FROM THE PAGE and implemented as printed:
+#   * Eq. (2.68), p. 53: phi_f^2 = 1 + C/X + 1/X^2
+#   * Eq. (2.69), p. 53: phi_g^2 = 1 + C X + X^2
+#   * Eq. (2.67), p. 52: X^2 = (dp/dz F)_f / (dp/dz F)_g, liquid-alone over gas-alone
 #   * The Chisholm C table (p. 53): tt 20, vt 12, tv 10, vv 5. These MATCH the repo's
 #     pinned CHISHOLM_C exactly -- an independent confirmation of an S1 value.
 #
-# NOT LEGIBLE, and how (2.68) is nevertheless established rather than remembered:
-#   Eq. (2.68) renders as "1 + _ + _2" with the operators lost. It is FORCED by the two
-#   legible facts above. By definition phi_f^2 = (dp/dz)_TP/(dp/dz)_f and
-#   phi_g^2 = (dp/dz)_TP/(dp/dz)_g, so with (2.67), phi_g^2 = phi_f^2 X^2. Substituting
-#   the legible (2.69):
+# INDEPENDENT CONFIRMATION of (2.68), retained because it is a real cross-check:
+#   By definition phi_f^2 = (dp/dz)_TP/(dp/dz)_f and phi_g^2 = (dp/dz)_TP/(dp/dz)_g, so
+#   with (2.67), phi_g^2 = phi_f^2 X^2. Substituting the printed (2.69):
 #       phi_f^2 = (1 + C X + X^2)/X^2 = 1 + C/X + 1/X^2
-#   which is exactly the shape (2.68) prints. The identity is asserted as a test.
+#   which reproduces the printed (2.68) exactly. The identity is asserted as a test.
+#   It confirms the printed equation; it is not the equation's source.
 #
 # ** THE VALIDITY STATEMENT, VERBATIM (p. 54) **
 #   "The correlation was developed for horizontal two-phase flow of two-component
@@ -1049,8 +1055,9 @@ def martinelli_parameter_X(dp_dz_liquid: float, dp_dz_gas: float) -> float:
 def lockhart_martinelli_phi_f2(X: float, C: float) -> float:
     """Liquid-based two-phase multiplier ``phi_f^2 = 1 + C/X + 1/X^2`` (Eq. 2.68).
 
-    Multiplies the **liquid-alone** frictional gradient. See the module note for how
-    this form is established from the legible (2.67)/(2.69) rather than recalled.
+    Multiplies the **liquid-alone** frictional gradient. Read from the printed page;
+    the identity ``phi_g^2 = phi_f^2 X^2`` independently confirms it against the
+    printed (2.69) and is asserted as a test.
     """
     if X <= 0.0:
         raise ValueError(f"Martinelli parameter X must be positive, got {X}")
@@ -1293,8 +1300,8 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
         kind="dp",
         provenance=Provenance.PUBLISHED,
         status=Status.RESOLVED,
-        formula="phi_f^2 = 1 + C/X + 1/X^2 (Eq. 2.68); phi_g^2 = 1 + C X + X^2 "
-        "(Eq. 2.69); X^2 = (dp/dz)_f/(dp/dz)_g (Eq. 2.67); C from the pinned "
+        formula="phi_f^2 = 1 + C/X + 1/X^2 (Eq. 2.68, as printed); phi_g^2 = 1 + C X + "
+        "X^2 (Eq. 2.69); X^2 = (dp/dz)_f/(dp/dz)_g (Eq. 2.67); C from the pinned "
         "CHISHOLM_C table",
         # Retained and enforced, but NOT traceable to the source -- see the spec's
         # numeric_domain_note. The source says only "close to atmospheric".
