@@ -64,17 +64,35 @@ OTB_LOOP = dict(
     orientation="vertical_upflow",
 )
 
+# Physical inputs only. The hydraulic state -- mass flux, both phase Reynolds numbers,
+# both regimes and both phase-alone gradients -- is DERIVED from the bore (F-01), and
+# the regimes are computed, never declared (F-02).
 DP_KW = dict(
-    dp_dz_liquid_Pa_m=50.0,
-    dp_dz_gas_Pa_m=5.0,
-    liquid_regime="turbulent",
-    gas_regime="turbulent",
+    mass_flow_kg_s=0.01,
+    diameter_m=8.0e-3,
     length_m=1.0,
-    mass_flux_kg_m2s=300.0,
     quality_in=0.05,
     quality_out=0.40,
     rho_f=600.0,
     rho_g=8.0,
+    mu_f=1.3e-4,
+    mu_g=9.0e-6,
+    pressure_Pa=1.0e6,
+)
+
+# Physical inputs a bore sweep needs, minus the diameter it varies.
+SWEEP_KW = dict(
+    duty_W=1000.0,
+    mass_flow_kg_s=0.01,
+    h_in_J_kg=0.0,
+    h_out_J_kg=1.0e5,
+    wall_flux_W_m2=5.0e4,
+    quality_in=0.05,
+    quality_out=0.40,
+    rho_f=600.0,
+    rho_g=8.0,
+    mu_f=1.3e-4,
+    mu_g=9.0e-6,
     pressure_Pa=1.0e6,
 )
 
@@ -293,7 +311,13 @@ def test_control_a_case_inside_the_declared_basis_evaluates_cleanly():
 
 
 def test_control_the_components_sum_to_the_total():
-    r = loop.two_phase_pressure_drop(**DP_KW, **IN_BASIS, height_m=1.5)
+    """The three components sum, and a de-ranked case still reports all of them.
+
+    Uses the non-horizontal loop deliberately: a *horizontal* case with a static height
+    is now a self-contradiction (F-02), and this control was unknowingly depending on
+    that being permitted.
+    """
+    r = loop.two_phase_pressure_drop(**DP_KW, **OTB_LOOP, height_m=1.5)
     assert r.total_Pa == pytest.approx(
         r.frictional_Pa + r.accelerational_Pa + r.static_Pa
     )
@@ -314,25 +338,19 @@ def test_this_loop_violates_the_correlation_on_two_axes_at_once():
 
 
 def test_the_negative_result_is_the_result():
-    """No bore in the band produces an applicable pressure drop (ruling D7)."""
+    """No bore in the band produces an applicable pressure drop for THIS loop (D7).
+
+    Re-established on a sweep whose hydraulics actually move (F-01): mass flux, both
+    phase Reynolds numbers, both regimes and both phase-alone gradients are now derived
+    from the bore at every point. The refusal is the same and for the same sourced
+    reason -- composition and orientation -- but it is now *earned*, because the space
+    was explored rather than held constant.
+    """
     sweep = loop.sweep_bore(
         diameters_m=(2.0e-3, 8.0e-3, 2.0e-2),
-        duty_W=1000.0,
-        mass_flow_kg_s=0.01,
-        h_in_J_kg=0.0,
-        h_out_J_kg=1.0e5,
-        wall_flux_W_m2=5.0e4,
-        dp_dz_liquid_Pa_m=50.0,
-        dp_dz_gas_Pa_m=5.0,
-        liquid_regime="turbulent",
-        gas_regime="turbulent",
-        mass_flux_kg_m2s=300.0,
-        quality_in=0.05,
-        quality_out=0.40,
-        rho_f=600.0,
-        rho_g=8.0,
-        pressure_Pa=1.0e6,
+        **SWEEP_KW,
         **OTB_LOOP,
+        fluid="Ammonia",
     )
     assert sweep.any_applicable is False
     summary = sweep.summary()
@@ -392,27 +410,331 @@ def test_a_bore_outside_the_band_is_recorded_not_dropped():
     """A sweep that silently omitted its failures could not report a negative result."""
     sweep = loop.sweep_bore(
         diameters_m=(0.5e-3, 8.0e-3),  # first is below the band
-        duty_W=1000.0,
-        mass_flow_kg_s=0.01,
-        h_in_J_kg=0.0,
-        h_out_J_kg=1.0e5,
-        wall_flux_W_m2=5.0e4,
-        dp_dz_liquid_Pa_m=50.0,
-        dp_dz_gas_Pa_m=5.0,
-        liquid_regime="turbulent",
-        gas_regime="turbulent",
-        mass_flux_kg_m2s=300.0,
-        quality_in=0.05,
-        quality_out=0.40,
-        rho_f=600.0,
-        rho_g=8.0,
-        pressure_Pa=1.0e6,
+        **SWEEP_KW,
         **IN_BASIS,
     )
     assert len(sweep.points) == 2
     assert not sweep.points[0].evaluated
     assert "outside the registry-derived band" in sweep.points[0].blocked_reason
     assert sweep.points[1].evaluated
+
+
+# =============================================================================
+# F-01 — the sweep's hydraulic state is DERIVED from bore
+#
+# R1 class: "a swept variable that does not reach the physics it is supposed to move".
+# Four siblings -- mass flux, both phase Reynolds numbers, the phase-alone gradients,
+# and the acceleration term -- plus the control that the derivation is arithmetically
+# right rather than merely varying.
+# =============================================================================
+
+
+PROPS = dict(rho_f=600.0, rho_g=8.0, mu_f=1.3e-4, mu_g=9.0e-6)
+
+
+def _states(diameters, mass_flow=0.01, quality=0.225):
+    return [
+        loop.hydraulic_state_from_bore(
+            mass_flow_kg_s=mass_flow, diameter_m=d, quality=quality, **PROPS
+        )
+        for d in diameters
+    ]
+
+
+def test_f01_mass_flux_moves_with_bore():
+    """It is ``m_dot / (pi D^2 / 4)`` -- held constant, the sweep swept nothing.
+
+    Measured on the adopted band at 0.01 kg/s: 8498.6 kg/m2s at 1.224 mm against
+    12.4 at 32 mm, a factor of 683 that the build held at one value.
+    """
+    band = loop.bore_band()
+    lo, hi = _states([band.min_m, band.max_m])
+    assert lo.mass_flux_kg_m2s == pytest.approx(
+        0.01 / (math.pi * band.min_m**2 / 4), rel=1e-12
+    )
+    assert lo.mass_flux_kg_m2s / hi.mass_flux_kg_m2s == pytest.approx(683.0, rel=0.01)
+
+
+def test_f01_both_phase_reynolds_numbers_move_with_bore():
+    states = _states([1.5e-3, 8.0e-3, 3.0e-2])
+    assert all(b < a for a, b in pairwise([s.reynolds_liquid for s in states]))
+    assert all(b < a for a, b in pairwise([s.reynolds_gas for s in states]))
+
+
+def test_f01_both_phase_alone_gradients_move_with_bore():
+    states = _states([1.5e-3, 8.0e-3, 3.0e-2])
+    assert all(b < a for a, b in pairwise([s.dp_dz_liquid_Pa_m for s in states]))
+    assert all(b < a for a, b in pairwise([s.dp_dz_gas_Pa_m for s in states]))
+
+
+def test_f01_the_acceleration_term_now_moves_with_bore():
+    """It did not vary with bore at all before, because it takes the mass flux."""
+    totals = [
+        accelerational_pressure_drop(
+            mass_flux_kg_m2s=s.mass_flux_kg_m2s,
+            quality_in=0.05,
+            quality_out=0.40,
+            rho_f=600.0,
+            rho_g=8.0,
+        )
+        for s in _states([1.5e-3, 8.0e-3, 3.0e-2])
+    ]
+    assert all(b < a for a, b in pairwise(totals))
+
+
+def test_f01_control_the_derivation_is_arithmetically_right():
+    """Varying is not enough; the numbers must be the ones physics gives."""
+    d, mdot, x = 8.0e-3, 0.01, 0.3
+    s = _states([d], mass_flow=mdot, quality=x)[0]
+    g = mdot / (math.pi * d**2 / 4)
+    assert s.mass_flux_kg_m2s == pytest.approx(g, rel=1e-12)
+    assert s.reynolds_liquid == pytest.approx(g * (1 - x) * d / PROPS["mu_f"], rel=1e-12)
+    assert s.reynolds_gas == pytest.approx(g * x * d / PROPS["mu_g"], rel=1e-12)
+    assert s.liquid_regime == ("laminar" if s.reynolds_liquid <= 2300 else "turbulent")
+
+
+def test_f01_the_sweep_records_the_flux_it_used_at_every_point():
+    """A sweep must be able to show that its hydraulics moved.
+
+    Nothing in the old output could have revealed that they did not.
+    """
+    sweep = loop.sweep_bore(
+        diameters_m=(1.5e-3, 8.0e-3, 3.0e-2), **SWEEP_KW, **OTB_LOOP, fluid="Ammonia"
+    )
+    fluxes = [p.mass_flux_kg_m2s for p in sweep.points]
+    assert all(f is not None for f in fluxes)
+    assert len(set(fluxes)) == 3, "every bore must have its own flux"
+    assert all(b < a for a, b in pairwise(fluxes))
+
+
+def test_f01_no_hydraulic_scalar_can_be_supplied_to_the_sweep():
+    """The parameters that made the defect possible are gone from the signature."""
+    import inspect
+
+    params = inspect.signature(loop.sweep_bore).parameters
+    for gone in (
+        "mass_flux_kg_m2s",
+        "dp_dz_liquid_Pa_m",
+        "dp_dz_gas_Pa_m",
+        "liquid_regime",
+        "gas_regime",
+    ):
+        assert gone not in params, (
+            f"{gone} must not be caller-supplied: it is derived from bore, and "
+            "accepting it is what let the sweep hold it constant"
+        )
+
+
+# =============================================================================
+# F-02 — regime is computed; the remaining declarations are cross-checked
+# =============================================================================
+
+
+def test_f02_flow_regime_is_computed_never_declared():
+    """Reynolds number decides the regime, so the Chisholm C follows from the state."""
+    import inspect
+
+    params = inspect.signature(loop.two_phase_pressure_drop).parameters
+    assert "liquid_regime" not in params and "gas_regime" not in params
+
+    laminar = _states([3.0e-2], mass_flow=0.001)[0]
+    turbulent = _states([2.0e-3], mass_flow=0.05)[0]
+    assert laminar.liquid_regime == "laminar"
+    assert turbulent.liquid_regime == "turbulent"
+
+
+def test_f02_a_single_component_fluid_declared_two_component_is_a_contradiction():
+    """Composition is not derivable from densities, but it is not freely assertable."""
+    with pytest.raises(NotRankEligibleError, match=r"cannot both be true"):
+        loop.two_phase_pressure_drop(
+            **DP_KW,
+            composition="two_component",
+            geometry_shape="round_tube",
+            orientation="horizontal",
+            fluid="Ammonia",
+        )
+
+
+def test_f02_horizontal_with_a_static_height_is_a_contradiction():
+    """The static head is identically zero in horizontal flow."""
+    with pytest.raises(NotRankEligibleError, match=r"contradicts the label"):
+        loop.two_phase_pressure_drop(**DP_KW, **IN_BASIS, height_m=1.5)
+
+
+def test_f02_the_contradiction_check_is_at_the_boundary_not_the_sweep():
+    """C9: enforcing in ``sweep_bore`` alone would not have closed the class."""
+    from orbital_thermal.registry.applicability import case_contradictions
+
+    assert case_contradictions(
+        fluid="Ammonia",
+        composition="two_component",
+        single_component_fluids=loop.REGISTERED_SINGLE_COMPONENT_FLUIDS,
+    )
+    # ...and the sweep inherits it, because it goes through the same boundary.
+    sweep = loop.sweep_bore(
+        diameters_m=(8.0e-3,),
+        **SWEEP_KW,
+        composition="two_component",
+        geometry_shape="round_tube",
+        orientation="horizontal",
+        fluid="Ammonia",
+    )
+    assert not sweep.points[0].evaluated
+    assert "cannot both be true" in sweep.points[0].blocked_reason
+
+
+def test_f02_control_a_consistent_case_is_not_obstructed():
+    """Water in a horizontal two-component rig is contradictory; a mixture is not."""
+    from orbital_thermal.registry.applicability import case_contradictions
+
+    assert (
+        case_contradictions(
+            fluid="air-water",
+            composition="two_component",
+            orientation="horizontal",
+            height_m=0.0,
+            single_component_fluids=loop.REGISTERED_SINGLE_COMPONENT_FLUIDS,
+        )
+        == ()
+    )
+
+
+# =============================================================================
+# F-03 — the settled x -> 0 limiting case, against the Stage-1 oracle
+# =============================================================================
+
+
+def test_f03_x_to_zero_recovers_the_stage1_single_phase_pressure_drop():
+    """S0 settles it: as ``x -> 0``, ``phi^2 -> 1`` and dP recovers Stage-1's dP.
+
+    Oracle is **Stage-1's own single-phase pressure drop**, not a literal, so the test
+    cannot drift away from the thing it claims to recover. The limit already held; this
+    is the missing test of correct behaviour, not a repair.
+    """
+    from orbital_thermal import pumped_loop as pl
+
+    d, mdot, length = 8.0e-3, 0.01, 1.0
+    rho_f, mu_f = PROPS["rho_f"], PROPS["mu_f"]
+
+    area = math.pi * d**2 / 4
+    g = mdot / area
+    velocity = g / rho_f
+    single_phase = pl.pressure_drop(
+        pl.friction_factor(g * d / mu_f), length, d, rho_f, velocity
+    )
+
+    qualities = (1.0e-3, 1.0e-4, 1.0e-5, 1.0e-6, 1.0e-7, 1.0e-8)
+    ratios = [
+        loop.two_phase_pressure_drop(
+            **DP_KW | {"quality_in": x, "quality_out": x}, **IN_BASIS
+        ).frictional_Pa
+        / single_phase
+        for x in qualities
+    ]
+
+    assert all(b < a for a, b in pairwise(ratios)), (
+        f"the frictional multiplier must fall monotonically toward 1; got {ratios}"
+    )
+    assert ratios[-1] == pytest.approx(1.0, rel=2.0e-3), (
+        f"as x -> 0 the two-phase dP must recover the Stage-1 single-phase dP; "
+        f"ratio at x = 1e-8 is {ratios[-1]:.6f}"
+    )
+
+
+def test_f03_the_approach_to_the_single_phase_limit_is_order_sqrt_x():
+    """*How* it converges, not just that it does -- and the rate is a real prediction.
+
+    Laminar gas friction gives ``f_g = 64/Re_g ~ 1/x`` and ``v_g ~ x``, so the gas-alone
+    gradient vanishes as ``x`` and ``X ~ x^-1/2``. With ``phi_f^2 ~ 1 + C/X`` the excess
+    over the single-phase drop must therefore fall as ``sqrt(x)``. Measured constant
+    ``9.635``, stable to three figures across five decades -- a slow convergence, which is
+    why a 1e-5 probe would read a 3% residual as a failure to recover.
+    """
+    from orbital_thermal import pumped_loop as pl
+
+    d, mdot, length = 8.0e-3, 0.01, 1.0
+    rho_f, mu_f = PROPS["rho_f"], PROPS["mu_f"]
+    g = mdot / (math.pi * d**2 / 4)
+    single_phase = pl.pressure_drop(
+        pl.friction_factor(g * d / mu_f), length, d, rho_f, g / rho_f
+    )
+
+    constants = []
+    for x in (1.0e-4, 1.0e-5, 1.0e-6, 1.0e-7, 1.0e-8):
+        ratio = (
+            loop.two_phase_pressure_drop(
+                **DP_KW | {"quality_in": x, "quality_out": x}, **IN_BASIS
+            ).frictional_Pa
+            / single_phase
+        )
+        constants.append((ratio - 1.0) / math.sqrt(x))
+
+    assert all(c == pytest.approx(9.635, rel=5.0e-3) for c in constants), (
+        f"excess over the single-phase drop must scale as sqrt(x); got {constants}"
+    )
+
+
+def test_f03_the_multiplier_itself_tends_to_one():
+    """The mechanism behind the limit: ``phi_f^2 -> 1`` as ``X -> infinity``."""
+    values = [lockhart_martinelli_phi_f2(X, 20.0) for X in (10.0, 1.0e2, 1.0e4, 1.0e6)]
+    assert all(b < a for a, b in pairwise(values))
+    assert values[-1] == pytest.approx(1.0, abs=1e-4)
+
+
+# =============================================================================
+# F-04 — non-numbers and impossible qualities are refused
+#
+# R1 class: "a guard expressed as a sign test, which NaN passes". Four sibling input
+# families -- gradient-driving inputs, mass flow, density, quality -- plus the control
+# that a valid case still evaluates.
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"mass_flow_kg_s": float("nan")},
+        {"diameter_m": float("nan")},
+        {"rho_f": float("nan")},
+        {"rho_g": float("nan")},
+        {"mu_f": float("nan")},
+        {"pressure_Pa": float("nan")},
+        {"length_m": float("nan")},
+        {"mass_flow_kg_s": float("inf")},
+        {"rho_f": float("inf")},
+    ],
+)
+def test_f04_a_non_finite_input_is_refused_not_returned_as_nan(bad):
+    """NaN comparisons are always false, so ``> 0`` passed it straight through.
+
+    The boundary returned ``total_Pa = nan`` marked applicable -- a number nobody can
+    distinguish from a real one. Finiteness is now checked explicitly.
+    """
+    with pytest.raises(ValueError, match=r"must be finite|must be > 0"):
+        loop.two_phase_pressure_drop(**DP_KW | bad, **IN_BASIS)
+
+
+@pytest.mark.parametrize("quality", [1.7, -0.5, 1.0000001, -1e-9, float("nan")])
+def test_f04_an_impossible_quality_is_refused(quality):
+    """Quality is a mass fraction; 1.7 and -0.5 produced confident finite numbers."""
+    with pytest.raises(ValueError, match=r"must be in|must be finite"):
+        loop.two_phase_pressure_drop(
+            **DP_KW | {"quality_in": quality, "quality_out": quality}, **IN_BASIS
+        )
+
+
+def test_f04_a_non_finite_gravity_or_height_is_refused():
+    with pytest.raises(ValueError):
+        loop.two_phase_pressure_drop(**DP_KW, **IN_BASIS, gravity_m_s2=float("nan"))
+    with pytest.raises(ValueError):
+        loop.two_phase_pressure_drop(**DP_KW, **OTB_LOOP, height_m=float("nan"))
+
+
+def test_f04_control_a_valid_case_still_evaluates():
+    """The control: the validation must not refuse the physical cases."""
+    r = loop.two_phase_pressure_drop(**DP_KW, **IN_BASIS)
+    assert math.isfinite(r.total_Pa) and r.total_Pa > 0.0
+    assert r.is_applicable
 
 
 # =============================================================================
