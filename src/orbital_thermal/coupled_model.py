@@ -42,7 +42,39 @@ from . import pumped_loop as _pl
 from . import registry
 from ._validate import nonneg, positive
 from .radiation import SIGMA_SB, required_area
+from .registry.collapse import Collapse, Transcription
 from .solid_network import SolidPath
+
+# --- C11(i): what this module collapses, declared on the module itself -------------
+#
+# DECLARATION ONLY. No number moves and no physics changes: the residual set below is
+# exactly as released at v1.1.0. What is added is the model saying out loud which
+# varying quantity it evaluates at a single representative value, so that a guard
+# adopted later against a phenomenon this collapse has already destroyed can be caught
+# by the cross-check instead of shipping as a working guard.
+#
+# The quotation is taken from THIS module's own docstring and is held to it: see
+# registry.collapse.Transcription for why a paraphrase would be worse than useless.
+COLLAPSES: tuple[Collapse, ...] = (
+    Collapse(
+        quantity="fluid temperature around the loop",
+        representative_value="a single loop mean T_mean, used at BOTH films",
+        phenomena=("axial_profile",),
+        basis=(
+            "The residual set solves one loop mean temperature and applies it to the "
+            "cold-plate film (R2) and the radiator film (R4) alike, so there is no "
+            "temperature profile around the loop and no coldest or hottest point to "
+            "find. R3 closes the loop energy over the T1 -> T2 rise, so the endpoints "
+            "exist; what is collapsed is everything between them."
+        ),
+        transcription=Transcription(
+            module="orbital_thermal.coupled_model",
+            verbatim="T_f,cp = T_f,rad = (T1+T2)/2 = T_mean",
+            repo_path="src/orbital_thermal/coupled_model.py",
+            context_line="Residuals (B0 plan 4.1a; ``T_f,cp = T_f,rad = (T1+T2)/2 = T_mean``)::",
+        ),
+    ),
+)
 
 _COOLANT_FLUID = {"ammonia": "Ammonia", "water": "Water"}
 

@@ -57,6 +57,42 @@ from . import spectral_radiation as sr
 from .architecture_comparison import AI1_DESIGN_POINT, NOT_PUBLISHED
 from .constants import SIGMA_SB
 from .reference_architectures import STARCLOUD_2024_PUBLISHED, starcloud_published_balance
+from .registry.collapse import Collapse, Transcription
+
+# --- C11(i): what this module collapses, declared on the module itself -------------
+#
+# DECLARATION ONLY. No number moves: every comparison below is exactly as released at
+# v1.1.0. The module already SAID this in prose, which is the point -- the declaration
+# quotes that prose rather than restating it, so the two cannot drift apart.
+#
+# The collapse is performed by sink.analytic_albedo_orbit_mean, whose closed-form orbit
+# average is grid-free and exact for what it computes. It is declared HERE, not there,
+# because this is the module that applies it as a screening simplification and this is
+# where the prose describing it lives. A different caller could use the same exact mean
+# without collapsing anything -- the collapse belongs to the use, not to the function.
+COLLAPSES: tuple[Collapse, ...] = (
+    Collapse(
+        quantity="albedo load over the orbit",
+        representative_value="the closed-form orbit mean cos(beta)/pi",
+        phenomena=("temporal_profile", "eclipse_transient"),
+        basis=(
+            "The environmental forcing enters as an orbit-averaged albedo factor, so "
+            "the comparison sees one steady load rather than a load that varies "
+            "around the orbit and falls through eclipse. Peak and swing are therefore "
+            "outside what this module can report; transient.py quantifies the penalty "
+            "of that assumption separately, and does not feed this comparison."
+        ),
+        transcription=Transcription(
+            module="orbital_thermal.harmonized_comparison",
+            verbatim="orbit-averaged albedo, no eclipse transient",
+            repo_path="src/orbital_thermal/harmonized_comparison.py",
+            context_line=(
+                "single Earth-facing view factor, orbit-averaged albedo, "
+                "no eclipse transient,"
+            ),
+        ),
+    ),
+)
 
 #: Default harmonized orbit / geometry. Tilt 90 deg = radiator edge-on to nadir
 #: (in-plane with the arrays); F(550 km, 90 deg) = 0.258 ~ the paper's 0.25.
