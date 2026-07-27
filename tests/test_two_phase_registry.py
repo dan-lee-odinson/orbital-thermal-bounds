@@ -77,6 +77,11 @@ S2_IMPLEMENTED_IDS = frozenset(
         # S3 (OTB-G002) adds the reference pressure drop and the pump-inlet criterion.
         "two_phase.dp.lockhart_martinelli_chisholm",
         "two_phase.pump.npsh",
+        # S4 (OTB-G003) adds the static Ledinegg guard, adopted by Director ruling D15
+        # against DEBTS D-12. It is the only implementation this milestone adds: the
+        # assessed pressure-drop candidate stays at evaluate=None, because assessing a
+        # correlation and adopting one are different acts and only the first was ruled.
+        "two_phase.stability.ledinegg_static",
     }
 )
 
@@ -155,14 +160,45 @@ def test_implemented_correlations_have_a_nonempty_locator():
 
 
 def test_unimplemented_correlations_keep_a_blank_locator():
-    """The converse: nothing unconsulted acquires a locator (T8 is bounded)."""
+    """The converse: nothing **unconsulted** acquires a locator (T8 is bounded).
+
+    The invariant is about whether a paper was *read*, and it used "carries an
+    ``evaluate``" as the proxy for that. S4 breaks the proxy in both directions it can
+    break: a source can be read in full and still be unimplementable (Shah 1974's
+    correlating curve is hand-drawn and disclaimed by its own author) or read in full
+    and deliberately not implemented (Kim & Mudawar 2013, which A4 has not adopted).
+    So the test now asks the question it always meant to ask, and ``Source.consulted``
+    is the answer -- see the field's own note.
+    """
     for c in TWO_PHASE_CORRELATIONS:
-        if c.evaluate is None:
+        if c.evaluate is None and not c.source.consulted:
             assert not c.source.locator.strip(), (
-                f"{c.id} has no executable form, so no paper was consulted for a "
-                "formula from it; its locator must stay blank rather than be filled "
-                "in speculatively"
+                f"{c.id} has no executable form and is not declared consulted, so no "
+                "paper was read for a formula from it; its locator must stay blank "
+                "rather than be filled in speculatively"
             )
+
+
+def test_a_source_declared_consulted_must_say_what_was_read():
+    """``consulted`` cannot be used to wave a locator through without one."""
+    for c in TWO_PHASE_CORRELATIONS:
+        if c.source is not None and c.source.consulted:
+            assert c.source.locator.strip(), (
+                f"{c.id} declares its source consulted but records no locator: the "
+                "flag exists to admit a locator that names what was read, so a blank "
+                "one is the defect it was introduced to prevent"
+            )
+
+
+def test_the_deliberately_unimplemented_s4_sources_are_declared_consulted():
+    """The two S4 entries that were read but must not be implemented say so."""
+    for cid in ("two_phase.htc.shah_1974_ammonia", "two_phase.dp.kim_mudawar_2013"):
+        entry = get(cid)
+        assert entry.evaluate is None, f"{cid} must carry no executable form"
+        assert entry.source is not None and entry.source.consulted, (
+            f"{cid} was read from the rendered pages and must declare it, so its "
+            "locator is admissible on the fact rather than on a proxy"
+        )
 
 
 def test_provisional_domains_are_declared_not_promoted():

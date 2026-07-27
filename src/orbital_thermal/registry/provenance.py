@@ -165,6 +165,25 @@ class Source:
     citation: str
     locator: str = ""  # DOI, URL, table/section
     note: str = ""
+    #: Whether the paper itself was read, as distinct from whether anything was
+    #: implemented from it.
+    #:
+    #: The registry's standing invariant was "an entry with no executable form must
+    #: carry a blank locator", which kept a speculative locator off an unread paper --
+    #: the ``two_phase.chf.shah_2015`` case, where the citation was ambiguous and
+    #: nothing could honestly be pointed at. It works by inferring *unread* from *not
+    #: implemented*, and S4 makes that inference false in both of the ways it can be:
+    #: Shah (1974) was read cover to cover and cannot be implemented because its
+    #: correlating curve is hand-drawn and disclaimed by its own author, and Kim &
+    #: Mudawar (2013) was read in full and must not be implemented because A4 has not
+    #: adopted it. Blanking their locators to satisfy the invariant would delete real
+    #: provenance to preserve a proxy for it.
+    #:
+    #: Declaring the fact directly is the fix. A locator is admissible when the entry
+    #: has an executable form **or** the source is declared consulted; and a source
+    #: declared consulted with no locator is itself a defect, so the flag cannot be
+    #: used to wave a locator through without saying what was read.
+    consulted: bool = False
 
 
 @dataclass(frozen=True)
