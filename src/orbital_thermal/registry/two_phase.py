@@ -1290,7 +1290,16 @@ _SHAH_1974 = Source(
         "TWO SENSES OF 'SMOOTH ROUND PIPE' THAT MUST NOT BE CONFLATED. The correlation's "
         "REFERENCE SYSTEM is a round smooth pipe, stated on p. 5 ('for convenience'). "
         "The TEST SECTION was 26.2 mm ID commercial-grade steel pipe carrying oil "
-        "films, p. 1. The first is a modelling choice; the second is what the data are."
+        "films, p. 1. The first is a modelling choice; the second is what the data are.\n"
+        "THE PROPERTY BACKEND IS PART OF THE METHOD, and this one is not the project's. "
+        "p. 2: 'Property data were taken from VDI Kaltemaschinen Regeln. These agree "
+        "closely with other sources with one notable exception. The values for liquid "
+        "viscosity given in 1972 ASHRAE Handbook of Fundamentals are about 20% lower "
+        "than values used in these calculations.' This project computes on CoolProp. A "
+        "correlation and the property values it was fitted against are a package, so "
+        "reimplementing this one on a different backend would not be the published "
+        "method -- a C8 fidelity limit distinct from every domain limit above, because "
+        "it would bite even inside the declared range."
     ),
     consulted=True,
 )
@@ -1687,7 +1696,16 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
             "NOT_RANK_ELIGIBLE by ruling, and separately unimplementable: the psi-Y "
             "relation is a hand-drawn curve the author says is 'at best a mere "
             "indication of the true curve'. Reproducing it would be inventing the "
-            "numbers he declined to publish (C1)."
+            "numbers he declined to publish (C1).\n"
+            "THE SOURCE IS SPLIT AND ONLY THIS HALF IS REGISTERED. Shah (1974) reports "
+            "heat transfer AND pressure drop. Only the heat-transfer half is here, "
+            "against DEBTS D-6. The PRESSURE-DROP half is deliberately NOT registered "
+            "at all -- not unranked, not as a sensitivity, not present -- because "
+            "registering it would assert that the literature covers a pressure-drop "
+            "domain it does not, and because its friction data are oil-contaminated in "
+            "both directions (see the source note). Note also that D-6 is a "
+            "HEAT-TRANSFER debt: pressure-drop papers do not belong under it, and that "
+            "boundary has been misread on this project before."
         ),
         **_MICROGRAVITY_1G,
     ),
