@@ -994,7 +994,6 @@ MUTATIONS: list[Mutation] = [
             "test_s4_7_the_refusal_is_behavioural_not_read_off_the_registry",
             "test_s4_7_every_blocked_leg_names_an_axis_an_entry_and_an_unblocker",
             "test_s4_7_no_operating_point_is_invented_when_a_leg_refuses",
-            "test_s4_8_the_pressure_drop_refusal_is_reported_as_policy_and_names_a4",
         ),
         notes=(
             "The defect found during this build. Lockhart-Martinelli refuses this "
@@ -1076,12 +1075,13 @@ MUTATIONS: list[Mutation] = [
         old="    if not assessment.admits_part_of_the_band:",
         new="    if True:",
         expect_failing=(
-            "test_s4_8_the_pressure_drop_refusal_is_reported_as_policy_and_names_a4",
+            "test_s4_8_the_classifier_still_returns_policy_when_the_candidate_does_reach",
         ),
         notes="'No correlation exists for this corner' and 'one does and was not "
         "adopted' are different claims and only one is true. The blocked-leg test "
-        "does NOT catch this -- it accepts either kind, by design -- so the "
-        "policy-specific test is the only guard here.",
+        "does NOT catch this -- it accepts either kind, by design. Nor does the "
+        "reference case, whose refusal IS a knowledge refusal once the whole declared "
+        "basis is applied; the guard is the classifier's other branch.",
     ),
     Mutation(
         name="S4-judge-fluid-coverage-on-mass-flux-alone",
@@ -1091,8 +1091,7 @@ MUTATIONS: list[Mutation] = [
         old="        fluid_supported=flux_matched.intersect(bore_hull),",
         new="        fluid_supported=flux_matched,",
         expect_failing=(
-            "test_s4_9_the_fluid_evidence_does_not_reach_the_admitted_window",
-            "test_s4_9_the_qualification_travels_into_the_reported_refusal",
+            "test_s4_9_two_different_overlaps_are_reported_and_not_conflated",
         ),
         notes="Dropping the bore constraint turns 'no bore satisfies both' into a "
         "spurious 0.3 mm overlap -- a fluid list read as a coverage map.",
@@ -1108,7 +1107,7 @@ MUTATIONS: list[Mutation] = [
         "    d_hi = math.sqrt(4.0 * mass_flow_kg_s / (math.pi * g_hi))",
         expect_failing=(
             "test_s4_9_the_mass_flux_to_bore_inversion_is_the_right_way_round",
-            "test_s4_9_the_declared_box_admits_part_of_the_band",
+            "test_s4_9_two_different_overlaps_are_reported_and_not_conflated",
         ),
     ),
     Mutation(
@@ -1188,6 +1187,95 @@ MUTATIONS: list[Mutation] = [
         old="    transitional = transitional_count[0]",
         new="    transitional = 0",
         expect_failing=("test_the_transitional_flow_caveat_travels_on_the_result",),
+    ),
+    # ------------------------------------------- OTB-G003-FIXES corrections
+    Mutation(
+        name="S4F-apply-only-the-convenient-declared-axes",
+        guards="S4-9: every declared range binds, not a chosen subset",
+        finding="S4-FIX",
+        path=ASSESSMENT,
+        old="    for name, (lo, hi) in ranges.items():",
+        new="    for name, (lo, hi) in "
+        "{k: v for k, v in ranges.items() if k in ('D_h_m','G_kg_m2s','P_R')}.items():",
+        expect_failing=(
+            "test_s4_9_every_declared_axis_is_applied_not_a_chosen_subset",
+            "test_s4_9_the_reynolds_ceiling_binds_at_small_bore_and_narrows_the_window",
+            "test_s4_9_the_admitted_window_is_empty_away_from_the_middle_qualities",
+            "test_s4_8_the_refusal_is_knowledge_once_the_whole_declared_basis_is_applied",
+        ),
+        notes=(
+            "The defect this round corrected. Applying three of seven declared axes "
+            "reported an admitted window 2.2 mm too wide at the low end and "
+            "classified the refusal as POLICY when the whole basis makes it KNOWLEDGE."
+        ),
+    ),
+    Mutation(
+        name="S4F-silently-skip-an-axis-with-no-evaluator",
+        guards="S4-9: an unimplemented declared axis must be loud, not skipped",
+        finding="S4-FIX",
+        path=ASSESSMENT,
+        old="        if evaluator is None:\n            raise ValueError(",
+        new="        if evaluator is None:\n            continue\n        if False:\n"
+        "            raise ValueError(",
+        expect_failing=(
+            "test_s4_9_a_declared_axis_with_no_evaluator_raises_rather_than_being_skipped",
+        ),
+    ),
+    Mutation(
+        name="S4F-assess-at-a-convenient-quality-instead-of-the-loops-own",
+        guards="S4-9: two declared axes depend on quality, so the value decides the answer",
+        finding="S4-FIX",
+        path=COUPLED,
+        old="        quality=x_mean,",
+        new="        quality=0.5,",
+        expect_failing=(
+            "test_s4_8_the_refusal_is_knowledge_once_the_whole_declared_basis_is_applied",
+        ),
+        notes="At x = 0.5 the candidate admits part of the band; at the loop's own "
+        "x = 0.048 it admits nothing. Picking the quality picks the verdict.",
+    ),
+    Mutation(
+        name="S4F-blank-the-guard-cannot-fire-disclosure",
+        guards="C6: a guard that cannot trigger must say so in the output",
+        finding="S4-FIX",
+        path=COUPLED,
+        old=(
+            '    "LEDINEGG GUARD -- IMPLEMENTED, WITNESSED, AND UNABLE TO FIRE ON '
+            'THIS MODEL. The "'
+        ),
+        new='    "" or "" "" "" ',
+        expect_failing=(
+            "test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model",
+        ),
+    ),
+    Mutation(
+        name="S4F-drop-the-Shah-property-backend-caveat",
+        guards="C8: a correlation and the properties it was fitted against are a package",
+        finding="S4-FIX",
+        path=REGISTRY,
+        old=(
+            '        "THE PROPERTY BACKEND IS PART OF THE METHOD, and this one is '
+            'not the project\'s. "'
+        ),
+        new='        "" or "" "" "" ',
+        expect_failing=("test_s4_10_the_property_backend_caveat_is_recorded",),
+    ),
+    Mutation(
+        name="S4F-register-the-Shah-pressure-drop-half",
+        guards="the pressure-drop half is deliberately NOT registered at all",
+        finding="S4-FIX",
+        path=REGISTRY,
+        old='        id="two_phase.htc.shah_1974_ammonia",\n'
+        '        name="Shah ammonia-evaporator flow-boiling HTC (psi-Y)",\n'
+        '        kind="htc",',
+        new='        id="two_phase.htc.shah_1974_ammonia",\n'
+        '        name="Shah ammonia-evaporator flow-boiling HTC (psi-Y)",\n'
+        '        kind="dp",',
+        expect_failing=(
+            "test_s4_10_only_the_heat_transfer_half_of_shah_1974_is_registered",
+        ),
+        notes="Registering the pressure-drop half would assert that the literature "
+        "covers a domain it does not, and D-6 is a heat-transfer debt.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",

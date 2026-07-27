@@ -53,11 +53,20 @@ chosen. **Falsifiable by:** a system with three intersections returning one oper
 returning a "preferred" root by any rule whatever.
 
 **S4-6. The static Ledinegg guard fires on the sign of the internal-characteristic slope.**
-At each operating point the guard evaluates `∂Δp/∂ṁ` on the **internal** characteristic and
-reports an excursion where it is negative. The guard is **static only**; nothing in the artifact
-claims that the time-domain instability is modelled. **Falsifiable by:** a negative-slope
-operating point reported as stable; a positive-slope one reported unstable; or any claim, in code
-or output, that dynamic instability is modelled.
+At each operating point the guard evaluates `∂p/∂Ṁ` — the source's printed form — on the
+**internal** characteristic and reports an excursion where it is negative. The guard is **static
+only**; nothing in the artifact claims that the time-domain instability is modelled.
+**Falsifiable by:** a negative-slope operating point reported as stable; a positive-slope one
+reported unstable; or any claim, in code or output, that dynamic instability is modelled.
+
+**S4-6a. A guard that cannot trigger says so, in the output.**
+Where a guard is structurally unable to fire against the model it is attached to, every artifact
+carrying the guard states that, in the rendered output rather than a footnote, and the statement
+cannot be suppressed by a caller. **Falsifiable by:** an artifact describing the milestone as
+carrying a static Ledinegg guard without the qualification.
+*(Not hypothetical here: the pressure-drop boundary evaluates the frictional multiplier once per
+call and scales it by length, so the moving boiling boundary is not represented and the internal
+characteristic is monotone at every duty tried.)*
 
 **S4-7. A refusal names its axis, its source, and what would lift it.**
 Each blocked leg reports which declared axis refuses, the entry that refuses, and the state that
@@ -74,13 +83,25 @@ exists" when the assessment found one whose declared basis admits part of the sp
 covers part of this corner and was not adopted" a machine-checkable property rather than a matter
 of wording. The two are materially different claims and only one of them is true.)*
 
-**S4-9. An assessment reports the overlap it actually computed, not the box it was handed.**
+**S4-9. An assessment applies every declared axis, and reports the overlap it computed.**
 Where a correlation's declared validity box is a union over several fluids, the assessment reports
 the sub-region supported by data for **this project's fluid**, separately from the declared box.
-**Falsifiable by:** an assessment that reports a fluid as covered on the strength of its
-appearance in a fluid list, without computing where that fluid's data actually sit.
+**Every** declared range is applied — a declared axis with no evaluator is an error, not an
+omission — and what the assessment reports having applied is a record of what it did, not a copy
+of what the entry declares. **Falsifiable by:** an assessment that reports a fluid as covered on
+the strength of its appearance in a fluid list; a declared range that is silently skipped; or an
+`applied_axes` that survives an axis being dropped.
 *(A fluid list is not a coverage map. This is the failure shape recorded against a single
 secondary tabulation of a validity box, applied to a source that is in hand.)*
+
+**S4-9a. An input that decides the answer has no default.**
+Where an assessment's verdict changes with a parameter — as it does with vapour quality, on which
+two of the assessed candidate's declared axes depend — that parameter is required, and the value
+used is reported alongside the result. **Falsifiable by:** a default that makes the reported
+window an artifact of the default, or a reported window with no stated operating point.
+*(Added after the first cut of S4-9 applied three of seven declared axes and assessed at an
+assumed quality. The reported window was 2.2 mm too wide at the low end and the refusal was
+classified as policy where the whole basis makes it knowledge.)*
 
 **S4-10. A non-SI source is converted at the boundary and the conversion is tested.**
 A source declared in non-SI units carries its conversion in the registry, the converted bounds are

@@ -314,6 +314,28 @@ def test_s4_6_the_current_pressure_drop_model_cannot_produce_an_excursion():
         ), f"the characteristic became non-monotone at duty {duty} W -- re-read this test"
 
 
+def test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model():
+    """C6: the qualification is in the output, not a footnote, on BOTH run kinds.
+
+    Describing this milestone as shipping a static Ledinegg guard, without saying that
+    it cannot trigger against the pressure-drop model it is attached to, would
+    overstate what was delivered.
+    """
+    for result in (solve_demo(), solve_ref()):
+        rendered = result.render()
+        assert "UNABLE TO FIRE ON THIS MODEL" in rendered
+        assert "monotone at every duty tried" in rendered
+        assert "does not by itself discharge the requirement" in rendered
+        assert "UNABLE TO FIRE ON THIS MODEL" in str(result)
+
+
+def test_s4_6_the_guard_disclosure_cannot_be_suppressed_by_a_caller():
+    """A property, not a field: there is no constructor argument for it."""
+    assert "ledinegg_disclosure" not in C.DemonstrationResult.__dataclass_fields__
+    assert "ledinegg_disclosure" not in C.ReferenceCaseResult.__dataclass_fields__
+    assert isinstance(C.DemonstrationResult.ledinegg_disclosure, property)
+
+
 def test_s4_6_nothing_claims_dynamic_instability_is_modelled():
     """The source defers instability treatment to another volume; so does this."""
     entry = get(C.LEDINEGG_ID)
@@ -393,12 +415,40 @@ def test_s4_7_no_operating_point_is_invented_when_a_leg_refuses():
     assert result.closure is None
 
 
-def test_s4_8_the_pressure_drop_refusal_is_reported_as_policy_and_names_a4():
+#: The reference case's own mean quality at the nominal flow -- x_in = 0 rising to
+#: Q/(mdot h_fg). Load-bearing: two of the candidate's declared axes are functions of
+#: quality, so the assessment must be made here and not at a convenient value.
+REF_X_MEAN = 0.5 * (1000.0 / (0.01 * 1.05e6))
+
+
+def assess_at(quality, **over):
+    return A.assess_declared_basis(
+        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3,
+        reduced_pressure=0.176, quality=quality, mu_f=1.1e-4, mu_g=1.0e-5, **over
+    )
+
+
+def test_s4_8_the_refusal_is_knowledge_once_the_whole_declared_basis_is_applied():
+    """The corrected result, and it reverses an earlier one of this build's.
+
+    Applying only D_h, G and P_R, the candidate appeared to admit 2.156-5.350 mm and
+    the refusal classified as POLICY. The entry also declares Re_fo, Re_f, Re_g and x.
+    With all seven applied at the loop's own quality, the superficial-liquid Reynolds
+    ceiling of 16,020 excludes every bore at or below the 5.35 mm bore ceiling, the
+    admitted window is EMPTY, and the refusal is a knowledge refusal.
+    """
     result = solve_ref()
     dp = [leg for leg in result.legs if leg.leg == "pressure drop"][0]
-    assert dp.refusal_kind == "policy"
-    assert "POLICY REFUSAL" in result.pressure_drop_refusal
-    assert "A4" in result.pressure_drop_refusal
+    assert dp.refusal_kind == "knowledge"
+    assert "WHOLE declared basis" in result.pressure_drop_refusal
+    assert assess_at(REF_X_MEAN).admitted.is_empty
+
+
+def test_s4_8_the_knowledge_refusal_says_the_correlation_is_not_empty_everywhere():
+    """'Does not reach THIS loop' must not be readable as 'does not reach anything'."""
+    detail = solve_ref().pressure_drop_refusal
+    assert "not empty everywhere" in detail
+    assert "vapour qualities" in detail
 
 
 def test_s4_8_a_knowledge_refusal_is_not_dressed_as_a_policy_one():
@@ -408,13 +458,35 @@ def test_s4_8_a_knowledge_refusal_is_not_dressed_as_a_policy_one():
             assert leg.refusal_kind == "knowledge"
 
 
-def test_s4_8_the_classifier_returns_knowledge_when_the_candidate_does_not_reach_either():
-    """It must be capable of both answers, or it is not a classifier."""
-    far = A.assess_declared_basis(
-        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3, reduced_pressure=0.95
+def test_s4_8_the_classifier_still_returns_policy_when_the_candidate_does_reach():
+    """It must be capable of both answers, or it is not a classifier.
+
+    At a quality the loop does not reach, the same declared basis DOES admit part of
+    the band -- and there the D16 disclosure obligation would fire.
+    """
+    reaching = assess_at(0.5)
+    assert reaching.admits_part_of_the_band
+    verdict = A.classify_pressure_drop_refusal(reaching)
+    assert verdict.kind == "policy"
+    assert verdict.settled_decision == "A4"
+    assert "POLICY REFUSAL" in verdict.detail
+
+
+def test_s4_8_the_admitting_quality_window_is_bounded_on_both_sides():
+    """Empty below and above: Re_f binds at low quality, Re_g at high."""
+    window = A.qualities_admitting_any_bore(
+        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3,
+        reduced_pressure=0.176, mu_f=1.1e-4, mu_g=1.0e-5,
     )
-    assert not far.admits_part_of_the_band
-    assert A.classify_pressure_drop_refusal(far).kind == "knowledge"
+    assert window is not None
+    lo, hi = window
+    assert 0.0 < lo < hi < 1.0
+    assert REF_X_MEAN < lo, (
+        f"the loop's own mean quality {REF_X_MEAN:.4g} must sit BELOW the admitting "
+        f"window {lo:.2f}-{hi:.2f}; that is why its refusal is a knowledge refusal"
+    )
+    assert assess_at(lo * 0.5).admitted.is_empty
+    assert assess_at(min(1.0, hi + (1.0 - hi) / 2)).admitted.is_empty
 
 
 # =============================================================================
@@ -422,45 +494,96 @@ def test_s4_8_the_classifier_returns_knowledge_when_the_candidate_does_not_reach
 # =============================================================================
 
 
-def test_s4_9_the_declared_box_admits_part_of_the_band():
-    a = A.assess_declared_basis(mass_flow_kg_s=0.01, **{
-        "band_min_m": 1.224e-3, "band_max_m": 32.0e-3, "reduced_pressure": 0.176})
-    assert a.admits_part_of_the_band
-    assert a.admitted.lo_m == pytest.approx(2.1564e-3, rel=1e-3)
-    assert a.admitted.hi_m == pytest.approx(5.35e-3, rel=1e-12)
+def test_s4_9_every_declared_axis_is_applied_not_a_chosen_subset():
+    """The defect this block was rewritten for. Seven declared ranges, seven applied."""
+    declared = set(get(A.KIM_MUDAWAR_ID).domain.ranges)
+    assert set(assess_at(0.5).applied_axes) == declared
+    assert declared == {"D_h_m", "G_kg_m2s", "Re_fo", "Re_f", "Re_g", "x", "P_R"}
 
 
-def test_s4_9_the_fluid_evidence_does_not_reach_the_admitted_window():
-    """The distinction the criterion exists for, and it is not a formality here.
+def test_s4_9_a_declared_axis_with_no_evaluator_raises_rather_than_being_skipped():
+    """The class-level guard: silently ignoring an axis is what went wrong."""
+    with pytest.raises(ValueError, match=r"no evaluator"):
+        A._admits(
+            5.0e-3,
+            {"some_axis_nobody_implemented": (0.0, 1.0)},
+            A.OperatingContext(0.01, 0.176, 1.1e-4, 1.0e-5, 0.5),
+        )
 
-    The ammonia rows were measured at 1.224 and 1.70 mm; this loop reaches their
-    measured mass fluxes only at 5.05-11.28 mm. Both constraints are on the same
-    database and must hold at the SAME bore, and there is no bore where they do.
+
+def test_s4_9_the_reynolds_ceiling_binds_at_small_bore_and_narrows_the_window():
+    """Re_fo scales as 1/D, so it cuts the end the bore ceiling does not.
+
+    Applying D_h and G alone gives 2.156-5.350 mm; adding Re_fo moves the low end up
+    by roughly 2 mm, in the direction of over-claiming applicability.
+
+    The low end is a function of the liquid viscosity, so both readings are pinned:
+    4.132 mm at this test's mu_f = 1.10e-4, and 4.352 mm at CoolProp's saturated-liquid
+    ammonia value at 20 bar. The second is the independently reported figure and
+    matching it is the point of asserting it.
     """
-    a = A.assess_declared_basis(
-        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3, reduced_pressure=0.176
+    a = assess_at(0.5)
+    assert a.admitted.lo_m == pytest.approx(4.1324e-3, rel=1e-3)
+    assert a.admitted.hi_m == pytest.approx(5.35e-3, rel=1e-9)
+    assert a.admitted.lo_m > 2.1564e-3
+
+    at_coolprop_mu = A.assess_declared_basis(
+        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3,
+        reduced_pressure=0.176, quality=0.5, mu_f=1.044729e-4, mu_g=1.0e-5,
     )
-    assert not a.fluid_evidence_reaches_the_admitted_window
-    assert a.fluid_supported.is_empty
-    assert a.fluid_bore_hull.lo_m == pytest.approx(1.224e-3)
-    assert a.fluid_bore_hull.hi_m == pytest.approx(1.70e-3)
+    assert at_coolprop_mu.admitted.lo_m == pytest.approx(4.3516e-3, rel=1e-3)
 
 
-def test_s4_9_the_qualification_travels_into_the_reported_refusal():
-    detail = A.classify_pressure_drop_refusal(
-        A.assess_declared_basis(
+@pytest.mark.parametrize("quality", [0.02, REF_X_MEAN, 0.2, 0.95])
+def test_s4_9_the_admitted_window_is_empty_away_from_the_middle_qualities(quality):
+    """Two declared axes depend on quality, so there is no single admitted band."""
+    assert assess_at(quality).admitted.is_empty
+
+
+def test_s4_9_quality_has_no_default_because_it_decides_the_answer():
+    default = inspect.signature(A.assess_declared_basis).parameters["quality"].default
+    assert default is inspect.Parameter.empty, (
+        f"quality must have no default; it has {default!r}, and two declared axes "
+        "depend on it"
+    )
+    with pytest.raises(TypeError):
+        A.assess_declared_basis(  # type: ignore[call-arg]
             mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3,
             reduced_pressure=0.176,
         )
-    ).detail
-    assert "ammonia data do not reach it" in detail
+
+
+def test_s4_9_two_different_overlaps_are_reported_and_not_conflated():
+    """One is evidence and one is not, and they are easy to mistake for each other.
+
+    (a) mass flux alone: of the admitted window, 5.046-5.350 mm carries a mass flux
+        inside the range the ammonia rows were taken over. Real, and narrow.
+    (b) mass flux AND bore: those rows were measured at 1.224-1.70 mm, which the
+        flux-matched interval 5.046-11.284 mm never reaches. Empty at any quality.
+
+    A bore in (a) matches the ammonia mass flux while sitting three times wider than
+    any bore ammonia was measured at, so (a) is not ammonia evidence for this loop.
+    """
+    a = assess_at(0.5)
+    assert not a.flux_matched_within_admitted.is_empty
+    assert a.flux_matched_within_admitted.lo_m == pytest.approx(5.0463e-3, rel=1e-3)
+    assert a.flux_matched_within_admitted.hi_m == pytest.approx(5.35e-3, rel=1e-9)
+
+    assert a.fluid_supported.is_empty
+    assert not a.fluid_evidence_reaches_the_admitted_window
+    assert a.fluid_bore_hull.lo_m == pytest.approx(1.224e-3)
+    assert a.fluid_bore_hull.hi_m == pytest.approx(1.70e-3)
+    assert a.fluid_flux_matched.lo_m == pytest.approx(5.0463e-3, rel=1e-3)
+
+    detail = A.classify_pressure_drop_refusal(a).detail
+    assert "MASS FLUX ONLY" in detail and "MASS FLUX AND BORE TOGETHER" in detail
 
 
 def test_s4_9_control_a_fluid_measured_where_the_loop_runs_does_reach():
     """The control: the overlap test must be able to come out positive."""
     generous = A.FluidEvidence(
         fluid="ammonia",
-        diameters_m=(3.0e-3, 5.0e-3),
+        diameters_m=(4.5e-3, 6.0e-3),
         mass_flux_min_kg_m2s=400.0,
         mass_flux_max_kg_m2s=2000.0,
         points=235,
@@ -469,11 +592,7 @@ def test_s4_9_control_a_fluid_measured_where_the_loop_runs_does_reach():
         geometry="round_tube",
         locator="hypothetical control, not a source",
     )
-    a = A.assess_declared_basis(
-        mass_flow_kg_s=0.01, band_min_m=1.224e-3, band_max_m=32.0e-3,
-        reduced_pressure=0.176, evidence=generous,
-    )
-    assert a.fluid_evidence_reaches_the_admitted_window
+    assert assess_at(0.5, evidence=generous).fluid_evidence_reaches_the_admitted_window
 
 
 def test_s4_9_the_mass_flux_to_bore_inversion_is_the_right_way_round():
@@ -524,6 +643,47 @@ def test_s4_10_shah_1974_is_registered_and_not_rank_eligible():
     assert not entry.rank_eligible
     assert entry.evaluate is None
     assert entry.applicability_spec.orientations == frozenset({"horizontal"})
+
+
+def test_s4_10_only_the_heat_transfer_half_of_shah_1974_is_registered():
+    """The source reports heat transfer AND pressure drop; only one half is here.
+
+    Registering the pressure-drop half would assert that the literature covers a
+    pressure-drop domain it does not -- and its friction data miss standard in both
+    directions from compressor oil, by the author's own account.
+    """
+    from orbital_thermal.registry.two_phase import TWO_PHASE_CORRELATIONS
+
+    shah_entries = [e for e in TWO_PHASE_CORRELATIONS if "shah_1974" in e.id]
+    assert [e.kind for e in shah_entries] == ["htc"], (
+        f"expected exactly one Shah (1974) entry, of kind htc; found "
+        f"{[(e.id, e.kind) for e in shah_entries]}"
+    )
+    assert not any(
+        "shah_1974" in e.id and e.kind == "dp" for e in TWO_PHASE_CORRELATIONS
+    )
+
+
+def test_s4_10_the_property_backend_caveat_is_recorded():
+    """A correlation and the properties it was fitted against are a package (C8).
+
+    Shah's values came from VDI Kaltemaschinen Regeln, whose liquid viscosity runs
+    ~20 % above the 1972 ASHRAE handbook. This project computes on CoolProp, so a
+    reimplementation would not be the published method -- and unlike every domain
+    limit on this entry, that one would bite even inside the declared range.
+    """
+    note = get("two_phase.htc.shah_1974_ammonia").source.note
+    assert "VDI Kaltemaschinen Regeln" in note
+    assert "20%" in note
+    assert "CoolProp" in note
+    assert "not be the published method" in note
+
+
+def test_s4_10_the_oil_contamination_is_recorded_in_both_directions():
+    """Friction factors came out below Moody AND, at low temperature, twice it."""
+    note = get("two_phase.htc.shah_1974_ammonia").source.note
+    assert "drag reduction" in note
+    assert "twice Moody" in note or "viscous oil films" in note
 
 
 # =============================================================================
