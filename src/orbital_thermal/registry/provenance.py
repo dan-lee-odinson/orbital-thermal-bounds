@@ -271,6 +271,12 @@ class CorrelationEntry:
     # stays valid; `None` means "declares no enforceable applicability", which is
     # deliberately distinguishable from an empty spec that declares none.
     applicability_spec: object = None  # applicability.Applicability | None
+    #: C11(ii): the phenomenon this entry is a guard against, from the closed
+    #: vocabulary in ``registry.collapse.PHENOMENA``. Empty for entries that are not
+    #: guards. A guard with an empty ``detects`` cannot be cross-checked against the
+    #: active model's collapsed set, which is indistinguishable from a guard known to
+    #: work -- so the boundary refuses it rather than passing it.
+    detects: tuple[str, ...] = ()
     #: Where the executable form lives when it is not the ``evaluate`` callable --
     #: e.g. ``"orbital_thermal.solid_network.spreading_resistance"``. Some B1 entries
     #: are evaluated by a module function rather than by a callable hung on the entry;

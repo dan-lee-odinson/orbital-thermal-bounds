@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from . import _validate as _v
 from .registry import NotRankEligibleError, assert_in_domain, get
 from .registry.applicability import Consequence, Violation, case_contradictions
+from .registry.collapse import Collapse, CollapsedModel, ModelTerm
 from .registry.two_phase import (
     STANDARD_GRAVITY_M_S2,
     TWO_PHASE_PROPERTIES,
@@ -309,6 +310,70 @@ def _validate_hydraulic_inputs(**values: float) -> None:
             _v.nonneg(name, value)
         else:
             _v.positive(name, value)
+
+
+# --- C11(i): what this boundary collapses, declared where it collapses it ----------
+
+#: The pressure-drop boundary's terms and what each throws away.
+#:
+#: Both collapsing terms are here, not just the one a finding named. ``x_mean`` reaches
+#: the frictional term through the phase-alone gradients (``G_f = G(1-x)``,
+#: ``G_g = Gx``) and the static term through the mixture density; a fix to one would
+#: have left the other silently collapsing the same quantity, which is why C11 is a
+#: standing rule rather than a patch.
+#:
+#: The acceleration term is deliberately listed with NO collapse. It takes the inlet
+#: and outlet qualities as endpoints rather than a representative value, so it does not
+#: collapse the profile -- and saying so is the difference between a swept model and an
+#: unswept one. A term that collapses nothing is a result too.
+PRESSURE_DROP_MODEL = CollapsedModel(
+    model="S3 two-phase pressure drop (two_phase_pressure_drop)",
+    terms=(
+        ModelTerm(
+            term="frictional",
+            entry_id=DP_ID,
+            collapses=(
+                Collapse(
+                    quantity="vapour quality profile along the channel",
+                    representative_value="the section mean x_mean = (x_in + x_out)/2",
+                    phenomena=(
+                        "axial_profile",
+                        "moving_boiling_boundary",
+                        "negative_slope_segment",
+                    ),
+                    basis=(
+                        "two_phase_pressure_drop evaluates the Lockhart-Martinelli "
+                        "multiplier ONCE, at x_mean, and scales it by length_m rather "
+                        "than integrating along the channel (the source integrates, "
+                        "its Eq. 2.54). The correlation itself is local in x; the "
+                        "collapse is this boundary's screening simplification. With no "
+                        "axial profile there is no travelling saturation point, and "
+                        "without that the internal characteristic cannot acquire the "
+                        "negatively-sloped segment a flow excursion needs."
+                    ),
+                ),
+            ),
+        ),
+        ModelTerm(
+            term="static",
+            collapses=(
+                Collapse(
+                    quantity="mixture density along the channel",
+                    representative_value="the homogeneous density at x_mean",
+                    phenomena=("axial_profile",),
+                    basis=(
+                        "static_pressure_drop is given one mixture density computed at "
+                        "x_mean, so the head is a single rho*g*h rather than an "
+                        "integral of a varying column. Named by C11 alongside the "
+                        "frictional term: a friction-only fix would have left this "
+                        "collapsing the same quantity untouched."
+                    ),
+                ),
+            ),
+        ),
+        ModelTerm(term="accelerational", collapses=()),
+    ),
+)
 
 
 @dataclass(frozen=True)

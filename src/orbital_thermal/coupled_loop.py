@@ -51,12 +51,18 @@ from .dp_basis_assessment import (
     qualities_admitting_any_bore,
 )
 from .registry import NotRankEligibleError, get
+from .registry.collapse import (
+    CollapseConflict,
+    detection_conflicts,
+    undetectable_disclosure,
+)
 from .registry.two_phase import ledinegg_static_criterion
 from .two_phase_loop import (
     CHF_ID,
     DP_ID,
     HTC_ID,
     NPSH_ID,
+    PRESSURE_DROP_MODEL,
     condenser_energy_boundary,
     pump_inlet_feasibility,
     two_phase_pressure_drop,
@@ -104,21 +110,32 @@ _PUMP_EFFICIENCY_DISCLOSURE = (
     "depends on an unresolved input."
 )
 
-#: The Ledinegg guard's standing qualification. Any output carrying the guard carries
-#: this, in the output and not in a footnote (C6): describing this milestone as
-#: shipping a static Ledinegg guard, without it, would overstate what the guard can do
-#: on the model it is attached to.
-_LEDINEGG_UNREACHABLE_DISCLOSURE = (
-    "LEDINEGG GUARD -- IMPLEMENTED, WITNESSED, AND UNABLE TO FIRE ON THIS MODEL. The "
-    "static criterion below is correct and is verified against a characteristic that "
-    "has a negative-slope segment. It CANNOT fire on this project's own pressure-drop "
-    "model: that boundary evaluates the frictional multiplier once per call and scales "
-    "it linearly by length rather than integrating along the channel, so the moving "
-    "boiling boundary -- the mechanism that puts a negative-slope segment into a "
-    "boiling channel's characteristic -- is not represented. The internal "
-    "characteristic is monotone at every duty tried, from 600 W to 60 kW. A guard that "
-    "cannot trigger does not by itself discharge the requirement for one."
-)
+def ledinegg_collapse_conflicts() -> tuple[CollapseConflict, ...]:
+    """The C11(ii) cross-check for the Ledinegg guard, taken at the shared boundary.
+
+    The guard's ``detects`` comes off its registry entry and the collapsed set comes
+    off the active pressure-drop model; neither is restated here. This function only
+    says *which* guard and *which* model -- everything that could disagree with the
+    code lives in one of those two declarations.
+    """
+    return detection_conflicts(
+        guard_id=LEDINEGG_ID,
+        detects=get(LEDINEGG_ID).detects,
+        model=PRESSURE_DROP_MODEL,
+    )
+
+
+def ledinegg_disclosure_text() -> str:
+    """C11(ii), **derived**: empty when the model stops collapsing the target.
+
+    Previously this was a hand-written constant that happened to be true. Deriving it
+    is the whole of C11's second limb: the sentence and the condition it describes can
+    no longer drift apart, and an integration along the channel that removed the
+    collapse would remove the disclosure without anyone editing prose.
+    """
+    return undetectable_disclosure(
+        ledinegg_collapse_conflicts(), guard_name="Ledinegg guard"
+    )
 
 #: The pump characteristic is a DESIGN VARIABLE, not a sourced pump curve (C1).
 _PUMP_CURVE_DISCLOSURE = (
@@ -641,8 +658,8 @@ class _CoupledResultBase:
 
     @property
     def ledinegg_disclosure(self) -> str:
-        """Not a field, so no caller can construct a result without it (C6)."""
-        return _LEDINEGG_UNREACHABLE_DISCLOSURE
+        """Not a field, so no caller can construct a result without it (C6/C11)."""
+        return ledinegg_disclosure_text()
 
 
 @dataclass(frozen=True)

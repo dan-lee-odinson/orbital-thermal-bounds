@@ -1762,6 +1762,12 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
         formula="excursion where dp/dM_dot < 0 on the internal characteristic",
         source=_YADIGAROGLU_LEDINEGG,
         evaluate=ledinegg_static_criterion,
+        # C11(ii). The criterion is a sign test on the slope of the internal
+        # characteristic, so the phenomenon it targets is that characteristic having a
+        # negatively-sloped segment at all. Declared here so the shared boundary can
+        # cross-check it against whatever model it is pointed at -- including models
+        # that have not collapsed it, where the guard works.
+        detects=("negative_slope_segment",),
         applicability=(
             "STATIC guard only. It answers 'is this operating point on a "
             "negatively-sloped segment of the loop's own pressure-drop/flow-rate "
