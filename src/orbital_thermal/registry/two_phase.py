@@ -1214,6 +1214,312 @@ LOCKHART_MARTINELLI_APPLICABILITY = Applicability(
 )
 
 
+# =============================================================================
+# S4 additions: the static Ledinegg guard, and two sources that bound the gap
+# between the published literature and this loop.
+#
+# Every number below was read from a RENDERED page. Two of the three PDFs would
+# mislead an automated extraction: the Collier & Thome text layer is degraded (see
+# _LOCKHART_MARTINELLI), and Shah (1974) is a photocopy scan with **no text layer at
+# all** -- `get_text()` returns zero characters for all seventeen pages.
+# =============================================================================
+
+
+# --- non-SI unit conversion, carried at the boundary (S4-10) ---------------------
+
+#: International Steam Table kilocalorie, J. The refrigeration/ASHRAE convention, and
+#: the reading adopted for Shah (1974).
+KCAL_IT_J = 4186.8
+#: Thermochemical kilocalorie, J. Recorded because the source writes "kcal" without
+#: qualifying it, so the ambiguity is real and is not resolved by silence.
+KCAL_TH_J = 4184.0
+
+
+def kcal_per_m2_hr_to_W_m2(q_kcal_m2_hr: float, *, kcal_J: float = KCAL_IT_J) -> float:
+    """Convert a heat flux in kcal/m^2-hr to W/m^2.
+
+    Shah (1974) declares its heat-flux range in kcal/m^2-hr and does not say which
+    kilocalorie it means. The two definitions differ by 0.067 %, far below the
+    scatter of the data they bound -- but "too small to matter" is a judgement, and
+    recording it is cheaper than defending it later. ``KCAL_IT_J`` is adopted because
+    the source is an ASHRAE refrigeration paper taking its property data from VDI
+    Kaltemaschinen Regeln, where the steam-table calorie is the convention; the
+    thermochemical value is kept so the alternative reading is one argument away.
+    """
+    return q_kcal_m2_hr * kcal_J / 3600.0
+
+
+# --- Shah (1974): ammonia data that do not reach this loop -----------------------
+
+_SHAH_1974 = Source(
+    citation=(
+        "Shah, M.M. (1974), 'Heat Transfer and Pressure Drop in Ammonia Evaporators', "
+        "ASHRAE Transactions Vol. 80 Part 2, paper No. 2320"
+    ),
+    locator=(
+        "Read from the RENDERED PAGES -- the PDF is a photocopy scan carrying no text "
+        "layer whatsoever (zero extractable characters across all 17 pages), so no "
+        "automated extraction of it is possible and none was attempted. "
+        "p. 1 'EXPERIMENTAL SETUP' for the rig; p. 2 'Experimental Range' for the "
+        "declared bounds and for the boiling-region disclaimer; p. 5 Eqs. (11), (12), "
+        "(15), (16) for the psi/Y correlation and its reference system."
+    ),
+    note=(
+        "REGISTERED, NOT RANKED (Director ruling, S4 scope decision 9: 'Register don't "
+        "rank on it'). This is the project's only ammonia-specific flow-boiling source "
+        "in hand, and it is registered so that the distance between it and this loop is "
+        "MACHINE-VISIBLE rather than textual. It produces no ranked value.\n"
+        "THE AUTHOR DISCLAIMS HIS OWN BOILING-REGION COEFFICIENTS, verbatim from p. 2: "
+        "'in the boiling region, no rational basis for drawing the mean wall "
+        "temperature curve is available. The curve was drawn by personal judgment and "
+        "the calculated heat transfer coefficients in the boiling region have to be "
+        "regarded as merely indicative of the range.' He repeats it on p. 5 for the "
+        "psi-Y relation itself: it 'would at best be a mere indication of the true "
+        "curve. Hence some independent method of establishing the Y-psi relation is "
+        "needed.'\n"
+        "THE PRESSURE-DROP DATA ARE FROM AN OIL-CONTAMINATED LOOP, and the author says "
+        "so. Measured friction factors came out BELOW the Moody values ('this drag "
+        "reduction phenomena was totally unexpected'), and at lower temperatures ABOVE "
+        "them, 'due to formation of highly viscous oil films' -- compressor oil, "
+        "viscosity 1200 cSt at 0 C rising to 100,000 cSt at -30 C, confirmed by visual "
+        "observation through the sight glasses. A sealed spacecraft loop is not that "
+        "fluid system. p. 2.\n"
+        "THE MEASUREMENTS ARE PARTLY JUDGEMENT, also from p. 2: 'pressure often "
+        "fluctuated rapidly and in such cases, a true pressure or pressure drop does "
+        "not exist. Mean values were taken according to observer's judgment alone.'\n"
+        "TWO SENSES OF 'SMOOTH ROUND PIPE' THAT MUST NOT BE CONFLATED. The correlation's "
+        "REFERENCE SYSTEM is a round smooth pipe, stated on p. 5 ('for convenience'). "
+        "The TEST SECTION was 26.2 mm ID commercial-grade steel pipe carrying oil "
+        "films, p. 1. The first is a modelling choice; the second is what the data are."
+    ),
+    consulted=True,
+)
+
+#: Shah (1974) declared experimental range, converted to SI at the boundary.
+#: Pressures are the saturation pressures of ammonia at the declared temperature
+#: bounds, computed with the pinned CoolProp backend rather than read off a chart.
+SHAH_1974_P_MIN_PA = 0.71633e5  # T_sat = -40 C
+SHAH_1974_P_MAX_PA = 4.29248e5  # T_sat =   0 C
+SHAH_1974_Q_MIN_W_M2 = 581.50  # 500 kcal/m2-hr
+SHAH_1974_Q_MAX_W_M2 = 2326.00  # 2000 kcal/m2-hr
+SHAH_1974_MDOT_MIN_KG_S = 60.0 / 3600.0
+SHAH_1974_MDOT_MAX_KG_S = 3000.0 / 3600.0
+
+SHAH_1974_APPLICABILITY = Applicability(
+    fluids=frozenset({"ammonia"}),
+    fluids_basis=(
+        "The title, and the whole of the experimental programme: an industrial-sized "
+        "AMMONIA evaporator. This is the inverse of the usual problem in this registry "
+        "-- Gungor & Winterton and Shah (1987) both EXCLUDE ammonia, and this entry is "
+        "the only one that includes it."
+    ),
+    geometries=frozenset({"round_tube"}),
+    geometries_basis=(
+        "p. 1: 'commercial grade steel pipe 26.2mm ID and 33.0mm OD'. Round tube, "
+        "consistent with Director ruling D9. The bore sits inside this project's "
+        "1.224-32 mm swept band, near its top."
+    ),
+    orientations=frozenset({"horizontal"}),
+    orientations_basis=(
+        "p. 1, verbatim: 'The evaporator was hung horizontally and was divided into 12 "
+        "sections'. STATED AS A BUILDER-APPLIED CONSTRAINT, not as a limitation the "
+        "source declares: Shah claims his psi-Y relation is 'likely to have general "
+        "applicability' (p. 1) and argues on p. 5 that a relation established for a "
+        "reference system carries to other systems. He demonstrates it on horizontal "
+        "data only. The axis is enforced here because this entry exists to make the "
+        "distance between the available ammonia data and this loop visible, and the "
+        "entry produces no ranked value, so enforcing it costs nothing that a ruling "
+        "has granted. If that reading is wrong the axis comes out without touching any "
+        "number."
+    ),
+    gravity_explicit=False,
+    gravity_basis=(
+        "No gravity term appears in Eqs. (11)-(16). The data are terrestrial, so the "
+        "reference gravity is declared and enforced for consistency with every other "
+        "entry here (Director ruling D12)."
+    ),
+    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,
+    min_liquid_reynolds=30000.0,
+    reynolds_basis=(
+        "p. 5, verbatim: 'our measurements extended no lower than Re = 30,000.' Shah "
+        "states this while justifying an assumption of constant friction factor down to "
+        "Re = 1,000 -- so the assumption reaches below the data and the DATA do not. "
+        "The data bound is what is enforced."
+    ),
+    numeric_domain_provenance=DomainProvenance.ESTABLISHED,
+    numeric_domain_note=(
+        "Every bound is printed in the source's own 'Experimental Range' block on p. 2 "
+        "-- mass flow 60 to 3000 kg/hr, heat flux 500 to 2000 kcal/m2-hr, ammonia "
+        "temperature 0 to -40 C, vapour quality up to 100 %. Nothing is inferred and "
+        "nothing is widened. The temperature bounds are converted to saturation "
+        "pressures with the pinned property backend, and the heat flux out of "
+        "kcal/m2-hr; see kcal_per_m2_hr_to_W_m2 for the kilocalorie that was adopted."
+    ),
+    unenforced_axes=(
+        "vapour quality: the source declares 'up to 100%', which is the full physical "
+        "range and therefore constrains nothing -- recorded rather than enforced as a "
+        "vacuous bound.",
+        "oil content: the pressure-drop data are contaminated by compressor oil (see "
+        "the source note) and this project's loop is sealed and oil-free. There is no "
+        "axis in this framework on which to enforce that, and inventing one would be "
+        "worse than naming it here.",
+    ),
+)
+
+
+# --- Kim & Mudawar (2013): ASSESSED, registered as a sensitivity -----------------
+
+_KIM_MUDAWAR_2013 = Source(
+    citation=(
+        "Kim, S.-M. & Mudawar, I. (2013), 'Universal approach to predicting two-phase "
+        "frictional pressure drop for mini/micro-channel saturated flow boiling', "
+        "Int. J. Heat Mass Transfer 58:718-734"
+    ),
+    locator=(
+        "doi:10.1016/j.ijheatmasstransfer.2012.11.045, printed on p. 718. "
+        "Read from the RENDERED PAGES: p. 718 abstract for the consolidated database; "
+        "p. 723 Table 3 for the per-source breakdown and the declared coverage list; "
+        "p. 730 Table 6 for the correlation comparison; p. 732 Acknowledgements."
+    ),
+    note=(
+        "ASSESSED, NOT ADOPTED (Director ruling, S4 scope decision 7: 'Assess Kim & "
+        "Mudawar first'). Registered as a SENSITIVITY, which settled decision A4 "
+        "permits without amendment; rank-eligibility would require an A4 amendment and "
+        "none exists. NO EXECUTABLE FORM IS WIRED -- consistent with the other two "
+        "named sensitivities, and because implementing a correlation that cannot rank "
+        "invites it to be mistaken for an adopted one.\n"
+        "THE FUNDING CLAIM WAS CHECKED AGAINST THE PAGE AND HOLDS, verbatim from p. 732: "
+        "'The authors are grateful for the partial support for this project from the "
+        "National Aeronautics and Space Administration (NASA) under Grant No. "
+        "NNX13AB01G.'\n"
+        "WHAT THE DECLARED BOX IS AND IS NOT. The coverage list on p. 723 is a UNION "
+        "OVER NINE FLUIDS, not a coverage map for any one of them. The ammonia evidence "
+        "is a single row of Table 3 -- Maqbool et al. [33], circular single, vertical "
+        "upward, stainless steel, 1.224 and 1.70 mm, G 100-500 kg/m2s, 235 of the 2378 "
+        "points. Where that evidence sits relative to this project's operating band is "
+        "computed, not asserted; see orbital_thermal.dp_basis_assessment.\n"
+        "LOCKHART-MARTINELLI/CHISHOLM IS NOT IN TABLE 6. The six compared correlations "
+        "are Friedel, Muller-Steinhagen & Heck, Wang et al., Mishima & Hibiki, Li & Wu, "
+        "and the new correlation. So Table 6 is evidence about the CHALLENGERS to A4's "
+        "reference and not evidence FOR it, and it cannot be read either way about "
+        "LM/Chisholm. On the Maqbool ammonia row: Friedel 23.0 %, "
+        "Muller-Steinhagen & Heck 27.3 %, Wang et al. 16.6 %, Mishima & Hibiki 30.9 %, "
+        "Li & Wu 24.6 %, new correlation 17.1 %; over all 2378 points, 47.6 / 31.2 / "
+        "35.7 / 27.6 / 34.1 / 17.2 %."
+    ),
+    consulted=True,
+)
+
+KIM_MUDAWAR_2013_APPLICABILITY = Applicability(
+    fluids=frozenset(
+        {"r12", "r134a", "r22", "r245fa", "r410a", "fc-72", "ammonia", "co2", "water"}
+    ),
+    fluids_basis=(
+        "p. 723, the declared coverage list, verbatim: 'Working fluid: R12, R134a, R22, "
+        "R245fa, R410A, FC-72, ammonia, CO2, and water'. Unlike Shah (1987) and Gungor "
+        "& Winterton, this source ENUMERATES its fluids, so an inclusive list can be "
+        "stated without inventing one. It remains a fluid list and not a coverage map "
+        "-- see the source note and dp_basis_assessment."
+    ),
+    geometries=frozenset({"round_tube", "channel"}),
+    geometries_basis=(
+        "Table 3, p. 723, column 'Channel geometry' with the footnote 'C: circular, R: "
+        "rectangular, H: horizontal, VU: vertical upward'. Circular single and multi "
+        "map to round_tube under the DIR-01 vocabulary; rectangular multi to channel. "
+        "The AMMONIA row is circular single."
+    ),
+    orientations=frozenset({"horizontal", "vertical_upflow"}),
+    orientations_basis=(
+        "Table 3, same footnote: every row is H or VU, and one (Kharangate et al. [32]) "
+        "is H/VU. The ammonia row is VU -- vertical upward, which is the orientation "
+        "this project's loop needs and on which LM/Chisholm refuses."
+    ),
+    gravity_explicit=False,
+    gravity_basis=(
+        "The separated-flow form carries no gravity term. The database is terrestrial. "
+        "Declared and enforced for consistency with the other entries (D12). The NASA "
+        "grant behind this work (NNX13AB01G) is the same grant behind the ISS Flow "
+        "Boiling and Condensation Experiment that DEBTS D-7 records as the state of the "
+        "art, but this paper reports no microgravity data and none is claimed here."
+    ),
+    reference_gravity_m_s2=STANDARD_GRAVITY_M_S2,
+    numeric_domain_provenance=DomainProvenance.ESTABLISHED,
+    numeric_domain_note=(
+        "Every bound is from the declared coverage list on p. 723 and is reproduced "
+        "in full, including the two superficial-Reynolds bounds that are easy to drop "
+        "because the abstract omits them."
+    ),
+    unenforced_axes=(
+        "surface roughness: p. 721 records most of the database at relative roughness "
+        "0.001-0.0001, with Ducoulombier at 0.0015 and Maqbool -- the ammonia row -- at "
+        "0.0021. That is a declared property of the database rather than a declared "
+        "validity bound, and it is recorded rather than enforced.",
+    ),
+)
+
+
+# --- Yadigaroglu & Hetsroni: the static Ledinegg criterion (DEBTS D-12) ----------
+
+_YADIGAROGLU_LEDINEGG = Source(
+    citation=(
+        "Yadigaroglu, G. & Hetsroni, G. (2018), 'Nature of Multiphase Flows and Basic "
+        "Concepts', Ch. 1 of Yadigaroglu, G. & Hewitt, G.F. (eds.), 'Introduction to "
+        "Multiphase Flow: Basic Concepts, Applications and Modelling', Zurich Lectures "
+        "on Multiphase Flows, Springer"
+    ),
+    locator=(
+        "Read from the RENDERED PAGE: p. 5, Sec. 1.3.1, and Fig. 1.3 on the same page. "
+        "The primary source is given in the book's own reference list (p. 36): "
+        "Ledinegg M (1938), 'Instability of flow during natural and forced "
+        "circulation', Die Waerme 61(8):891-898, English translation as report "
+        "AEC-tr-1861 (1954). The 1938 paper was NOT obtained and no DOI is asserted."
+    ),
+    note=(
+        "ADOPTED as the static Ledinegg guard by Director ruling D15 ('adopt "
+        "Yadigaroglu'), sourcing DEBTS D-12.\n"
+        "THE CRITERION, verbatim from p. 5: 'If the two-phase section of the loop has a "
+        "negative slope in its pressure drop-flow-rate characteristic (M_dot, dp), i.e. "
+        "if dp/dM_dot < 0 something that happens often in two-phase flow (and cannot "
+        "happen in single-phase flow), a flow excursion will occur. This situation was "
+        "described first by Ledinegg (1938).'\n"
+        "TRANSCRIPTION NOTE. The project records have carried this criterion as "
+        "'d(dP)/d(m_dot) < 0'. The printed symbol is 'dp/dM_dot'; in context the p IS "
+        "the pressure drop of the characteristic being described, so the two say the "
+        "same thing. Recorded because a symbol is not a paraphrase.\n"
+        "FIG. 1.3 GIVES THE SECOND LIMB, and the caption is where it is stated: 'The "
+        "Ledinegg instability occurs if the slope of the characteristic is locally "
+        "negative, as in the segment BD. Point P is unstable and the operating point "
+        "will migrate to either A or A''. That is the non-uniqueness structure -- three "
+        "intersections at one pressure drop, the middle one unstable -- and it is why "
+        "the guard has a multiplicity limb as well as a slope limb.\n"
+        "IT SOURCES THE GUARD, NOT A MODEL. The book says so on the same page: 'Flow "
+        "instabilities will be dealt with in another volume.' Dynamic instability -- "
+        "excursions in time, density-wave and pressure-drop oscillations -- is out of "
+        "scope, a recorded limitation, and NOT claimed as modelled.\n"
+        "CHECKED AND DOES NOT HELP, recorded so the search is not repeated: Kim & "
+        "Mudawar (2015), Int. J. Heat Mass Transfer 87:497-511, the two-phase choking "
+        "review, contains zero occurrences of 'Ledinegg'."
+    ),
+    consulted=True,
+)
+
+
+def ledinegg_static_criterion(slope_dP_dmdot_Pa_s_kg: float) -> bool:
+    """True where the internal characteristic's slope indicates a flow excursion.
+
+    The whole of the adopted criterion: ``dp/dM_dot < 0``. It is deliberately this
+    small. The source states a sign test and defers the instability treatment to
+    another volume, so anything more elaborate here would be modelling that the source
+    does not support.
+
+    A slope of exactly zero is **not** reported unstable. The criterion is a strict
+    inequality in the source, and a stationary point is the boundary case rather than
+    the unstable one; treating it as unstable would be a builder's margin applied to a
+    sourced criterion.
+    """
+    return slope_dP_dmdot_Pa_s_kg < 0.0
+
+
 # --- Two-phase correlation registry (evaluate wired for the S2-implemented ids) --
 
 TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
@@ -1348,6 +1654,109 @@ TWO_PHASE_CORRELATIONS: list[CorrelationEntry] = [
         applicability="sensitivity comparison against the reference dP; NOT rank-eligible",
         note="SENSITIVITY: alternative dP for spread, not a ranked value",
         **_MICROGRAVITY_1G,
+    ),
+    CorrelationEntry(
+        id="two_phase.htc.shah_1974_ammonia",
+        name="Shah ammonia-evaporator flow-boiling HTC (psi-Y)",
+        kind="htc",
+        provenance=Provenance.PUBLISHED,
+        status=Status.NOT_RANK_ELIGIBLE,
+        formula="h_TP = psi * h_l with Y = h_l/h_g, h_l and h_g from Dittus-Boelter "
+        "(Eqs. 11, 12, 15, 16); psi(Y) established GRAPHICALLY and disclaimed by the "
+        "author -- no executable form is wired and none may be",
+        domain=Domain(
+            ranges={
+                "P_Pa": (SHAH_1974_P_MIN_PA, SHAH_1974_P_MAX_PA),
+                "q_W_m2": (SHAH_1974_Q_MIN_W_M2, SHAH_1974_Q_MAX_W_M2),
+                "mdot_kg_s": (SHAH_1974_MDOT_MIN_KG_S, SHAH_1974_MDOT_MAX_KG_S),
+            }
+        ),
+        source=_SHAH_1974,
+        evaluate=None,
+        applicability_spec=SHAH_1974_APPLICABILITY,
+        applicability=(
+            "REGISTERED AGAINST DEBTS D-6, NOT RANKED. The only ammonia flow-boiling "
+            "source in the registry, and it refuses this loop on FOUR independent axes "
+            "of its own declared range: pressure (0.72-4.29 bar against 20 bar), heat "
+            "flux (581-2326 W/m2 against 5e4 W/m2, a factor of 21), mass flow "
+            "(0.0167-0.833 kg/s against 0.01 kg/s, below the lower bound) and "
+            "orientation (horizontal against non-horizontal). Registering it does not "
+            "narrow D-6; it makes the width of D-6 measurable."
+        ),
+        note=(
+            "NOT_RANK_ELIGIBLE by ruling, and separately unimplementable: the psi-Y "
+            "relation is a hand-drawn curve the author says is 'at best a mere "
+            "indication of the true curve'. Reproducing it would be inventing the "
+            "numbers he declined to publish (C1)."
+        ),
+        **_MICROGRAVITY_1G,
+    ),
+    CorrelationEntry(
+        id="two_phase.dp.kim_mudawar_2013",
+        name="Kim & Mudawar universal mini/micro-channel flow-boiling dP",
+        kind="dp",
+        provenance=Provenance.SENSITIVITY,
+        status=Status.SENSITIVITY,
+        formula=(
+            "(separated-flow, phi_f^2 on a Chisholm-form C fitted across the "
+            "consolidated database; ASSESSED, executable form deliberately not wired)"
+        ),
+        domain=Domain(
+            ranges={
+                "D_h_m": (0.349e-3, 5.35e-3),
+                "G_kg_m2s": (33.0, 2738.0),
+                "Re_fo": (156.0, 28010.0),
+                "Re_f": (0.0, 16020.0),
+                "Re_g": (0.0, 199500.0),
+                "x": (0.0, 1.0),
+                "P_R": (0.005, 0.78),
+            }
+        ),
+        source=_KIM_MUDAWAR_2013,
+        evaluate=None,
+        applicability_spec=KIM_MUDAWAR_2013_APPLICABILITY,
+        applicability=(
+            "ASSESSED under S4 scope decision 7, registered as a SENSITIVITY under A4. "
+            "Its declared basis admits ammonia, vertical upflow, circular small bore "
+            "and this loop's reduced pressure -- the four axes on which the A4 "
+            "reference refuses. It is therefore NOT true that no correlation covers "
+            "this corner of the space, and any refusal that says so is wrong. What is "
+            "true is that it has not been adopted, which is a POLICY position held by "
+            "A4 and reversible only by amending it. The bore axis is a real refusal "
+            "and not a policy one: 0.349-5.35 mm covers the bottom of this project's "
+            "1.224-32 mm band and refuses everything above 5.35 mm."
+        ),
+        note=(
+            "SENSITIVITY: not rank-eligible, no executable form. The declared box is a "
+            "union over nine fluids; the ammonia sub-coverage is computed in "
+            "orbital_thermal.dp_basis_assessment rather than inferred from the fluid "
+            "list."
+        ),
+        **_MICROGRAVITY_1G,
+    ),
+    # ---------------- Static flow-excursion guard (DEBTS D-12) ----------------
+    CorrelationEntry(
+        id="two_phase.stability.ledinegg_static",
+        name="Static Ledinegg flow-excursion criterion",
+        kind="stability",
+        provenance=Provenance.PUBLISHED,
+        status=Status.RESOLVED,
+        formula="excursion where dp/dM_dot < 0 on the internal characteristic",
+        source=_YADIGAROGLU_LEDINEGG,
+        evaluate=ledinegg_static_criterion,
+        applicability=(
+            "STATIC guard only. It answers 'is this operating point on a "
+            "negatively-sloped segment of the loop's own pressure-drop/flow-rate "
+            "characteristic', and reports non-uniqueness where more than one steady "
+            "solution exists. It does NOT model the excursion, the density-wave mode, "
+            "or the pressure-drop oscillation, and the source defers all three to "
+            "another volume. It produces a diagnostic, never a ranked value."
+        ),
+        note=(
+            "Sources DEBTS D-12 per Director ruling D15. Adoption named what "
+            "discharges the debt; the debt retires when the guard is implemented AND "
+            "witnessed failing before it passes (R2)."
+        ),
     ),
     # ---------------- Critical heat flux (CHF) ----------------
     CorrelationEntry(
@@ -1512,7 +1921,11 @@ _GRAVITY_KINDS = frozenset({"htc", "dp", "chf"})
 #: exempt from the "rank-eligible entries must declare a numeric domain" rule: a
 #: subcooling margin is a sign test, not a fit with a validity window, and inventing a
 #: range for it to satisfy a structural checker is exactly what C1 forbids.
-_CRITERION_KINDS = frozenset({"npsh", "onb"})
+#: ``stability`` joins them at S4 for exactly the same reason: the adopted Ledinegg
+#: criterion is ``dp/dM_dot < 0``, a sign test on the slope of a characteristic the
+#: caller supplies. It has no validity window of its own, and giving it one to satisfy
+#: a structural check would be inventing a bound the source does not state.
+_CRITERION_KINDS = frozenset({"npsh", "onb", "stability"})
 
 
 def missing_metadata(
