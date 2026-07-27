@@ -58,6 +58,8 @@ TEST_MODULES = (
 COUPLED = SRC / "coupled_loop.py"
 ASSESSMENT = SRC / "dp_basis_assessment.py"
 COLLAPSE = SRC / "registry" / "collapse.py"
+COUPLED_MODEL = SRC / "coupled_model.py"
+HARMONIZED = SRC / "harmonized_comparison.py"
 
 
 @dataclass(frozen=True)
@@ -1330,6 +1332,78 @@ MUTATIONS: list[Mutation] = [
         ),
         notes="Mandated mutation 3. The boundary refuses an undeclared target rather "
         "than passing it, so this raises rather than quietly reporting no conflict.",
+    ),
+    # ------------------------------------- MAINT-03: the transcription match check
+    # A check that survives a one-character change is not a match check. Both sides of
+    # the transcription are mutated, because a check anchored to only one of them would
+    # pass while the other drifted -- which is the two-records-of-one-fact problem the
+    # modification exists to close.
+    Mutation(
+        name="MAINT03-alter-one-character-in-the-coupled-model-DOCSTRING",
+        guards="C11 transcription: the declaration is held to the module's own prose",
+        finding="MAINT-03",
+        path=COUPLED_MODEL,
+        old="``T_f,cp = T_f,rad = (T1+T2)/2 = T_mean``",
+        new="``T_f,cp = T_f,rad = (T1+T2)/2 = T_meaN``",
+        expect_failing=(
+            "test_maint03_the_declared_quotations_match_their_modules_prose",
+            "test_maint03_the_check_is_expressible_as_registered_check_params",
+        ),
+        notes="One character in the PROSE. The declaration is untouched and the check "
+        "must still go red, or it is anchored to nothing.",
+    ),
+    Mutation(
+        name="MAINT03-alter-one-character-in-the-coupled-model-DECLARATION",
+        guards="C11 transcription: a quotation that drifts from its source is caught",
+        finding="MAINT-03",
+        path=COUPLED_MODEL,
+        old=(
+            '            context_line="Residuals (B0 plan 4.1a; '
+            '``T_f,cp = T_f,rad = (T1+T2)/2 = T_mean``)::",'
+        ),
+        new=(
+            '            context_line="Residuals (B0 plan 4.1a; '
+            '``T_f,cp = T_f,rad = (T1+T2)/2 = T_mean``):",'
+        ),
+        expect_failing=(
+            "test_maint03_the_declared_quotations_match_their_modules_prose",
+            "test_maint03_the_check_is_expressible_as_registered_check_params",
+        ),
+        notes="One character in the DECLARATION, the other side of the same pair. "
+        "Deleting a single colon from the quoted line is enough.",
+    ),
+    Mutation(
+        name="MAINT03-alter-one-character-in-the-albedo-prose",
+        guards="C11 transcription: both declarations are held, not just the first",
+        finding="MAINT-03",
+        path=HARMONIZED,
+        old="orbit-averaged albedo, no eclipse transient,",
+        new="orbit-averaged albedo, no eclipse transients,",
+        expect_failing=(
+            "test_maint03_the_declared_quotations_match_their_modules_prose",
+            "test_maint03_the_check_is_expressible_as_registered_check_params",
+            "test_maint03_appending_to_the_prose_is_caught_which_substring_matching_missed",
+        ),
+        notes="APPENDING one character. The first version of the check used substring "
+        "containment and stayed GREEN under exactly this edit, because 'no eclipse "
+        "transient' is still a substring of 'no eclipse transients'. The harness "
+        "caught it; the check now matches the whole docstring line.",
+    ),
+    Mutation(
+        name="MAINT03-skip-a-transcription-that-cannot-be-verified",
+        guards="an unverifiable transcription is a mismatch, never a skip",
+        finding="MAINT-03",
+        path=COLLAPSE,
+        old=(
+            '            problems.append(f"{t.module}: cannot be imported to verify '
+            'the quotation ({exc})")'
+        ),
+        new="            pass",
+        expect_failing=(
+            "test_maint03_an_unverifiable_transcription_is_a_mismatch_not_a_skip",
+        ),
+        notes="Skipping what cannot be checked makes the check silently weaker as "
+        "modules move -- the failure mode a rotted anchor has in the harness itself.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
