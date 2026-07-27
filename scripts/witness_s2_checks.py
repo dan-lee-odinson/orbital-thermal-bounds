@@ -51,7 +51,11 @@ TEST_MODULES = (
     "tests/test_applicability_enforcement.py",
     "tests/test_boundary_enforcement.py",
     "tests/test_two_phase_loop.py",
+    "tests/test_coupled_loop.py",
 )
+
+COUPLED = SRC / "coupled_loop.py"
+ASSESSMENT = SRC / "dp_basis_assessment.py"
 
 
 @dataclass(frozen=True)
@@ -976,6 +980,214 @@ MUTATIONS: list[Mutation] = [
         old="            _v.in_range(name, value, 0.0, 1.0)",
         new="            _v.in_range(name, value, -1.0e9, 1.0e9)",
         expect_failing=("test_f04_an_impossible_quality_is_refused",),
+    ),
+    # -------------------------------------------------------- OTB-G003 (S4) checks
+    Mutation(
+        name="S4-let-a-de-ranked-pressure-drop-onto-the-characteristic",
+        guards="S4-7: a coupled solve may not be built on a number the correlation "
+        "disclaims",
+        finding="S4",
+        path=COUPLED,
+        old="            if not result.is_applicable:",
+        new="            if False and not result.is_applicable:",
+        expect_failing=(
+            "test_s4_7_the_refusal_is_behavioural_not_read_off_the_registry",
+            "test_s4_7_every_blocked_leg_names_an_axis_an_entry_and_an_unblocker",
+            "test_s4_7_no_operating_point_is_invented_when_a_leg_refuses",
+            "test_s4_8_the_pressure_drop_refusal_is_reported_as_policy_and_names_a4",
+        ),
+        notes=(
+            "The defect found during this build. Lockhart-Martinelli refuses this "
+            "project by DE_RANK, which RETURNS a finite number with violations "
+            "attached; a leg check that only caught exceptions reported the reference "
+            "case's pressure-drop leg as AVAILABLE and solved it."
+        ),
+    ),
+    Mutation(
+        name="S4-let-a-label-alone-make-something-a-demonstration",
+        guards="S4-1: a demonstration must be in basis, not merely declared one",
+        finding="S4",
+        path=COUPLED,
+        old="        if not leg.available:\n            raise NotRankEligibleError(\n"
+        '                "this case is NOT inside the declared basis',
+        new="        if False:\n            raise NotRankEligibleError(\n"
+        '                "this case is NOT inside the declared basis',
+        expect_failing=(
+            "test_s4_1_a_demonstration_must_actually_be_in_basis_not_merely_labelled",
+        ),
+        notes="Relabelling the reference case would otherwise buy it a demonstration "
+        "banner.",
+    ),
+    Mutation(
+        name="S4-blank-the-demonstration-disclosure",
+        guards="S4-2: a demonstration's own output says what it is not",
+        finding="S4",
+        path=COUPLED,
+        old='    "MACHINERY DEMONSTRATION -- NOT A RESULT ABOUT THIS PROJECT\'S DEVICE. "',
+        new='    "" or "" "" "" ',
+        expect_failing=(
+            "test_s4_2_the_disclosure_is_in_the_rendered_output_and_cannot_be_blanked",
+            "test_s4_2_str_renders_the_disclosure_so_printing_cannot_lose_it",
+        ),
+    ),
+    Mutation(
+        name="S4-return-only-the-first-operating-point",
+        guards="S4-5: non-uniqueness is reported, never resolved",
+        finding="S4",
+        path=COUPLED,
+        old="    return tuple(roots)\n\n\ndef loop_characteristic",
+        new="    return tuple(roots[:1])\n\n\ndef loop_characteristic",
+        expect_failing=(
+            "test_s4_5_every_root_is_reported_and_none_is_selected",
+            "test_s4_5_the_result_reports_non_uniqueness_rather_than_resolving_it",
+            "test_s4_6_the_guard_fires_on_the_middle_root_and_not_the_outer_two",
+        ),
+        notes="Silently selecting one of three steady states is the exact thing S0 "
+        "forbids.",
+    ),
+    Mutation(
+        name="S4-make-the-Ledinegg-criterion-non-strict",
+        guards="S4-6: the adopted criterion is a STRICT sign test",
+        finding="S4",
+        path=REGISTRY,
+        old="    return slope_dP_dmdot_Pa_s_kg < 0.0",
+        new="    return slope_dP_dmdot_Pa_s_kg <= 0.0",
+        expect_failing=("test_s4_6_the_criterion_is_a_strict_sign_test",),
+        notes="A stationary point is the boundary case, not the unstable one; "
+        "widening it is a builder's margin applied to a sourced criterion.",
+    ),
+    Mutation(
+        name="S4-flip-the-Ledinegg-criterion",
+        guards="S4-6: negative slope is the excursion, not positive",
+        finding="S4",
+        path=REGISTRY,
+        old="    return slope_dP_dmdot_Pa_s_kg < 0.0",
+        new="    return slope_dP_dmdot_Pa_s_kg > 0.0",
+        expect_failing=(
+            "test_s4_6_the_criterion_is_a_strict_sign_test",
+            "test_s4_6_the_guard_fires_on_the_middle_root_and_not_the_outer_two",
+        ),
+    ),
+    Mutation(
+        name="S4-always-report-the-refusal-as-an-absence-of-knowledge",
+        guards="S4-8: a policy refusal must not be reported as an empty literature",
+        finding="S4",
+        path=ASSESSMENT,
+        old="    if not assessment.admits_part_of_the_band:",
+        new="    if True:",
+        expect_failing=(
+            "test_s4_8_the_pressure_drop_refusal_is_reported_as_policy_and_names_a4",
+        ),
+        notes="'No correlation exists for this corner' and 'one does and was not "
+        "adopted' are different claims and only one is true. The blocked-leg test "
+        "does NOT catch this -- it accepts either kind, by design -- so the "
+        "policy-specific test is the only guard here.",
+    ),
+    Mutation(
+        name="S4-judge-fluid-coverage-on-mass-flux-alone",
+        guards="S4-9: the fluid's bore and mass-flux ranges must hold at the SAME bore",
+        finding="S4",
+        path=ASSESSMENT,
+        old="        fluid_supported=flux_matched.intersect(bore_hull),",
+        new="        fluid_supported=flux_matched,",
+        expect_failing=(
+            "test_s4_9_the_fluid_evidence_does_not_reach_the_admitted_window",
+            "test_s4_9_the_qualification_travels_into_the_reported_refusal",
+        ),
+        notes="Dropping the bore constraint turns 'no bore satisfies both' into a "
+        "spurious 0.3 mm overlap -- a fluid list read as a coverage map.",
+    ),
+    Mutation(
+        name="S4-invert-the-mass-flux-to-bore-mapping",
+        guards="S4-9: G falls as D rises, so the flux ceiling sets the LOWER bore bound",
+        finding="S4",
+        path=ASSESSMENT,
+        old="    d_lo = math.sqrt(4.0 * mass_flow_kg_s / (math.pi * g_hi))\n"
+        "    d_hi = math.sqrt(4.0 * mass_flow_kg_s / (math.pi * g_lo))",
+        new="    d_lo = math.sqrt(4.0 * mass_flow_kg_s / (math.pi * g_lo))\n"
+        "    d_hi = math.sqrt(4.0 * mass_flow_kg_s / (math.pi * g_hi))",
+        expect_failing=(
+            "test_s4_9_the_mass_flux_to_bore_inversion_is_the_right_way_round",
+            "test_s4_9_the_declared_box_admits_part_of_the_band",
+        ),
+    ),
+    Mutation(
+        name="S4-drop-the-hours-to-seconds-factor-in-the-kcal-conversion",
+        guards="S4-10: a non-SI source is converted at the boundary and tested",
+        finding="S4",
+        path=REGISTRY,
+        old="    return q_kcal_m2_hr * kcal_J / 3600.0",
+        new="    return q_kcal_m2_hr * kcal_J",
+        expect_failing=(
+            "test_s4_10_the_kcal_conversion_matches_an_independently_computed_value",
+        ),
+        notes="The Ayub (2003) hazard class: an SI implementation that omits the "
+        "conversion is silently wrong by a factor of 3600.",
+    ),
+    Mutation(
+        name="S4-swap-the-two-kilocalorie-definitions",
+        guards="S4-10: where the unit is ambiguous, both readings are recorded",
+        finding="S4",
+        path=REGISTRY,
+        old="KCAL_IT_J = 4186.8",
+        new="KCAL_IT_J = 4184.0",
+        expect_failing=(
+            "test_s4_10_both_kilocalorie_definitions_are_recorded_and_differ_as_expected",
+            "test_s4_10_the_kcal_conversion_matches_an_independently_computed_value",
+        ),
+    ),
+    Mutation(
+        name="S4-widen-the-Shah-1974-pressure-domain-to-cover-this-loop",
+        guards="S4-10/D-6: the registered gap must stay machine-visible",
+        finding="S4",
+        path=REGISTRY,
+        old="SHAH_1974_P_MAX_PA = 4.29248e5  # T_sat =   0 C",
+        new="SHAH_1974_P_MAX_PA = 25.0e5  # T_sat =   0 C",
+        expect_failing=(
+            "test_s4_10_shah_1974_refuses_this_loop_on_every_declared_numeric_axis",
+        ),
+        notes="Registering the entry makes D-6 measurable; widening its domain to "
+        "admit this loop would delete the measurement.",
+    ),
+    Mutation(
+        name="S4-drop-the-D-13-disclosure-from-the-energy-balance",
+        guards="S4-11: an unresolved provenance travels with every result using it",
+        finding="S4",
+        path=COUPLED,
+        old=(
+            "            (_PUMP_EFFICIENCY_DISCLOSURE,) "
+            "if self.pump_heat_into_fluid_W > 0.0 else ()"
+        ),
+        new="            ()",
+        expect_failing=(
+            "test_s4_11_any_balance_carrying_pump_heat_carries_the_d13_disclosure",
+        ),
+    ),
+    Mutation(
+        name="S4-drop-the-pump-heat-from-the-rejected-load",
+        guards="S4-12: energy closure carries pump heat in the rejected load (S0)",
+        finding="S4",
+        path=COUPLED,
+        old="    rejected = duty_W + pump.fluid_heat_W",
+        new="    rejected = duty_W",
+        expect_failing=(
+            "test_s4_12_the_rejected_load_is_duty_plus_pump_heat_and_closes",
+            "test_s4_12_the_pump_term_is_load_bearing_in_the_balance",
+        ),
+        notes=(
+            "The D-13 disclosure test does NOT catch this, and that is correct: the "
+            "disclosure keys off pump heat being computed, not off it reaching the "
+            "rejected load. Two different guards for two different failures."
+        ),
+    ),
+    Mutation(
+        name="S4-broadcast-the-transitional-flow-warnings-instead-of-recording-them",
+        guards="a real caveat must reach the result, not a warnings log",
+        finding="S4",
+        path=COUPLED,
+        old="    transitional = transitional_count[0]",
+        new="    transitional = 0",
+        expect_failing=("test_the_transitional_flow_caveat_travels_on_the_result",),
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
