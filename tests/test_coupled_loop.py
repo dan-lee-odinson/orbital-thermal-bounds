@@ -324,7 +324,7 @@ def test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model():
     for result in (solve_demo(), solve_ref()):
         rendered = result.render()
         assert "UNABLE TO FIRE ON THIS MODEL" in rendered
-        assert "monotone at every duty tried" in rendered
+        assert "negative_slope_segment" in rendered
         assert "does not by itself discharge the requirement" in rendered
         assert "UNABLE TO FIRE ON THIS MODEL" in str(result)
 

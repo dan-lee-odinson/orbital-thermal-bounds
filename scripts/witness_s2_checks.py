@@ -52,10 +52,12 @@ TEST_MODULES = (
     "tests/test_boundary_enforcement.py",
     "tests/test_two_phase_loop.py",
     "tests/test_coupled_loop.py",
+    "tests/test_c11_collapse.py",
 )
 
 COUPLED = SRC / "coupled_loop.py"
 ASSESSMENT = SRC / "dp_basis_assessment.py"
+COLLAPSE = SRC / "registry" / "collapse.py"
 
 
 @dataclass(frozen=True)
@@ -1234,20 +1236,12 @@ MUTATIONS: list[Mutation] = [
         notes="At x = 0.5 the candidate admits part of the band; at the loop's own "
         "x = 0.048 it admits nothing. Picking the quality picks the verdict.",
     ),
-    Mutation(
-        name="S4F-blank-the-guard-cannot-fire-disclosure",
-        guards="C6: a guard that cannot trigger must say so in the output",
-        finding="S4-FIX",
-        path=COUPLED,
-        old=(
-            '    "LEDINEGG GUARD -- IMPLEMENTED, WITNESSED, AND UNABLE TO FIRE ON '
-            'THIS MODEL. The "'
-        ),
-        new='    "" or "" "" "" ',
-        expect_failing=(
-            "test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model",
-        ),
-    ),
+    # SUPERSEDED BY C11. This mutation blanked the hand-written disclosure constant
+    # `_LEDINEGG_UNREACHABLE_DISCLOSURE`, which no longer exists: C11 replaced it with a
+    # statement DERIVED from the collapse/detect cross-check. Removed rather than
+    # repointed, because the two C11 mutations below break the derivation itself, which
+    # is a strictly stronger test than blanking a constant -- and the harness reported
+    # the rotted anchor as a failure rather than skipping it, which is why it was found.
     Mutation(
         name="S4F-drop-the-Shah-property-backend-caveat",
         guards="C8: a correlation and the properties it was fitted against are a package",
@@ -1276,6 +1270,66 @@ MUTATIONS: list[Mutation] = [
         ),
         notes="Registering the pressure-drop half would assert that the literature "
         "covers a domain it does not, and D-6 is a heat-transfer debt.",
+    ),
+    # ---------------------------------------------------- C11 (OTB-MAINT-02 MAINT-02-01)
+    # The three mutations the finding's own check specification mandates. Each must turn
+    # the check RED; a check that survives any of them is trivially true and METHOD
+    # 5.4.5 rejects it.
+    Mutation(
+        name="C11-mutation-1-delete-the-boundary-crosscheck",
+        guards="C11(ii): the shared boundary intersects detects with collapses (C9)",
+        finding="C11",
+        path=COLLAPSE,
+        old="    collapsed = model.collapsed_phenomena()\n    return tuple(",
+        new="    collapsed = {}\n    return tuple(",
+        expect_failing=(
+            "test_c11_the_boundary_reports_the_conflict_naming_guard_term_and_phenomenon",
+            "test_c11_assert_detectable_raises_for_a_caller_that_depends_on_the_verdict",
+            "test_c11_the_disclosure_is_derived_and_disappears_when_the_collapse_does",
+            "test_c11_the_disclosure_names_the_phenomenon_and_the_term_that_took_it",
+            "test_c11_it_does_not_claim_the_gap_is_closed",
+            "test_c11_both_run_kinds_carry_the_derived_disclosure_in_the_output",
+            "test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model",
+        ),
+        notes="Mandated mutation 1. With the intersection emptied, every derived "
+        "statement disappears and the guard reports itself healthy.",
+    ),
+    Mutation(
+        name="C11-mutation-2-empty-the-collapses-on-the-frictional-term",
+        guards="C11(i): a collapsing term declares what it costs",
+        finding="C11",
+        path=TWO_PHASE_LOOP,
+        old="        ModelTerm(\n            term=\"frictional\",\n            entry_id=DP_ID,\n"
+        "            collapses=(",
+        new="        ModelTerm(\n            term=\"frictional\",\n            entry_id=DP_ID,\n"
+        "            collapses=() and (",
+        expect_failing=(
+            "test_c11_the_named_terms_declare_a_non_empty_collapse",
+            "test_c11_the_frictional_collapse_names_the_quality_profile_and_what_it_costs",
+            "test_c11_control_a_term_that_collapses_nothing_says_so",
+            "test_c11_the_boundary_reports_the_conflict_naming_guard_term_and_phenomenon",
+            "test_c11_the_disclosure_is_derived_and_disappears_when_the_collapse_does",
+            "test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model",
+        ),
+        notes="Mandated mutation 2. This is the one that proves the disclosure is "
+        "DERIVED: removing the collapse removes the sentence, with no prose edited.",
+    ),
+    Mutation(
+        name="C11-mutation-3-remove-detects-from-the-Ledinegg-guard",
+        guards="C11(ii): a guard declares the phenomenon it targets",
+        finding="C11",
+        path=REGISTRY,
+        old='        detects=("negative_slope_segment",),',
+        new="        detects=(),",
+        expect_failing=(
+            "test_c11_the_ledinegg_guard_declares_what_it_detects",
+            "test_c11_the_boundary_reports_the_conflict_naming_guard_term_and_phenomenon",
+            "test_c11_assert_detectable_raises_for_a_caller_that_depends_on_the_verdict",
+            "test_c11_the_disclosure_is_derived_and_disappears_when_the_collapse_does",
+            "test_s4_6_every_result_states_that_the_guard_cannot_fire_on_this_model",
+        ),
+        notes="Mandated mutation 3. The boundary refuses an undeclared target rather "
+        "than passing it, so this raises rather than quietly reporting no conflict.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
