@@ -26,9 +26,16 @@ rather than asserted in prose that nothing can falsify.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .registry import get
+
+#: Saturated liquid and vapour ammonia viscosity at 20 bar, from the pinned CoolProp
+#: backend. Defaults so an assessment cannot quietly proceed without the properties
+#: the Reynolds axes need -- omitting them is what let those axes go unapplied.
+_AMMONIA_MU_F_20BAR = 1.044729e-4
+_AMMONIA_MU_G_20BAR = 1.0e-5
 
 #: The assessed candidate. Named once so the rest of the module is about the question
 #: rather than about one paper.
@@ -98,6 +105,128 @@ class Interval:
         return f"{self.lo_m * 1e3:.4g}-{self.hi_m * 1e3:.4g} mm"
 
 
+@dataclass(frozen=True)
+class OperatingContext:
+    """The loop state an assessment is made against.
+
+    Every declared axis of a mini/micro-channel pressure-drop correlation is a
+    function of bore *and* of this state, so an assessment that does not carry the
+    state can only apply the axes that happen not to need it -- which is precisely how
+    an axis gets silently dropped.
+    """
+
+    mass_flow_kg_s: float
+    reduced_pressure: float
+    mu_f: float
+    mu_g: float
+    quality: float
+
+
+#: How to evaluate each declared axis at a bore. Keyed by the range names a registry
+#: entry may declare.
+#:
+#: **Every declared range must have an entry here.** A declared axis with no evaluator
+#: raises rather than being skipped: the first version of this module applied ``D_h_m``,
+#: ``G_kg_m2s`` and ``P_R`` and silently ignored ``Re_fo``, ``Re_f``, ``Re_g`` and
+#: ``x`` -- all four of which the entry declares. ``Re_fo`` binds at SMALL bore, so
+#: ignoring it reported an admitted window 2.2 mm too wide at the low end, in the
+#: direction of over-claiming applicability. Hand-picking axes is the defect; requiring
+#: an evaluator for each is the fix.
+_AXIS_EVALUATORS: dict[str, Callable[[float, OperatingContext], float]] = {
+    "D_h_m": lambda d, ctx: d,
+    "G_kg_m2s": lambda d, ctx: _mass_flux(d, ctx),
+    "Re_fo": lambda d, ctx: _mass_flux(d, ctx) * d / ctx.mu_f,
+    "Re_f": lambda d, ctx: _mass_flux(d, ctx) * (1.0 - ctx.quality) * d / ctx.mu_f,
+    "Re_g": lambda d, ctx: _mass_flux(d, ctx) * ctx.quality * d / ctx.mu_g,
+    "x": lambda d, ctx: ctx.quality,
+    "P_R": lambda d, ctx: ctx.reduced_pressure,
+}
+
+
+def _mass_flux(diameter_m: float, ctx: OperatingContext) -> float:
+    return 4.0 * ctx.mass_flow_kg_s / (math.pi * diameter_m * diameter_m)
+
+
+def _admits(
+    diameter_m: float,
+    ranges: dict[str, tuple[float, float]],
+    ctx: OperatingContext,
+    *,
+    applied: set[str] | None = None,
+) -> bool:
+    """Whether every declared range admits this bore. All axes, or it raises.
+
+    ``applied`` collects the axes actually evaluated, so that what an assessment
+    reports having applied is a **fact about this loop** rather than a copy of the
+    declared range keys. Reporting the declaration would be the same shape of defect
+    as the one this module was corrected for -- an assessment that says it used seven
+    axes while using three would be indistinguishable from one that used seven.
+
+    Deliberately no early return: a short-circuit would record only the axes checked
+    before the first refusal, which would make ``applied`` depend on dict order.
+    """
+    ok = True
+    for name, (lo, hi) in ranges.items():
+        evaluator = _AXIS_EVALUATORS.get(name)
+        if evaluator is None:
+            raise ValueError(
+                f"the entry declares a validity range on {name!r} and this module has "
+                "no evaluator for it, so the axis would be silently ignored and the "
+                "admitted window reported too wide. Add an evaluator or remove the "
+                "declared range; do not assess around it."
+            )
+        if applied is not None:
+            applied.add(name)
+        if not lo <= evaluator(diameter_m, ctx) <= hi:
+            ok = False
+    return ok
+
+
+def _admitted_interval(
+    ranges: dict[str, tuple[float, float]],
+    ctx: OperatingContext,
+    *,
+    applied: set[str] | None = None,
+    search_lo_m: float = 1.0e-5,
+    search_hi_m: float = 1.0,
+    samples: int = 2001,
+) -> Interval:
+    """The bores every declared range admits, found by scan and refined by bisection.
+
+    Deliberately **not** inverted analytically. Each axis is monotone in bore, but in
+    different directions -- ``G`` and the three Reynolds numbers fall as bore rises
+    while ``D_h`` rises with it -- and reasoning about which way each one binds is
+    exactly the step that went wrong. Scanning cannot get the direction backwards.
+    """
+    # Log-spaced: the search spans five decades of bore and the admitted window can be
+    # a fraction of a millimetre, so uniform spacing would either miss it or be
+    # enormous. The scan only has to LAND in the window; bisection supplies the
+    # precision, so the grid is sized for detection rather than for accuracy.
+    ratio = (search_hi_m / search_lo_m) ** (1.0 / (samples - 1))
+    grid = [search_lo_m * ratio**i for i in range(samples)]
+    ok = [d for d in grid if _admits(d, ranges, ctx, applied=applied)]
+    if not ok:
+        return Interval(1.0, 0.0)  # empty
+
+    def refine(inside: float, outside: float) -> float:
+        for _ in range(80):
+            mid = 0.5 * (inside + outside)
+            if _admits(mid, ranges, ctx):
+                inside = mid
+            else:
+                outside = mid
+        return inside
+
+    lo, hi = ok[0], ok[-1]
+    below = [d for d in grid if d < lo]
+    above = [d for d in grid if d > hi]
+    if below:
+        lo = refine(lo, below[-1])
+    if above:
+        hi = refine(hi, above[0])
+    return Interval(lo, hi)
+
+
 def _bores_for_mass_flux(mass_flow_kg_s: float, g_lo: float, g_hi: float) -> Interval:
     """Bores whose mass flux falls in ``[g_lo, g_hi]`` at a fixed mass flow.
 
@@ -131,6 +260,24 @@ class BasisAssessment:
     reduced_pressure: float
     reduced_pressure_in_basis: bool
     mass_flow_kg_s: float
+    #: The vapour quality the assessment was made at. Load-bearing: two declared axes
+    #: depend on it and the admitted window can be empty on either side.
+    quality: float = 0.0
+    #: Every declared range that was applied. Reported so a reader can see that the
+    #: assessment used the whole declared box rather than the part of it that was
+    #: convenient.
+    applied_axes: tuple[str, ...] = ()
+
+    @property
+    def flux_matched_within_admitted(self) -> Interval:
+        """Admitted bores where this loop's mass flux also matches the fluid's.
+
+        A weaker condition than :attr:`fluid_supported` and a different one, reported
+        separately because the two are easy to confuse and only one of them is
+        evidence. This asks whether the loop's mass flux lands in the range the fluid
+        was measured over, *ignoring the bores it was measured at*.
+        """
+        return self.admitted.intersect(self.fluid_flux_matched)
 
     @property
     def admits_part_of_the_band(self) -> bool:
@@ -160,15 +307,17 @@ class BasisAssessment:
     def summary(self) -> str:
         band = self.admitted.intersect(self.swept_band)
         return (
-            f"{self.entry_id}: declared basis admits {band} of the swept "
-            f"{self.swept_band}; P_R = {self.reduced_pressure:.4g} "
+            f"{self.entry_id}: at x = {self.quality:.4g}, declared basis admits {band} "
+            f"of the swept {self.swept_band}; P_R = {self.reduced_pressure:.4g} "
             f"{'inside' if self.reduced_pressure_in_basis else 'OUTSIDE'} the declared "
-            f"range; {self.evidence.fluid} evidence ({self.evidence.points} of "
+            f"range; axes applied: {', '.join(self.applied_axes)}. "
+            f"{self.evidence.fluid} evidence ({self.evidence.points} of "
             f"{self.evidence.total_points} points) was measured at bores "
-            f"{self.fluid_bore_hull} and is mass-flux-matched here only at "
-            f"{self.fluid_flux_matched}, so it supports {self.fluid_supported}, which "
-            f"does {'' if self.fluid_evidence_reaches_the_admitted_window else 'NOT '}"
-            f"overlap the admitted window"
+            f"{self.fluid_bore_hull} and G {self.evidence.mass_flux_min_kg_m2s:g}-"
+            f"{self.evidence.mass_flux_max_kg_m2s:g} kg/m2s. Of the admitted window, "
+            f"{self.flux_matched_within_admitted} matches that MASS-FLUX range; the "
+            f"region matching BOTH its mass-flux range and its measured bores is "
+            f"{self.fluid_supported}"
         )
 
 
@@ -179,31 +328,43 @@ def assess_declared_basis(
     band_min_m: float,
     band_max_m: float,
     reduced_pressure: float,
+    quality: float,
+    mu_f: float = _AMMONIA_MU_F_20BAR,
+    mu_g: float = _AMMONIA_MU_G_20BAR,
     evidence: FluidEvidence = MAQBOOL_AMMONIA_EVIDENCE,
 ) -> BasisAssessment:
     """Compute what a candidate's declared basis admits of a swept bore band.
 
-    Both axes bind at once. The bore axis is read straight off the entry's declared
-    ``D_h_m`` range; the mass-flux axis is converted into a bore interval at the stated
-    mass flow, because a bore band and a mass-flux band are the same constraint seen
-    from two sides and applying only one of them is how a box gets over-read.
+    **Every** declared range binds, not a chosen subset. A bore band, a mass-flux
+    band and a Reynolds band are the same constraint seen from three sides, and they
+    bind from opposite ends -- ``D_h`` from above, ``G`` and the Reynolds numbers from
+    below -- so applying some of them is how a validity box gets over-read.
+
+    ``quality`` has **no default**, and that is deliberate. Two of the declared axes,
+    ``Re_f = G(1-x)D/mu_f`` and ``Re_g = GxD/mu_g``, are functions of it, and the
+    admitted window moves from empty to several millimetres wide and back again across
+    ``0 < x < 1``. There is no neutral value to assume: assuming one would make the
+    reported window an artifact of the assumption, which is the shape of defect this
+    module exists to prevent.
     """
     entry = get(entry_id)
-    ranges = entry.domain.ranges
-    for required in ("D_h_m", "G_kg_m2s", "P_R"):
-        if required not in ranges:
-            raise ValueError(
-                f"{entry_id} declares no {required} range, so its basis cannot be "
-                "assessed on that axis; assessing it anyway would invent the bound"
-            )
+    ranges = dict(entry.domain.ranges)
+    if not ranges:
+        raise ValueError(
+            f"{entry_id} declares no validity ranges, so there is no basis to assess; "
+            "assessing it anyway would invent the bounds"
+        )
 
-    d_lo, d_hi = ranges["D_h_m"]
-    g_lo, g_hi = ranges["G_kg_m2s"]
-    p_lo, p_hi = ranges["P_R"]
-
-    admitted = Interval(d_lo, d_hi).intersect(
-        _bores_for_mass_flux(mass_flow_kg_s, g_lo, g_hi)
+    ctx = OperatingContext(
+        mass_flow_kg_s=mass_flow_kg_s,
+        reduced_pressure=reduced_pressure,
+        mu_f=mu_f,
+        mu_g=mu_g,
+        quality=quality,
     )
+    applied: set[str] = set()
+    admitted = _admitted_interval(ranges, ctx, applied=applied)
+
     # Where THIS fluid was actually measured, in the same bore coordinate. Two
     # independent constraints, and the supported region is where both hold at once.
     flux_matched = _bores_for_mass_flux(
@@ -212,6 +373,7 @@ def assess_declared_basis(
         evidence.mass_flux_max_kg_m2s,
     )
     bore_hull = Interval(min(evidence.diameters_m), max(evidence.diameters_m))
+    p_lo, p_hi = ranges.get("P_R", (float("-inf"), float("inf")))
 
     return BasisAssessment(
         entry_id=entry_id,
@@ -224,7 +386,52 @@ def assess_declared_basis(
         reduced_pressure=reduced_pressure,
         reduced_pressure_in_basis=p_lo <= reduced_pressure <= p_hi,
         mass_flow_kg_s=mass_flow_kg_s,
+        quality=quality,
+        applied_axes=tuple(sorted(applied)),
     )
+
+
+def qualities_admitting_any_bore(
+    *,
+    entry_id: str = KIM_MUDAWAR_ID,
+    mass_flow_kg_s: float,
+    band_min_m: float,
+    band_max_m: float,
+    reduced_pressure: float,
+    mu_f: float = _AMMONIA_MU_F_20BAR,
+    mu_g: float = _AMMONIA_MU_G_20BAR,
+    samples: int = 201,
+) -> tuple[float, float] | None:
+    """The vapour qualities at which the declared basis admits **some** bore in the band.
+
+    Reported because "this correlation does not reach this loop" and "this correlation
+    does not reach anything" are different statements, and the first is only worth
+    saying with the second ruled out.
+
+    Returns a **quality** pair, not an :class:`Interval` -- ``Interval`` renders itself
+    in millimetres, and a quality printed as "0.31 mm" would be a small trap left for
+    whoever reads the output next.
+    """
+    ranges = dict(get(entry_id).domain.ranges)
+    # Only non-emptiness is needed here, so the endpoints are not refined: bisecting
+    # two boundaries per quality would be most of the work and none of the answer.
+    ratio = (band_max_m / band_min_m) ** (1.0 / 400)
+    bores = [band_min_m * ratio**i for i in range(401)]
+    admitting = [
+        i / (samples - 1)
+        for i in range(samples)
+        if any(
+            _admits(
+                d,
+                ranges,
+                OperatingContext(
+                    mass_flow_kg_s, reduced_pressure, mu_f, mu_g, i / (samples - 1)
+                ),
+            )
+            for d in bores
+        )
+    ]
+    return (min(admitting), max(admitting)) if admitting else None
 
 
 @dataclass(frozen=True)
@@ -247,22 +454,42 @@ class RefusalKind:
         return self.kind == "policy"
 
 
-def classify_pressure_drop_refusal(assessment: BasisAssessment) -> RefusalKind:
+def classify_pressure_drop_refusal(
+    assessment: BasisAssessment,
+    *,
+    admitting_qualities: tuple[float, float] | None = None,
+) -> RefusalKind:
     """Classify the S4 pressure-drop refusal against the assessment that was computed.
 
     This is the D16 disclosure obligation in executable form. If the assessment finds
     the candidate's declared basis admits part of this project's space, the refusal is
     a **policy** refusal and must say so, naming A4 -- because a refusal reported
     without that distinction says no correlation exists for this corner, and one does.
+
+    ``admitting_qualities`` is the quality range at which the candidate would admit
+    some bore. It changes nothing about the classification and is reported inside a
+    knowledge refusal, so that "does not reach THIS loop" is not read as "does not
+    reach anything".
     """
     if not assessment.admits_part_of_the_band:
+        elsewhere = (
+            ""
+            if admitting_qualities is None
+            else (
+                f" It is not empty everywhere: the same declared basis admits part of "
+                f"the band at vapour qualities {admitting_qualities[0]:.2f}-"
+                f"{admitting_qualities[1]:.2f}, which this loop does not reach at this "
+                f"duty and flow. So the refusal is about THIS operating point, not "
+                f"about the correlation."
+            )
+        )
         return RefusalKind(
             kind="knowledge",
             detail=(
                 f"the assessed candidate {assessment.entry_id} does not reach this "
-                f"operating space either: {assessment.summary()}. The refusal is "
-                "therefore about what has been published, not about what has been "
-                "adopted."
+                f"operating space either, once its WHOLE declared basis is applied: "
+                f"{assessment.summary()}. The refusal is therefore about what has been "
+                f"published, not about what has been adopted.{elsewhere}"
             ),
         )
 
@@ -271,14 +498,21 @@ def classify_pressure_drop_refusal(assessment: BasisAssessment) -> RefusalKind:
         ""
         if assessment.fluid_evidence_reaches_the_admitted_window
         else (
-            f" AND A LIMIT THAT IS NOT SMALL: the {assessment.evidence.fluid} evidence "
-            f"in that database was measured at bores {assessment.fluid_bore_hull}, "
-            f"while this loop reaches its measured mass fluxes only at "
-            f"{assessment.fluid_flux_matched}. Those do not meet, so there is NO bore "
-            f"at which this loop sits inside both -- within the admitted window the "
-            f"candidate would be carried entirely by its other fluids. Its declared "
-            f"basis admits this case; its {assessment.evidence.fluid} data do not "
-            f"reach it."
+            f" AND A LIMIT THAT IS NOT SMALL. Two different overlaps, and they must "
+            f"not be confused. (a) MASS FLUX ONLY: of the admitted window, "
+            f"{assessment.flux_matched_within_admitted} carries a mass flux inside the "
+            f"{assessment.evidence.mass_flux_min_kg_m2s:g}-"
+            f"{assessment.evidence.mass_flux_max_kg_m2s:g} kg/m2s range the "
+            f"{assessment.evidence.fluid} data were taken over -- a real but narrow "
+            f"strip. (b) MASS FLUX AND BORE TOGETHER: those data were measured at "
+            f"bores {assessment.fluid_bore_hull}, and this loop reaches their mass "
+            f"fluxes only at {assessment.fluid_flux_matched}; the two do not meet, so "
+            f"the region satisfying both is {assessment.fluid_supported}. A bore in "
+            f"strip (a) matches the mass flux of the {assessment.evidence.fluid} rows "
+            f"while sitting three times wider than any bore they were measured at, so "
+            f"strip (a) is not {assessment.evidence.fluid} evidence for this loop. "
+            f"Within the admitted window the candidate would be carried by its other "
+            f"fluids."
         )
     )
     return RefusalKind(

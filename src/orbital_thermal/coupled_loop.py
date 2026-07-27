@@ -48,6 +48,7 @@ from .dp_basis_assessment import (
     KIM_MUDAWAR_ID,
     assess_declared_basis,
     classify_pressure_drop_refusal,
+    qualities_admitting_any_bore,
 )
 from .registry import NotRankEligibleError, get
 from .registry.two_phase import ledinegg_static_criterion
@@ -101,6 +102,22 @@ _PUMP_EFFICIENCY_DISCLOSURE = (
     "unresolved and is not decided here. The value is unchanged from its pre-S4 "
     "setting. Pump heat is load-bearing in the rejected load below, so this balance "
     "depends on an unresolved input."
+)
+
+#: The Ledinegg guard's standing qualification. Any output carrying the guard carries
+#: this, in the output and not in a footnote (C6): describing this milestone as
+#: shipping a static Ledinegg guard, without it, would overstate what the guard can do
+#: on the model it is attached to.
+_LEDINEGG_UNREACHABLE_DISCLOSURE = (
+    "LEDINEGG GUARD -- IMPLEMENTED, WITNESSED, AND UNABLE TO FIRE ON THIS MODEL. The "
+    "static criterion below is correct and is verified against a characteristic that "
+    "has a negative-slope segment. It CANNOT fire on this project's own pressure-drop "
+    "model: that boundary evaluates the frictional multiplier once per call and scales "
+    "it linearly by length rather than integrating along the channel, so the moving "
+    "boiling boundary -- the mechanism that puts a negative-slope segment into a "
+    "boiling channel's characteristic -- is not represented. The internal "
+    "characteristic is monotone at every duty tried, from 600 W to 60 kW. A guard that "
+    "cannot trigger does not by itself discharge the requirement for one."
 )
 
 #: The pump characteristic is a DESIGN VARIABLE, not a sourced pump curve (C1).
@@ -618,9 +635,14 @@ class _CoupledResultBase:
                 f"({'closes' if self.closure.closes else 'DOES NOT CLOSE'})",
             ]
             lines += [f"  {d}" for d in self.closure.disclosures]
-        lines += [self.pump.disclosure]
+        lines += [self.pump.disclosure, self.ledinegg_disclosure]
         lines += list(self.notes)
         return lines
+
+    @property
+    def ledinegg_disclosure(self) -> str:
+        """Not a field, so no caller can construct a result without it (C6)."""
+        return _LEDINEGG_UNREACHABLE_DISCLOSURE
 
 
 @dataclass(frozen=True)
@@ -834,13 +856,32 @@ def solve_reference_case(
 
     with _collected_transitional_warnings():
         dp_leg = _pressure_drop_leg(case)
+
+    # The candidate's basis is assessed at THIS loop's own mean quality, not at a
+    # convenient one. Two of its declared axes are functions of quality, and the
+    # window they admit is empty on both sides of a middle band -- so a quality picked
+    # for tidiness would decide the answer.
+    x_mean = 0.5 * (case.quality_in + case.quality_out_at(nominal_mass_flow_kg_s))
     assessment = assess_declared_basis(
         mass_flow_kg_s=nominal_mass_flow_kg_s,
         band_min_m=band_min_m,
         band_max_m=band_max_m,
         reduced_pressure=reduced_pressure,
+        quality=x_mean,
+        mu_f=case.mu_f,
+        mu_g=case.mu_g,
     )
-    refusal = classify_pressure_drop_refusal(assessment)
+    refusal = classify_pressure_drop_refusal(
+        assessment,
+        admitting_qualities=qualities_admitting_any_bore(
+            mass_flow_kg_s=nominal_mass_flow_kg_s,
+            band_min_m=band_min_m,
+            band_max_m=band_max_m,
+            reduced_pressure=reduced_pressure,
+            mu_f=case.mu_f,
+            mu_g=case.mu_g,
+        ),
+    )
     if not dp_leg.available:
         dp_leg = LegStatus(
             leg="pressure drop",
@@ -905,7 +946,10 @@ def solve_reference_case(
             "internal pressure-drop/flow-rate characteristic cannot be built, so "
             "there is nothing for the external characteristic to intersect and "
             "nothing for the static Ledinegg guard to evaluate. The guard is "
-            f"implemented and verified against {LEDINEGG_ID}; it has no argument here."
+            f"implemented and verified against {LEDINEGG_ID}; it has no argument "
+            "here. That is a SECOND and separate reason it does not fire on this "
+            "case -- the first is in the guard disclosure above, and applies even "
+            "where the characteristic CAN be built."
         )
         note_lines.append(
             "ENERGY CLOSURE IS NOT REPORTED. Pump heat in the rejected load needs a "
