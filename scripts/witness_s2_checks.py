@@ -53,6 +53,7 @@ TEST_MODULES = (
     "tests/test_two_phase_loop.py",
     "tests/test_coupled_loop.py",
     "tests/test_c11_collapse.py",
+    "tests/test_packet_exclusions.py",
 )
 
 COUPLED = SRC / "coupled_loop.py"
@@ -60,6 +61,7 @@ ASSESSMENT = SRC / "dp_basis_assessment.py"
 COLLAPSE = SRC / "registry" / "collapse.py"
 COUPLED_MODEL = SRC / "coupled_model.py"
 HARMONIZED = SRC / "harmonized_comparison.py"
+EXCLUSIONS = REPO / "scripts" / "packet_exclusions.py"
 
 
 @dataclass(frozen=True)
@@ -1404,6 +1406,164 @@ MUTATIONS: list[Mutation] = [
         ),
         notes="Skipping what cannot be checked makes the check silently weaker as "
         "modules move -- the failure mode a rotted anchor has in the harness itself.",
+    ),
+    # ------------------------------------------ OTB-G003 round 1 (Sol's findings)
+    Mutation(
+        name="G3R1-F01-report-the-pump-inlet-leg-as-available-regardless",
+        guards="F-01: the leg reports COMPUTED feasibility, not a literal",
+        finding="G3R1-F01",
+        path=COUPLED,
+        old="        available=inlet.feasible,",
+        new="        available=True,",
+        expect_failing=(
+            "test_f01_an_infeasible_pump_inlet_refuses_rather_than_returning_points",
+            "test_f01_the_pump_inlet_leg_is_not_a_literal",
+        ),
+        notes="The exact pre-fix shape: a cavitating loop behind a green leg.",
+    ),
+    Mutation(
+        name="G3R1-F01-return-operating-points-for-a-cavitating-inlet",
+        guards="F-01: an infeasible inlet refuses rather than returning points",
+        finding="G3R1-F01",
+        path=COUPLED,
+        old="    if not inlet.feasible:\n        points = ()",
+        new="    if False:\n        points = ()",
+        expect_failing=(
+            "test_f01_an_infeasible_pump_inlet_refuses_rather_than_returning_points",
+        ),
+    ),
+    Mutation(
+        name="G3R1-F01-make-the-condenser-duty-independent-of-the-solution-again",
+        guards="F-01(2.2): the closure must be able to FAIL",
+        finding="G3R1-F01",
+        path=COUPLED,
+        old="            h_in_J_kg=x_out * case.h_fg_J_kg,",
+        new="            h_in_J_kg=case.h_fg_J_kg,",
+        expect_failing=("test_f01_the_condenser_duty_is_computed_from_the_solved_state",),
+        notes="Fixed h_in made energy_closes true by construction -- a restatement of "
+        "its own inputs rather than a check.",
+    ),
+    Mutation(
+        name="G3R1-F01-drop-the-sink-collapse-declaration",
+        guards="F-01(2.3): C11(i)+(ii) for the sink, stated in the output",
+        finding="G3R1-F01",
+        path=COUPLED,
+        old="            term=\"condenser/radiator\",\n            collapses=(",
+        new="            term=\"condenser/radiator\",\n            collapses=() and (",
+        expect_failing=(
+            "test_f01_the_sink_collapse_is_declared_and_stated_in_the_output",
+            "test_f01_the_sink_declaration_transcribes_the_module_prose",
+        ),
+    ),
+    Mutation(
+        name="G3R1-F02-check-only-the-enum-again",
+        guards="F-02: the reference-case identity is facts, not a label",
+        finding="G3R1-F02",
+        path=COUPLED,
+        old="    _assert_describes_the_device(case)",
+        new="    pass",
+        expect_failing=(
+            "test_f02_relabelling_the_demonstration_as_the_reference_device_is_refused",
+            "test_f02_each_device_fact_is_checked_not_just_the_label",
+        ),
+    ),
+    Mutation(
+        name="G3R1-F03-select-the-first-root-and-disclose-it",
+        guards="F-03: no closure at all when the solution is non-unique",
+        finding="G3R1-F03",
+        path=COUPLED,
+        old="    if len(points) != 1:\n        return None",
+        new="    if not points:\n        return None",
+        expect_failing=("test_f03_no_closure_is_computed_when_the_solution_is_non_unique",),
+        notes="Disclosure does not undo selection -- the principle the Ledinegg guard "
+        "was held to at MAINT-02-01.",
+    ),
+    Mutation(
+        name="G3R1-F04-drop-the-tangential-and-endpoint-search",
+        guards="F-04(i): the enumerator is complete on the roots it can resolve",
+        finding="G3R1-F04",
+        path=COUPLED,
+        old="    for i in range(1, len(fine) - 1):",
+        new="    for i in range(0):",
+        expect_failing=("test_f04_a_tangential_root_is_found",),
+        notes="Roots are placed OFF grid nodes in the fixture; on-grid placement hides "
+        "this defect, and nearly did. NOTE: two CROSSING roots in one interval are "
+        "found by the refined sign-change search, not by this branch -- see the "
+        "_SUBDIVISIONS mutation below, which is what that case is guarded by.",
+    ),
+    Mutation(
+        name="G3R1-F04-stop-refining-inside-each-sampling-interval",
+        guards="F-04(i): two roots inside ONE coarse interval are both found",
+        finding="G3R1-F04",
+        path=COUPLED,
+        old="_SUBDIVISIONS = 16",
+        new="_SUBDIVISIONS = 1",
+        expect_failing=(
+            "test_f04_two_roots_inside_one_sampling_interval_are_both_found",
+        ),
+        notes="Without refinement a coarse interval yields at most one root, so the "
+        "second is silently lost -- and multiplicity IS the Ledinegg verdict.",
+    ),
+    Mutation(
+        name="G3R1-F04-emit-a-point-without-checking-its-residual",
+        guards="F-04(iii): a non-root is never emitted",
+        finding="G3R1-F04",
+        path=COUPLED,
+        old="        if not math.isfinite(r) or abs(r) > residual_tol_Pa:\n            continue",
+        new="        if False:\n            continue",
+        expect_failing=(
+            "test_f04_a_bracket_that_closes_on_a_discontinuity_emits_nothing",
+        ),
+        notes="A FLAT characteristic cannot witness this: it produces no candidate at "
+        "all, so the gate is never reached. The discontinuity does -- it presents a "
+        "perfect sign change with no zero in it.",
+    ),
+    Mutation(
+        name="G3R1-F04-scale-the-pressure-tolerance-into-a-flow-one-again",
+        guards="F-04(ii): the bracket stop is a flow tolerance in its own right",
+        finding="G3R1-F04",
+        path=COUPLED,
+        old="        if abs(f_mid) <= tol_Pa or (hi - lo) <= flow_tol_kg_s:",
+        new="        if abs(f_mid) <= tol_Pa or (hi - lo) <= tol_Pa * 1e-6:",
+        expect_failing=(
+            "test_f04_the_bracket_tolerance_is_a_flow_tolerance_not_a_scaled_pressure",
+        ),
+    ),
+    Mutation(
+        name="G3R1-F05-classify-a-non-finite-slope-instead-of-refusing-it",
+        guards="F-05: a sign test does not exclude NaN (criterion 6, verbatim)",
+        finding="G3R1-F05",
+        path=REGISTRY,
+        old="    if not math.isfinite(slope_dP_dmdot_Pa_s_kg):",
+        new="    if False:",
+        expect_failing=("test_f05_a_non_finite_slope_is_refused_not_classified",),
+        notes="NaN returned False, and False here reads as STABLE -- a verdict on a "
+        "number that means a calculation went wrong.",
+    ),
+    Mutation(
+        name="G3R1-F05-let-a-LoopCase-carry-non-finite-inputs",
+        guards="F-05: finiteness at the boundary where the case is constructed (C9)",
+        finding="G3R1-F05",
+        path=COUPLED,
+        old="            _v.positive(name, getattr(self, name))",
+        new="            pass",
+        expect_failing=(
+            "test_f05_a_loop_case_refuses_non_finite_and_unphysical_inputs",
+        ),
+    ),
+    Mutation(
+        name="G3R1-F08-let-a-Director-addressed-member-into-a-packet",
+        guards="F-08: C10 at packaging time, enumerated not pattern-matched",
+        finding="G3R1-F08",
+        path=EXCLUSIONS,
+        old='    "OTB-G003_S4_SCOPE_PROPOSAL.md": (',
+        new='    "OTB-G003_S4_SCOPE_PROPOSAL_REMOVED.md": (',
+        expect_failing=(
+            "test_the_four_director_addressed_reports_are_excluded",
+            "test_the_exclusion_list_is_not_stale",
+        ),
+        notes="The sharpest entry: it is not a tracked repo file, so a filter over "
+        "git ls-files would never have seen it.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
