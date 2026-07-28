@@ -1525,7 +1525,21 @@ def ledinegg_static_criterion(slope_dP_dmdot_Pa_s_kg: float) -> bool:
     inequality in the source, and a stationary point is the boundary case rather than
     the unstable one; treating it as unstable would be a builder's margin applied to a
     sourced criterion.
+
+    **A NON-FINITE SLOPE IS REFUSED, NOT CLASSIFIED.** NaN compares false against
+    everything, so a bare ``< 0.0`` returned ``False`` for NaN -- and ``False`` here
+    reads as *stable*, which is a verdict. Criterion 6 of the project's own acceptance
+    criteria names this exact failure mode in its own sentence: *"a sign test does not
+    exclude NaN"*. NaN is what a calculation that has silently gone wrong produces, and
+    the guard was converting it into a clean bill of health. ``+/-inf`` is refused with
+    it: an infinite slope is not a slope this criterion can rule on.
     """
+    if not math.isfinite(slope_dP_dmdot_Pa_s_kg):
+        raise ValueError(
+            f"the Ledinegg criterion cannot rule on a non-finite slope "
+            f"({slope_dP_dmdot_Pa_s_kg}). A sign test does not exclude NaN, and "
+            "returning False for one would report an unusable number as STABLE."
+        )
     return slope_dP_dmdot_Pa_s_kg < 0.0
 
 

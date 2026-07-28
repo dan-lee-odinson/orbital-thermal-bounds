@@ -129,7 +129,14 @@ def test_s4_1_a_demonstration_must_actually_be_in_basis_not_merely_labelled():
 def test_s4_2_the_disclosure_is_in_the_rendered_output_and_cannot_be_blanked():
     rendered = solve_demo().render()
     assert "MACHINERY DEMONSTRATION -- NOT A RESULT ABOUT THIS PROJECT'S DEVICE" in rendered
-    assert "says nothing" not in rendered.lower() or True  # rendered, not a footnote
+    # F-06: an `assert ... or True` stood here. Anything `or True` is true, so it was a
+    # dead assertion -- it masked nothing (the banner is genuinely present, and the
+    # sibling assertions check it) but it could not have failed. Replaced with the
+    # thing it was reaching for: the disclosure is in the BODY, not appended as a
+    # trailing footnote a reader can skip.
+    assert rendered.index("MACHINERY DEMONSTRATION") < len(rendered) // 2, (
+        "the disclosure must lead the output, not trail it"
+    )
     # It is a property, not a field: there is no constructor argument to suppress it.
     assert "disclosure" not in C.DemonstrationResult.__dataclass_fields__
     assert isinstance(C.DemonstrationResult.disclosure, property)
@@ -260,7 +267,13 @@ def test_s4_5_every_root_is_reported_and_none_is_selected():
 
 
 def test_s4_5_the_result_reports_non_uniqueness_rather_than_resolving_it():
-    """No API returns 'the' operating point when there is more than one."""
+    """No API returns 'the' operating point when there is more than one.
+
+    F-03: this constructed a ``DemonstrationResult`` directly and so never exercised
+    the energy path that selected the first root -- the suite had the same blind spot
+    as the code. It now goes through ``demonstrate_machinery``; see
+    :func:`test_f03_no_closure_is_computed_when_the_solution_is_non_unique`.
+    """
     result = C.DemonstrationResult(case=demo_case(), pump=N_PUMP, legs=(), operating_points=n_points())
     assert result.non_unique
     assert "NON-UNIQUE" in result.render()
@@ -786,6 +799,326 @@ def test_s4_14_the_photocopy_scan_is_recorded_as_having_no_text_layer():
     """A file property that makes automated extraction impossible, not merely unwise."""
     note = get("two_phase.htc.shah_1974_ammonia").source.locator
     assert "no text layer" in note.lower()
+
+
+# =============================================================================
+# OTB-G003 round 1 — Sol's findings, dispositioned by the Director
+# =============================================================================
+
+
+def test_f01_an_infeasible_pump_inlet_refuses_rather_than_returning_points():
+    """F-01(b). A cavitating loop behind a green leg with a solved point is neither."""
+    result = solve_demo(inlet_temperature_K=400.0)
+    assert result.pump_inlet_feasible is False
+    (inlet_leg,) = [leg for leg in result.legs if leg.leg == "pump-inlet criterion"]
+    assert inlet_leg.available is False, "the leg must report the COMPUTED feasibility"
+    assert inlet_leg.axis and inlet_leg.reason and inlet_leg.would_unblock
+    assert result.operating_points == ()
+    assert result.closure is None
+    assert "NO OPERATING POINT IS REPORTED" in result.render()
+
+
+def test_f01_control_a_feasible_inlet_still_evaluates_cleanly():
+    """The paired control: the fix must not degrade into 'refuses everything'."""
+    result = solve_demo()
+    assert result.pump_inlet_feasible is True
+    assert len(result.operating_points) == 1
+    (inlet_leg,) = [leg for leg in result.legs if leg.leg == "pump-inlet criterion"]
+    assert inlet_leg.available is True
+
+
+def test_f01_the_pump_inlet_leg_is_not_a_literal():
+    """It was `available=True`, written out, regardless of what was computed."""
+    import inspect
+
+    src = inspect.getsource(C.demonstrate_machinery)
+    assert "available=inlet.feasible" in src
+    assert 'LegStatus(leg="pump-inlet criterion", entry_id=NPSH_ID, available=True)' not in src
+
+
+def test_f01_the_condenser_duty_is_computed_from_the_solved_state():
+    """F-01(2.2). It was h_in=h_fg, h_out=0 — fixed, so `energy_closes` was a tautology."""
+    result = solve_demo()
+    assert result.condenser_duty_matches_applied is True
+    assert "condenser duty from the SOLVED state" in result.render()
+
+
+def test_f01_the_condenser_closure_can_fail():
+    """R2 in the test itself: the check must be capable of the other answer.
+
+    Built from the same boundary with a deliberately inconsistent outlet state, so
+    "matches" is a computed comparison and not a restatement of its own inputs.
+    """
+    from orbital_thermal.two_phase_loop import condenser_energy_boundary
+
+    case = demo_case()
+    honest = condenser_energy_boundary(
+        mass_flow_kg_s=0.0436, h_in_J_kg=0.0122 * case.h_fg_J_kg, h_out_J_kg=0.0,
+        sink_temperature_K=case.sink_temperature_K,
+        saturation_temperature_K=case.saturation_temperature_K, outlet_is_liquid=True,
+    )
+    wrong = condenser_energy_boundary(
+        mass_flow_kg_s=0.0436, h_in_J_kg=0.5 * case.h_fg_J_kg, h_out_J_kg=0.0,
+        sink_temperature_K=case.sink_temperature_K,
+        saturation_temperature_K=case.saturation_temperature_K, outlet_is_liquid=True,
+    )
+    tol = 1e-6 * max(abs(case.duty_W), 1.0)
+    assert abs(honest.duty_W - case.duty_W) <= max(tol, 0.02 * case.duty_W)
+    assert abs(wrong.duty_W - case.duty_W) > tol, (
+        "an inconsistent outlet state must move the condenser duty away from the "
+        "applied duty; if it cannot, the comparison is not a check"
+    )
+
+
+def test_f01_the_sink_collapse_is_declared_and_stated_in_the_output():
+    """F-01(2.3). C11(i) and (ii) for criterion S4-3."""
+    (conflict,) = C.sink_collapse_conflicts()
+    assert conflict.phenomenon == "sink_temperature_coupling"
+    assert conflict.term == "condenser/radiator"
+    text = C.sink_disclosure_text()
+    assert "UNABLE TO FIRE ON THIS MODEL" in text
+    for result in (solve_demo(), solve_ref()):
+        assert text in result.render()
+
+
+def test_f01_the_sink_declaration_transcribes_the_module_prose():
+    """D21's standing modification: verbatim, with a match check."""
+    from orbital_thermal.registry.collapse import transcription_mismatches
+
+    collapses = tuple(
+        c for t in C.COUPLED_SOLVE_MODEL.terms for c in t.collapses
+    )
+    assert collapses and all(c.transcription is not None for c in collapses)
+    assert transcription_mismatches(collapses) == ()
+
+
+def test_f01_the_artifact_does_not_claim_the_coupling_is_solved():
+    """§2.4. Path C stops the artifact claiming what is untrue; it does not make it true."""
+    doc = C.__doc__.lower()
+    assert "declared collapse, not a solved coupling" in doc
+    assert "fails on its own terms" in doc
+    for forbidden in ("s4-3 now passes", "solved together is discharged", "sink is coupled"):
+        assert forbidden not in doc
+
+
+def test_f02_relabelling_the_demonstration_as_the_reference_device_is_refused():
+    """The direction the suite had never tested. One changed enum field is not identity."""
+    mislabelled = C.LoopCase(kind=C.RunKind.REFERENCE_CASE, **DEMO_KW)
+    with pytest.raises(ValueError, match=r"does not describe this project's device"):
+        C.solve_reference_case(mislabelled, PUMP, **FLOWS, **BAND)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("fluid", "Water"),
+        ("composition", "two_component"),
+        ("orientation", "horizontal"),
+        ("pressure_Pa", 1.2e5),
+    ],
+)
+def test_f02_each_device_fact_is_checked_not_just_the_label(field, value):
+    """Four axes, one at a time: the guard must not pass on three out of four."""
+    with pytest.raises(ValueError, match=r"does not describe this project's device"):
+        C.solve_reference_case(ref_case(**{field: value}), PUMP, **FLOWS, **BAND)
+
+
+def test_f02_control_the_real_device_is_still_accepted():
+    assert isinstance(solve_ref(), C.ReferenceCaseResult)
+
+
+def test_f03_no_closure_is_computed_when_the_solution_is_non_unique():
+    """The Director's ruling: compute no energy closure at all at multiplicity."""
+    case = demo_case()
+    assert C.closure_for((), case) is None
+    one = solve_demo().operating_points
+    assert len(one) == 1 and C.closure_for(one, case) is not None
+    assert C.closure_for(n_points(), case) is None, (
+        "three steady states must yield no closure; picking the first and disclosing "
+        "it is still picking"
+    )
+
+
+def test_f03_the_non_uniqueness_note_says_no_closure_rather_than_which_root():
+    result = C.DemonstrationResult(
+        case=demo_case(), pump=N_PUMP, legs=(), operating_points=n_points(),
+        closure=C.closure_for(n_points(), demo_case()),
+        notes=("NO ENERGY CLOSURE IS REPORTED: the solution is non-unique (3 steady states).",),
+    )
+    assert result.closure is None
+    assert "NO ENERGY CLOSURE IS REPORTED" in result.render()
+    assert "FIRST root" not in result.render()
+
+
+def test_f03_the_demonstration_path_is_exercised_not_constructed():
+    """The test suite had the code's blind spot: it never called the entry point."""
+    result = solve_demo()
+    assert isinstance(result, C.DemonstrationResult)
+    assert result.closure is not None and not result.non_unique
+
+
+# --- F-04: the root enumerator ---------------------------------------------------
+#
+# Roots are placed deliberately OFF the grid nodes. Cowork's first verification put
+# them ON nodes, where the exact-zero branch catches them, and nearly reported the
+# finding refuted. The off-grid placement IS the fixture.
+
+F4_FLOWS = dict(flow_min_kg_s=0.5, flow_max_kg_s=2.5, samples=11)  # nodes every 0.2
+
+
+class _FlatPump(C.PumpCharacteristic):
+    def available_Pa(self, mass_flow_kg_s: float) -> float:
+        return 0.0
+
+
+F4_PUMP = _FlatPump(shutoff_Pa=1.0, runout_kg_s=1e9)
+
+
+def _roots(fn):
+    return [
+        p.mass_flow_kg_s
+        for p in C.operating_points_from_characteristic(fn, F4_PUMP, **F4_FLOWS)
+    ]
+
+
+def test_f04_a_root_exactly_at_flow_max_is_found():
+    """It is the `hi` of the last bracket and was never the `lo` of any."""
+    found = _roots(lambda m: m - 2.5)
+    assert found and abs(found[-1] - 2.5) < 1e-6
+
+
+def test_f04_a_tangential_root_is_found():
+    """Touches zero without crossing, so no sign change exists to bracket."""
+    found = _roots(lambda m: (m - 1.61) ** 2)
+    assert len(found) == 1, f"expected one tangential root, got {found}"
+    assert abs(found[0] - 1.61) < 0.02
+
+
+def test_f04_two_roots_inside_one_sampling_interval_are_both_found():
+    found = _roots(lambda m: (m - 1.61) * (m - 1.63))
+    assert len(found) == 2, f"expected two roots, got {found}"
+    assert abs(found[0] - 1.61) < 0.02 and abs(found[1] - 1.63) < 0.02
+
+
+def test_f04_control_an_ordinary_off_grid_sign_change_still_resolves():
+    """The control that keeps the enumerator from being 'returns everything'."""
+    found = _roots(lambda m: m - 1.61)
+    assert len(found) == 1 and abs(found[0] - 1.61) < 1e-3
+
+
+def test_f04_a_flat_characteristic_far_from_zero_yields_no_roots():
+    """The other control: near-zero is not the same as small, and neither is a root."""
+    assert _roots(lambda m: 5.0) == []
+
+
+def test_f04_a_bracket_that_closes_on_a_discontinuity_emits_nothing():
+    """(iii) The case the residual gate actually exists for.
+
+    A step from -1 to +1 with no zero in between presents a perfect sign change, so
+    bisection brackets it and converges -- to a discontinuity, not a root. Without the
+    final residual check an ``OperatingPoint`` is emitted carrying |residual| = 1.0 Pa
+    against a 1e-3 Pa tolerance, and every emitted point gets a slope and a stability
+    verdict. A flat characteristic cannot exercise this: it produces no candidate at
+    all, so the gate is never reached.
+    """
+    step = C.operating_points_from_characteristic(
+        lambda m: -1.0 if m < 1.61 else 1.0, F4_PUMP, **F4_FLOWS
+    )
+    assert step == (), f"a discontinuity is not a steady state; got {step}"
+
+
+def test_f04_no_emitted_point_exceeds_the_residual_tolerance():
+    """(iii) A non-root was emitted: neither stop branch required a final residual."""
+    for fn in (lambda m: m - 2.5, lambda m: (m - 1.61) ** 2, lambda m: m - 1.61):
+        for p in C.operating_points_from_characteristic(fn, F4_PUMP, **F4_FLOWS):
+            assert math.isfinite(p.residual_Pa)
+            assert abs(p.residual_Pa) <= 1.0e-3, (
+                f"emitted a point with residual {p.residual_Pa} Pa against a 1e-3 Pa "
+                "tolerance — multiplicity is the Ledinegg verdict and every emitted "
+                "point gets a slope"
+            )
+
+
+def test_f04_the_bracket_tolerance_is_a_flow_tolerance_not_a_scaled_pressure():
+    """(ii) `(hi - lo) [kg/s] <= tol * 1e-6 [Pa]` was dimensionally incoherent."""
+    import inspect
+
+    src = inspect.getsource(C._bisect)
+    # Any spelling of "scale the pressure tolerance and call it a flow one".
+    assert "1e-6" not in src, "the bracket stop must not be derived from a pressure"
+    assert "flow_tol_kg_s" in src
+    assert C._FLOW_BRACKET_TOL_KG_S == 1.0e-12
+    # And it is a genuinely separate knob: changing the PRESSURE tolerance must not
+    # change the flow bracket the search closes to.
+    sig = inspect.signature(C._bisect).parameters
+    assert sig["flow_tol_kg_s"].default == C._FLOW_BRACKET_TOL_KG_S
+    assert "tol_Pa" in sig and sig["tol_Pa"].default is inspect.Parameter.empty
+
+
+# --- F-05: non-finite input is refused, at the boundary ---------------------------
+
+
+@pytest.mark.parametrize("slope", [float("nan"), float("inf"), float("-inf")])
+def test_f05_a_non_finite_slope_is_refused_not_classified(slope):
+    """Criterion 6 names this in its own sentence: a sign test does not exclude NaN."""
+    from orbital_thermal.registry.two_phase import ledinegg_static_criterion
+
+    with pytest.raises(ValueError, match=r"non-finite slope"):
+        ledinegg_static_criterion(slope)
+
+
+def test_f05_control_a_finite_slope_still_gets_a_verdict():
+    from orbital_thermal.registry.two_phase import ledinegg_static_criterion
+
+    assert ledinegg_static_criterion(-1.0) is True
+    assert ledinegg_static_criterion(0.0) is False
+    assert ledinegg_static_criterion(1.0) is False
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"duty_W": float("nan")},
+        {"h_fg_J_kg": float("nan")},
+        {"rho_f": float("nan")},
+        {"mu_g": float("inf")},
+        {"pressure_Pa": float("nan")},
+        {"diameter_m": 0.0},
+        {"quality_in": 1.5},
+        {"height_m": float("nan")},
+        {"saturation_temperature_K": float("nan")},
+    ],
+)
+def test_f05_a_loop_case_refuses_non_finite_and_unphysical_inputs(bad):
+    """C9: checked where the case is CONSTRUCTED, so no consumer has to remember."""
+    with pytest.raises(ValueError):
+        demo_case(**bad)
+
+
+def test_f05_a_vapour_denser_than_the_liquid_is_refused():
+    with pytest.raises(ValueError, match=r"not below liquid density"):
+        demo_case(rho_g=2000.0)
+
+
+def test_f05_control_a_valid_case_still_constructs_and_evaluates():
+    """Criterion 6's paired control: 'refuses everything' cannot satisfy this."""
+    assert solve_demo().operating_points
+
+
+# --- F-06: no assertion in this suite can be unconditionally true -----------------
+
+
+def test_f06_no_test_in_this_package_carries_a_tautological_assertion():
+    """The sixth tracked instance of the shape. This is the regression for it."""
+    import pathlib
+
+    offenders = []
+    for path in sorted(pathlib.Path("tests").glob("test_*.py")):
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            s = line.strip()
+            if s.startswith("assert ") and (s.endswith(" or True") or " or True" in s):
+                offenders.append(f"{path}:{i}")
+    assert not offenders, f"tautological assertions: {offenders}"
 
 
 def test_s4_registry_ids_all_resolve():
