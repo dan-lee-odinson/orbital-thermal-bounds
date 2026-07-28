@@ -68,6 +68,10 @@ PHENOMENA: frozenset[str] = frozenset(
         # The eclipse portion of an orbit, and the excursion it drives. Destroyed by
         # orbit-averaging an environmental load.
         "eclipse_transient",
+        # The sink temperature's influence on a loop's solved operating point. Present
+        # only where rejection actually feeds back into the hydraulics; destroyed where
+        # the sink enters as post-solution bookkeeping.
+        "sink_temperature_coupling",
     }
 )
 

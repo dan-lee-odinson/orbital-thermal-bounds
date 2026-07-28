@@ -23,6 +23,21 @@ types, the demonstration's own rendered output carries its disclosure, and
 behaviourally, by running the leg and checking that it evaluates, not by trusting the
 label it was handed. See ``ACCEPTANCE_CRITERIA_OTB-G003.md``, criteria S4-1 and S4-2.
 
+What "coupled" does and does not mean here (C11, and read this before quoting a result)
+---------------------------------------------------------------------------------------
+The operating point is the intersection of the loop's internal characteristic with the
+pump's. Duty, bore, length and the pump curve all reach it. **The sink temperature does
+not:** it enters only the condenser's post-root bookkeeping, so the sink is collapsed to
+a single representative value as far as the operating point is concerned and a 170 K
+sink swing moves the solved mass flow by nothing at all.
+
+That is a **declared collapse, not a solved coupling**. S0 asks for loop, condenser and
+radiator "solved together" and this module does not do that; acceptance criterion S4-3
+fails on its own terms and is reported failing rather than quietly satisfied. Closing it
+means coupling through the radiator energy balance so that rejection sets the condensing
+temperature, which sets saturation pressure, properties and hence the pressure drop --
+a milestone of work, not a fix, and deliberately not attempted here.
+
 What this module does not do
 ----------------------------
 It emits **no ranked value** and no ordering (S4-13). It does not model dynamic
@@ -35,6 +50,7 @@ which is DEBTS D-13 and the Director's to rule -- it carries the disclosure inst
 
 from __future__ import annotations
 
+import math
 import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -52,7 +68,11 @@ from .dp_basis_assessment import (
 )
 from .registry import NotRankEligibleError, get
 from .registry.collapse import (
+    Collapse,
     CollapseConflict,
+    CollapsedModel,
+    ModelTerm,
+    Transcription,
     detection_conflicts,
     undetectable_disclosure,
 )
@@ -109,6 +129,72 @@ _PUMP_EFFICIENCY_DISCLOSURE = (
     "setting. Pump heat is load-bearing in the rejected load below, so this balance "
     "depends on an unresolved input."
 )
+
+# --- C11(i): what the COUPLED SOLVE collapses -------------------------------------
+#
+# Distinct from PRESSURE_DROP_MODEL, which is about one boundary's terms. This is about
+# the solve as a whole: which declared inputs actually reach the operating point.
+COUPLED_SOLVE_MODEL = CollapsedModel(
+    model="S4 coupled steady-state solve (demonstrate_machinery / solve_reference_case)",
+    terms=(
+        ModelTerm(
+            term="condenser/radiator",
+            collapses=(
+                Collapse(
+                    quantity="sink temperature's influence on the operating point",
+                    representative_value=(
+                        "a post-root bookkeeping input, reaching only the condenser "
+                        "energy boundary and never the characteristic"
+                    ),
+                    phenomena=("sink_temperature_coupling",),
+                    basis=(
+                        "The operating point is a root of (internal characteristic - "
+                        "pump characteristic). Neither depends on sink_temperature_K, "
+                        "so the solved mass flow is invariant under it: 150 K, 250 K "
+                        "and 320 K all return the same root to twelve decimal places. "
+                        "Rejection would have to set the condensing temperature, and "
+                        "through it the saturation pressure and the properties, before "
+                        "the sink could move the hydraulics."
+                    ),
+                    transcription=Transcription(
+                        module="orbital_thermal.coupled_loop",
+                        verbatim=(
+                            "a single representative value as far as the operating "
+                            "point is concerned"
+                        ),
+                        repo_path="src/orbital_thermal/coupled_loop.py",
+                        context_line=(
+                            "a single representative value as far as the operating "
+                            "point is concerned and a 170 K"
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        ModelTerm(term="loop hydraulics", collapses=()),
+    ),
+)
+
+#: C11(ii). Acceptance criterion S4-3 ("the solver couples -- the legs are not
+#: independent calculations reported together") is a guard, and its target phenomenon is
+#: in the collapsed set above. It is named here so the boundary can say so.
+S4_3_GUARD_ID = "ACCEPTANCE_CRITERIA_OTB-G003.md :: S4-3 (the solver couples)"
+S4_3_DETECTS: tuple[str, ...] = ("sink_temperature_coupling",)
+
+
+def sink_collapse_conflicts() -> tuple[CollapseConflict, ...]:
+    """C11(ii) for criterion S4-3, taken at the shared boundary."""
+    return detection_conflicts(
+        guard_id=S4_3_GUARD_ID, detects=S4_3_DETECTS, model=COUPLED_SOLVE_MODEL
+    )
+
+
+def sink_disclosure_text() -> str:
+    """Derived, like the Ledinegg one: it disappears when the collapse does."""
+    return undetectable_disclosure(
+        sink_collapse_conflicts(), guard_name="Criterion S4-3 (sink coupling)"
+    )
+
 
 def ledinegg_collapse_conflicts() -> tuple[CollapseConflict, ...]:
     """The C11(ii) cross-check for the Ledinegg guard, taken at the shared boundary.
@@ -211,6 +297,31 @@ class LoopCase:
     inlet_temperature_K: float = 310.0
     height_m: float = 0.0
     rel_roughness: float = 0.0
+
+    def __post_init__(self) -> None:
+        """**The boundary** for F-05, and it is one place rather than every call site.
+
+        A ``LoopCase`` had no validation at all: duty, latent heat, densities,
+        viscosities, temperatures, geometry and quality could all be NaN, and the first
+        thing that noticed was a result object carrying a NaN nobody could distinguish
+        from a number. C9 says the check belongs where the case is constructed -- past
+        here, every consumer can assume finite, physical inputs, and no consumer has to
+        remember to.
+        """
+        for name in (
+            "diameter_m", "length_m", "duty_W", "pressure_Pa", "h_fg_J_kg",
+            "rho_f", "rho_g", "mu_f", "mu_g",
+            "sink_temperature_K", "saturation_temperature_K", "inlet_temperature_K",
+        ):
+            _v.positive(name, getattr(self, name))
+        _v.in_range("quality_in", self.quality_in, 0.0, 1.0)
+        _v.finite("height_m", self.height_m)
+        _v.nonneg("rel_roughness", self.rel_roughness)
+        if self.rho_g >= self.rho_f:
+            raise ValueError(
+                f"vapour density {self.rho_g} is not below liquid density {self.rho_f}; "
+                "the two-phase construction assumes rho_g < rho_f"
+            )
 
     def quality_out_at(self, mass_flow_kg_s: float) -> float:
         """Outlet quality the duty produces at this flow. **The coupling term.**
@@ -337,17 +448,43 @@ class OperatingPoint:
         return ledinegg_static_criterion(self.slope_dP_dmdot_Pa_s_kg)
 
 
-def _bisect(f, lo: float, hi: float, tol: float, max_iter: int = 200) -> float:
+#: Bracket width below which bisection stops, in kg/s. **A flow tolerance in its own
+#: right**, not a scaled pressure one. The previous stop was `(hi - lo) <= tol * 1e-6`,
+#: comparing a mass-flow interval in kg/s against a pressure in Pa -- dimensionally
+#: incoherent, and numerically 1e-9 kg/s by accident rather than by choice. 1e-12 kg/s
+#: is far below any flow this project resolves, so the residual test is what normally
+#: terminates and this is the backstop.
+_FLOW_BRACKET_TOL_KG_S = 1.0e-12
+
+#: How finely each sampling interval is searched for roots the endpoints cannot reveal
+#: -- a tangential touch, or two roots inside one interval. A STATED resolution limit,
+#: not a completeness guarantee: no finite sampling can promise completeness on an
+#: arbitrary callable, and claiming otherwise would be the defect this fix is for.
+_SUBDIVISIONS = 16
+
+
+def _bisect(
+    f,
+    lo: float,
+    hi: float,
+    tol_Pa: float,
+    max_iter: int = 200,
+    flow_tol_kg_s: float = _FLOW_BRACKET_TOL_KG_S,
+) -> float:
     """Plain bisection on a sign-changing bracket. No secant acceleration.
 
     The characteristic can be steep and is only piecewise smooth, and bisection's
     guaranteed bracket-preserving convergence is worth more here than iteration count.
+
+    Returns the best estimate; **the caller checks the residual.** This function cannot
+    guarantee one -- a bracket can close on a discontinuity where no root exists -- so
+    the guarantee belongs where it can be enforced, which is at the point of emission.
     """
     f_lo = f(lo)
     for _ in range(max_iter):
         mid = 0.5 * (lo + hi)
         f_mid = f(mid)
-        if abs(f_mid) <= tol or (hi - lo) <= tol * 1e-6:
+        if abs(f_mid) <= tol_Pa or (hi - lo) <= flow_tol_kg_s:
             return mid
         if (f_lo < 0.0) != (f_mid < 0.0):
             hi = mid
@@ -404,21 +541,71 @@ def operating_points_from_characteristic(
     def residual(mdot: float) -> float:
         return characteristic(mdot) - pump.available_Pa(mdot)
 
+    # One refined sampling of the whole range. `_SUBDIVISIONS` per coarse interval is a
+    # STATED resolution limit, not a completeness guarantee: no finite sampling can
+    # promise completeness on an arbitrary callable, and claiming otherwise would be
+    # the defect this fix is for. What it buys is that a root no longer has to be
+    # separated from its neighbours by a whole coarse interval to be found.
+    fine: list[float] = []
+    for (m_lo, _), (m_hi, _) in pairwise(list(zip(grid, values, strict=True))):
+        fine.extend(
+            m_lo + (m_hi - m_lo) * k / _SUBDIVISIONS for k in range(_SUBDIVISIONS)
+        )
+    fine.append(grid[-1])
+    fine_v = [residual(m) for m in fine]
+
+    candidates: list[float] = []
+
+    # (1) SIGN CHANGES -- the reliable case, bisected.
+    for (a, va), (b, vb) in pairwise(list(zip(fine, fine_v, strict=True))):
+        if va == 0.0:
+            candidates.append(a)
+        elif (va < 0.0) != (vb < 0.0):
+            candidates.append(_bisect(residual, a, b, residual_tol_Pa))
+
+    # (2) TANGENTIAL roots -- the curve touches zero without crossing, so no sign
+    # change exists to bracket. Accepted only at a LOCAL MINIMUM of |residual| that
+    # actually reaches the tolerance. Accepting every sample merely *below* tolerance
+    # would flood a shallow region with spurious roots and corrupt the multiplicity
+    # verdict -- and multiplicity IS the Ledinegg verdict.
+    for i in range(1, len(fine) - 1):
+        here = abs(fine_v[i])
+        if here <= residual_tol_Pa and here <= abs(fine_v[i - 1]) and here <= abs(fine_v[i + 1]):
+            candidates.append(fine[i])
+
+    # (3) ENDPOINTS. The old loop tested only the `lo` of each bracket, so a root
+    # sitting exactly on `flow_max` was never examined: it is the `hi` of the last
+    # bracket and never the `lo` of any.
+    for m, v in ((fine[0], fine_v[0]), (fine[-1], fine_v[-1])):
+        if abs(v) <= residual_tol_Pa:
+            candidates.append(m)
+
+    # Two roots closer together than one sub-interval are not resolvable by this
+    # search; merging them and keeping the better residual is the honest outcome.
+    cluster_tol = (flow_max_kg_s - flow_min_kg_s) / ((samples - 1) * _SUBDIVISIONS)
+    merged: list[float] = []
+    for root in sorted(candidates):
+        if merged and (root - merged[-1]) <= cluster_tol:
+            if abs(residual(root)) < abs(residual(merged[-1])):
+                merged[-1] = root
+            continue
+        merged.append(root)
+
     roots: list[OperatingPoint] = []
-    # ``pairwise`` rather than an offset ``zip``: a strict zip over offset slices
-    # raises on unequal lengths, and a non-strict one silently drops the last bracket.
-    for (m_lo, v_lo), (_m_hi, v_hi) in pairwise(list(zip(grid, values, strict=True))):
-        if v_lo == 0.0:
-            root = m_lo
-        elif (v_lo < 0.0) != (v_hi < 0.0):
-            root = _bisect(residual, m_lo, _m_hi, residual_tol_Pa)
-        else:
+    for root in merged:
+        # (iii) A NON-ROOT IS NEVER EMITTED. Neither the bracket-width branch nor the
+        # max_iter fall-through can promise a residual, so the promise is made here,
+        # where it can be kept. Multiplicity IS the Ledinegg verdict and `_slope` is
+        # computed on every emitted point -- a fabricated root would get a slope and a
+        # stability verdict.
+        r = residual(root)
+        if not math.isfinite(r) or abs(r) > residual_tol_Pa:
             continue
         roots.append(
             OperatingPoint(
                 mass_flow_kg_s=root,
                 pressure_drop_Pa=characteristic(root),
-                residual_Pa=residual(root),
+                residual_Pa=r,
                 slope_dP_dmdot_Pa_s_kg=_slope(characteristic, root),
             )
         )
@@ -598,6 +785,11 @@ class _CoupledResultBase:
     pump_inlet_feasible: bool | None = None
     pump_inlet_reason: str = ""
     condenser_energy_closes: bool | None = None
+    #: Whether the condenser duty computed from the SOLVED state matches the applied
+    #: duty. ``None`` when no operating point was reached. This is the check that
+    #: ``energy_closes`` could not be: that one compared the boundary against its own
+    #: inputs and was true by construction.
+    condenser_duty_matches_applied: bool | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -652,7 +844,12 @@ class _CoupledResultBase:
                 f"({'closes' if self.closure.closes else 'DOES NOT CLOSE'})",
             ]
             lines += [f"  {d}" for d in self.closure.disclosures]
-        lines += [self.pump.disclosure, self.ledinegg_disclosure]
+        if self.condenser_duty_matches_applied is not None:
+            lines += [
+                f"condenser duty from the SOLVED state matches the applied duty: "
+                f"{self.condenser_duty_matches_applied}"
+            ]
+        lines += [self.pump.disclosure, self.ledinegg_disclosure, self.sink_disclosure]
         lines += list(self.notes)
         return lines
 
@@ -660,6 +857,11 @@ class _CoupledResultBase:
     def ledinegg_disclosure(self) -> str:
         """Not a field, so no caller can construct a result without it (C6/C11)."""
         return ledinegg_disclosure_text()
+
+    @property
+    def sink_disclosure(self) -> str:
+        """C11(ii) for criterion S4-3. Derived, and not suppressible."""
+        return sink_disclosure_text()
 
 
 @dataclass(frozen=True)
@@ -746,6 +948,79 @@ def _pressure_drop_leg(case: LoopCase, probe_flow_kg_s: float = 1.0e-2) -> LegSt
     return LegStatus(leg="pressure drop", entry_id=DP_ID, available=True)
 
 
+#: What "this project's device" means, as facts rather than as a label. Every one is a
+#: settled decision: single-component ammonia, non-horizontal, at the 20 bar design
+#: point (D14 decision 10, pushed and not ruled -- so it is pinned, not chosen here).
+_DEVICE_FLUID = "ammonia"
+_DEVICE_COMPOSITION = "single_component"
+_DEVICE_NON_HORIZONTAL = frozenset({"vertical_upflow", "vertical_downflow", "inclined"})
+_DEVICE_PRESSURE_MIN_PA = 1.0e6
+
+
+def closure_for(points: tuple[OperatingPoint, ...], case: LoopCase) -> EnergyClosure | None:
+    """The energy closure, or ``None`` where computing one would be a selection.
+
+    **F-03.** Exactly one steady state gets a closure. Zero gets none because there is
+    nothing to close on; **more than one gets none because choosing is what this
+    milestone has said it cannot do.** The previous code took ``points[0]`` and
+    disclosed that it had -- and a disclosure does not undo a selection, the same
+    principle the Ledinegg guard was held to at MAINT-02-01.
+
+    Reporting every root's closure was the other option and is worse: it invites the
+    reader to compare branches the artifact has just said it cannot choose between.
+    Reporting none states exactly what is known.
+
+    Separated from :func:`demonstrate_machinery` so the decision is testable at a
+    multiplicity the current pressure-drop model cannot produce -- its characteristic
+    is monotone, which is itself a pinned property.
+    """
+    if len(points) != 1:
+        return None
+    chosen = points[0]
+    return energy_closure(
+        duty_W=case.duty_W,
+        mass_flow_kg_s=chosen.mass_flow_kg_s,
+        pressure_drop_Pa=chosen.pressure_drop_Pa,
+        density_kg_m3=case.rho_f,
+    )
+
+
+def _assert_describes_the_device(case: LoopCase) -> None:
+    """Refuse a case that carries the reference-case LABEL without the device's facts.
+
+    F-02. The guard existed in one direction only: ``demonstrate_machinery`` refuses a
+    case labelled ``REFERENCE_CASE``, but ``solve_reference_case`` checked the enum and
+    nothing else -- so changing one field on the air-water, horizontal, 1.2 bar
+    demonstration returned a ``ReferenceCaseResult``, an object that presents itself as
+    a statement about this project's ammonia device. A one-way door is not a door.
+
+    Checked on the case's own declared facts, not on a second label: the fluid, the
+    composition, the orientation and the pressure.
+    """
+    wrong: list[str] = []
+    if case.fluid.strip().lower() != _DEVICE_FLUID:
+        wrong.append(f"fluid is {case.fluid!r}, not {_DEVICE_FLUID}")
+    if case.composition.strip().lower() != _DEVICE_COMPOSITION:
+        wrong.append(f"composition is {case.composition!r}, not {_DEVICE_COMPOSITION}")
+    if case.orientation.strip().lower() not in _DEVICE_NON_HORIZONTAL:
+        wrong.append(
+            f"orientation is {case.orientation!r}; the device is non-horizontal "
+            f"({sorted(_DEVICE_NON_HORIZONTAL)})"
+        )
+    if case.pressure_Pa < _DEVICE_PRESSURE_MIN_PA:
+        wrong.append(
+            f"pressure is {case.pressure_Pa:.4g} Pa, below the {_DEVICE_PRESSURE_MIN_PA:.4g} Pa "
+            "floor the device's design point sits above"
+        )
+    if wrong:
+        raise ValueError(
+            "this case is labelled REFERENCE_CASE but does not describe this project's "
+            "device, so a ReferenceCaseResult would present it as one: "
+            + "; ".join(wrong)
+            + ". The label is not the identity."
+        )
+
+
 def demonstrate_machinery(
     case: LoopCase,
     pump: PumpCharacteristic,
@@ -789,45 +1064,81 @@ def demonstrate_machinery(
         )
     transitional = transitional_count[0]
     closure = None
+
+    # F-01(b): the leg reports the COMPUTED feasibility, and an infeasible inlet
+    # REFUSES rather than returning points. A cavitating loop behind a green leg with a
+    # solved operating point is the worst of both -- it is neither a refusal nor a
+    # result. The verdict is returned rather than raised because cavitation is a
+    # physical answer about the case, not a labelling error.
     inlet = pump_inlet_feasibility(
         saturation_temperature_K=case.saturation_temperature_K,
         inlet_temperature_K=case.inlet_temperature_K,
         inlet_is_liquid=True,
     )
-    condenser = condenser_energy_boundary(
-        mass_flow_kg_s=points[0].mass_flow_kg_s if points else 1.0e-2,
-        h_in_J_kg=case.h_fg_J_kg,
-        h_out_J_kg=0.0,
-        sink_temperature_K=case.sink_temperature_K,
-        saturation_temperature_K=case.saturation_temperature_K,
-        outlet_is_liquid=True,
+    inlet_leg = LegStatus(
+        leg="pump-inlet criterion",
+        entry_id=NPSH_ID,
+        available=inlet.feasible,
+        axis="" if inlet.feasible else "subcooling margin",
+        reason="" if inlet.feasible else inlet.reason,
+        would_unblock=(
+            ""
+            if inlet.feasible
+            else "an inlet subcooled below saturation, per the AMS-02 criterion (D8)."
+        ),
+        refusal_kind="" if inlet.feasible else "knowledge",
     )
+    if not inlet.feasible:
+        points = ()
+
+    # F-01(2.2): the condenser must reject what the SOLVED STATE carries, so the closure
+    # can disagree with the applied duty. Previously h_in/h_out were fixed literals
+    # independent of the solution, which made `energy_closes` true by construction --
+    # a restatement of its own inputs rather than a check.
+    condenser = None
+    condenser_duty_matches_applied: bool | None = None
     if points:
-        chosen = points[0]
-        closure = energy_closure(
-            duty_W=case.duty_W,
-            mass_flow_kg_s=chosen.mass_flow_kg_s,
-            pressure_drop_Pa=chosen.pressure_drop_Pa,
-            density_kg_m3=case.rho_f,
+        x_out = case.quality_out_at(points[0].mass_flow_kg_s)
+        condenser = condenser_energy_boundary(
+            mass_flow_kg_s=points[0].mass_flow_kg_s,
+            h_in_J_kg=x_out * case.h_fg_J_kg,
+            h_out_J_kg=0.0,
+            sink_temperature_K=case.sink_temperature_K,
+            saturation_temperature_K=case.saturation_temperature_K,
+            outlet_is_liquid=True,
         )
+        condenser_duty_matches_applied = (
+            abs(condenser.duty_W - case.duty_W) <= 1e-6 * max(abs(case.duty_W), 1.0)
+        )
+
+    closure = closure_for(points, case)
     return DemonstrationResult(
         case=case,
         pump=pump,
-        legs=(leg, LegStatus(leg="pump-inlet criterion", entry_id=NPSH_ID, available=True)),
+        legs=(leg, inlet_leg),
         operating_points=points,
         closure=closure,
         pump_inlet_feasible=inlet.feasible,
         pump_inlet_reason=inlet.reason,
-        condenser_energy_closes=condenser.energy_closes,
+        condenser_energy_closes=condenser.energy_closes if condenser else None,
+        condenser_duty_matches_applied=condenser_duty_matches_applied,
         notes=tuple(
             note
             for note in (
                 (
-                    "The energy closure above uses the FIRST root only, and says so "
-                    "rather than averaging over roots that the guard has just "
-                    "reported as distinct steady states."
+                    "NO ENERGY CLOSURE IS REPORTED: the solution is non-unique "
+                    f"({len(points)} steady states). A closure computed on one root "
+                    "would be a selection, and a note saying which root was picked "
+                    "does not undo the picking. Reporting none states what is known."
                 )
                 if len(points) > 1
+                else "",
+                (
+                    "NO OPERATING POINT IS REPORTED: the pump inlet is not feasible, "
+                    "so the loop cavitates and there is nothing to report a steady "
+                    f"state about. {inlet.reason}"
+                )
+                if not inlet.feasible
                 else "",
                 (
                     f"TRANSITIONAL FLOW: {transitional} of the sampled points fell in "
@@ -870,6 +1181,7 @@ def solve_reference_case(
             "solve_reference_case requires a case declared as the reference case; "
             f"this one declares {case.kind.value}"
         )
+    _assert_describes_the_device(case)
 
     with _collected_transitional_warnings():
         dp_leg = _pressure_drop_leg(case)
