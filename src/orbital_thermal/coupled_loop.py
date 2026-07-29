@@ -223,6 +223,27 @@ def ledinegg_disclosure_text() -> str:
         ledinegg_collapse_conflicts(), guard_name="Ledinegg guard"
     )
 
+def resolution_disclosure(samples: int, subdivisions: int | None = None) -> str:
+    """F-04's residual, **in the output** rather than in a comment (C6, D26).
+
+    The enumerator searches a continuum at finite resolution, so "no further roots" is
+    a statement about what this search resolves and not about the loop. Derived from
+    the two numbers that set it, so it cannot drift from them -- ``subdivisions``
+    defaults to the module's own value at call time rather than being bound here.
+    """
+    subdivisions = _SUBDIVISIONS if subdivisions is None else subdivisions
+    return (
+        f"ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED. The operating points below "
+        f"were found by sampling {samples} flows and refining each interval "
+        f"{subdivisions}x, so the contract is completeness TO THAT RESOLUTION, not "
+        f"completeness. Roots closer together than one sub-interval, three roots inside "
+        f"one sampled interval, or two inside one already-subdivided interval, are not "
+        f"resolvable by this search and are not reported. 'No further roots' therefore "
+        f"means 'none this search can resolve', which is a weaker claim than 'none "
+        f"exist' -- and multiplicity is the Ledinegg verdict, so the difference matters."
+    )
+
+
 #: The pump characteristic is a DESIGN VARIABLE, not a sourced pump curve (C1).
 _PUMP_CURVE_DISCLOSURE = (
     "DESIGN VARIABLE: the external (pump) characteristic below is a declared "
@@ -497,6 +518,48 @@ def _bisect(
 Characteristic = Callable[[float], float]
 
 
+class IndeterminateCharacteristicError(RuntimeError):
+    """The characteristic produced a value no verdict can be built on.
+
+    **Distinct from "no steady state exists", and that distinction is the point.** The
+    first version of the F-05 fix caught non-finite values at the point of emission,
+    which stopped a fabricated root -- but turned a broken calculation into an empty
+    result, and an empty result reads as *this loop has no operating point in this
+    range*. That is a confident negative claim about the device, manufactured by
+    arithmetic that failed, and criterion 7 says a negative result is earned before it
+    is reported. This one was not earned, and a reader could not tell it from one that
+    was.
+    """
+
+
+def _finite_characteristic(characteristic: Characteristic) -> Characteristic:
+    """**The C9 boundary for a callable's OUTPUTS**, which is not where its fields live.
+
+    ``LoopCase.__post_init__`` is the boundary for case *fields* and remains so. A
+    caller-supplied characteristic has no fields to validate -- it has a return value,
+    and the only place every return value passes through is the call itself. So the
+    boundary is a wrapper applied ONCE, at the top of the enumerator, rather than a
+    finiteness test repeated at each of the four sites that invoke it.
+
+    The characteristic stays a parameter: that separability is what lets the Ledinegg
+    guard be exercised against a supplied curve, and it is load-bearing for
+    ``OTB-MAINT-02``. Wrapping does not take it away.
+    """
+
+    def guarded(mdot: float) -> float:
+        value = characteristic(mdot)
+        if not math.isfinite(value):
+            raise IndeterminateCharacteristicError(
+                f"the characteristic returned {value} at mass flow {mdot:.6g} kg/s. No "
+                "operating point, and no ABSENCE of one, can be concluded from this: "
+                "'no steady state exists' and 'this cannot be determined' are different "
+                "outcomes and only the second is available here."
+            )
+        return value
+
+    return guarded
+
+
 def _slope(characteristic: Characteristic, mdot: float, h_rel: float = 1e-4) -> float:
     """Central-difference slope of a characteristic at ``ṁ``."""
     h = max(mdot * h_rel, 1e-12)
@@ -512,7 +575,17 @@ def operating_points_from_characteristic(
     samples: int = 240,
     residual_tol_Pa: float = 1.0e-3,
 ) -> tuple[OperatingPoint, ...]:
-    """**Every** flow at which a supplied characteristic meets the pump's. None is preferred.
+    """Every flow **this search can resolve** at which a supplied characteristic meets
+    the pump's. None is preferred.
+
+    **The word "every" was an overstatement and is now qualified.** The search samples
+    ``samples`` coarse flows and refines each interval ``_SUBDIVISIONS`` times, so its
+    contract is completeness **to that resolution** -- not completeness. Three roots in
+    one coarse interval, or two inside one already-subdivided interval, are still
+    missed. That is a real and honest contract; it is simply narrower than the sentence
+    that used to stand here, and F-04's finding was precisely that the enumerator
+    claimed a contract it did not meet. Repairing three mechanisms while leaving the
+    claim intact would have been a partial fix with the residual unnamed (C9).
 
     Criterion S4-5. The Ledinegg picture in the adopted source is three intersections
     at one pressure drop, of which the middle is unstable and the operating point
@@ -531,6 +604,11 @@ def operating_points_from_characteristic(
         raise ValueError("need 0 < flow_min_kg_s < flow_max_kg_s")
     if samples < 3:
         raise ValueError("need at least 3 samples to bracket a root")
+
+    # C9: applied ONCE, here, so every evaluation below is guarded and no later site
+    # has to remember. See _finite_characteristic for why the boundary for a callable's
+    # outputs is not the boundary for a dataclass's fields.
+    characteristic = _finite_characteristic(characteristic)
 
     grid = tuple(
         flow_min_kg_s + (flow_max_kg_s - flow_min_kg_s) * i / (samples - 1)
@@ -732,6 +810,15 @@ def energy_closure(
     reject on top of the applied duty. It is obtained from Stage-1's own pump-energy
     accounting rather than recomputed, so the two stages cannot drift apart.
     """
+    # F-05, the closure half. `closes=False` on a NaN balance reads as a physical
+    # finding -- "this loop does not close" -- when it is a verdict on garbage.
+    for name, value in (
+        ("duty_W", duty_W),
+        ("mass_flow_kg_s", mass_flow_kg_s),
+        ("pressure_drop_Pa", pressure_drop_Pa),
+        ("density_kg_m3", density_kg_m3),
+    ):
+        _v.finite(name, value)
     pump = _pl.pump_energy(
         mass_flow_kg_s=mass_flow_kg_s,
         pressure_drop_Pa=pressure_drop_Pa,
@@ -790,7 +877,21 @@ class _CoupledResultBase:
     #: ``energy_closes`` could not be: that one compared the boundary against its own
     #: inputs and was true by construction.
     condenser_duty_matches_applied: bool | None = None
+    #: Set when the run could not reach a verdict at all. **Empty is not the same as
+    #: "no operating point"**: an empty ``operating_points`` with no reason is the
+    #: earned negative result ("this loop has no steady state in this range"), while a
+    #: reason here says the question was not answerable. Criterion 7 turns on the
+    #: difference and a reader could not previously see it.
+    undetermined_reason: str = ""
+    #: The sample count the enumerator actually ran at. Carried so the resolution bound
+    #: in the output is the one that applied, not a default restated beside it.
+    search_samples: int = 240
     notes: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def determined(self) -> bool:
+        """False when the run could not conclude, either way."""
+        return not self.undetermined_reason
 
     @property
     def blocked_legs(self) -> tuple[LegStatus, ...]:
@@ -832,6 +933,12 @@ class _CoupledResultBase:
                     "the loop reaches is a question about the transient, and the "
                     "transient is out of scope."
                 )
+        elif self.undetermined_reason:
+            lines.append(
+                "OPERATING POINT: NOT DETERMINED. This is NOT the finding that the "
+                "loop has no steady state -- the question could not be answered. "
+                + self.undetermined_reason
+            )
         else:
             lines.append("operating points found: none -- the loop was not solved")
         if self.closure is not None:
@@ -849,7 +956,12 @@ class _CoupledResultBase:
                 f"condenser duty from the SOLVED state matches the applied duty: "
                 f"{self.condenser_duty_matches_applied}"
             ]
-        lines += [self.pump.disclosure, self.ledinegg_disclosure, self.sink_disclosure]
+        lines += [
+            self.pump.disclosure,
+            self.ledinegg_disclosure,
+            self.sink_disclosure,
+            self.resolution_disclosure,
+        ]
         lines += list(self.notes)
         return lines
 
@@ -862,6 +974,11 @@ class _CoupledResultBase:
     def sink_disclosure(self) -> str:
         """C11(ii) for criterion S4-3. Derived, and not suppressible."""
         return sink_disclosure_text()
+
+    @property
+    def resolution_disclosure(self) -> str:
+        """F-04's residual (D26), derived from the numbers that set it."""
+        return resolution_disclosure(self.search_samples)
 
 
 @dataclass(frozen=True)
@@ -1055,13 +1172,19 @@ def demonstrate_machinery(
                 "one would put a reference-case refusal behind a demonstration label. "
                 f"The leg said: {leg.reason}"
             )
-        points = find_operating_points(
-            case,
-            pump,
-            flow_min_kg_s=flow_min_kg_s,
-            flow_max_kg_s=flow_max_kg_s,
-            samples=samples,
-        )
+        undetermined = ""
+        try:
+            points = find_operating_points(
+                case,
+                pump,
+                flow_min_kg_s=flow_min_kg_s,
+                flow_max_kg_s=flow_max_kg_s,
+                samples=samples,
+            )
+        except IndeterminateCharacteristicError as exc:
+            # NOT an empty result. An empty result is the earned negative finding; this
+            # is the question going unanswered, and the two must not render alike.
+            points, undetermined = (), str(exc)
     transitional = transitional_count[0]
     closure = None
 
@@ -1122,6 +1245,8 @@ def demonstrate_machinery(
         pump_inlet_reason=inlet.reason,
         condenser_energy_closes=condenser.energy_closes if condenser else None,
         condenser_duty_matches_applied=condenser_duty_matches_applied,
+        undetermined_reason=undetermined,
+        search_samples=samples,
         notes=tuple(
             note
             for note in (

@@ -892,13 +892,70 @@ def test_f01_the_sink_declaration_transcribes_the_module_prose():
     assert transcription_mismatches(collapses) == ()
 
 
+#: Words that assert the sink is coupled into the solution, and words that deny it.
+#: A claim is a SENTENCE containing a subject and an assertion with no denial in it --
+#: which is what makes this a check on the claim rather than on three spellings of it.
+_COUPLING_SUBJECT = ("sink", "s4-3", "solved together", "coupling")
+_COUPLING_ASSERTED = (
+    "couples", "coupled", "is solved", "now solves", "reaches the operating point",
+    "feeds the operating point", "discharged", "satisfied", "passes", "moves the",
+)
+_DENIAL = (
+    "not", "cannot", "does not", "no ", "never", "fails", "undischarged",
+    "unrepresentable", "collapsed", "without",
+)
+
+
+def _coupling_claims_without_denial(text: str) -> list[str]:
+    """Sentences that assert the coupling and do not deny it, sentence-scoped."""
+    import re
+
+    offenders = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n\n", text):
+        s = sentence.lower()
+        if any(w in s for w in _COUPLING_SUBJECT) and any(w in s for w in _COUPLING_ASSERTED):
+            if not any(d in s for d in _DENIAL):
+                offenders.append(" ".join(sentence.split())[:140])
+    return offenders
+
+
 def test_f01_the_artifact_does_not_claim_the_coupling_is_solved():
-    """§2.4. Path C stops the artifact claiming what is untrue; it does not make it true."""
-    doc = C.__doc__.lower()
-    assert "declared collapse, not a solved coupling" in doc
-    assert "fails on its own terms" in doc
-    for forbidden in ("s4-3 now passes", "solved together is discharged", "sink is coupled"):
-        assert forbidden not in doc
+    """§2.4. Path C stops the artifact claiming what is untrue; it does not make it true.
+
+    **Sentence-scoped, not a literal blocklist.** The previous version pinned three
+    exact strings, so any rewording of the forbidden claim walked straight through --
+    the same defect as a fixed-width context window, in a different disguise, and I
+    reported it against my own work rather than having it found. The check now asks
+    whether any SENTENCE asserts the coupling without denying it, which is a property
+    of the claim rather than of its spelling.
+    """
+    doc = C.__doc__
+    assert "declared collapse, not a solved coupling" in doc.lower()
+    assert "fails on its own terms" in doc.lower()
+    offenders = _coupling_claims_without_denial(doc)
+    assert not offenders, f"the module docstring asserts the coupling is solved: {offenders}"
+
+
+def test_f01_the_absence_check_catches_a_reworded_claim():
+    """The control that makes the test above real: it must be able to fire.
+
+    This is the analogue of the mutation that survived a ±160-character window -- an
+    outright claim in wording no blocklist contains. If this comes back empty, the
+    check above is decorative.
+    """
+    reworded = (
+        "With these fixes S4 now couples the sink into the operating point and the "
+        "milestone is satisfied."
+    )
+    assert _coupling_claims_without_denial(reworded), (
+        "the check cannot see an unhedged claim, so it is not checking the claim"
+    )
+    # ...and it must not fire on the artifact's own hedged sentences.
+    hedged = (
+        "The sink temperature does not reach the operating point, so it is collapsed "
+        "to a single representative value."
+    )
+    assert _coupling_claims_without_denial(hedged) == []
 
 
 def test_f02_relabelling_the_demonstration_as_the_reference_device_is_refused():
@@ -1106,6 +1163,104 @@ def test_f05_control_a_valid_case_still_constructs_and_evaluates():
 
 
 # --- F-06: no assertion in this suite can be unconditionally true -----------------
+
+
+# --- round 2: F-04's residual and F-05's second half -----------------------------
+
+
+def test_f04_the_resolution_bound_is_in_both_rendered_outputs():
+    """D26: the bound goes in the OUTPUT, not a comment (C6)."""
+    for result in (solve_demo(), solve_ref()):
+        rendered = result.render()
+        assert "ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED" in rendered
+        assert "completeness TO THAT RESOLUTION, not" in rendered
+        assert "'none this search can resolve'" in rendered
+
+
+def test_f04_the_bound_carries_the_numbers_that_actually_applied():
+    """A default restated beside a different run would be worse than nothing."""
+    result = C.demonstrate_machinery(demo_case(), PUMP, **FLOWS, samples=61)
+    assert result.search_samples == 61
+    assert "sampling 61 flows" in result.render()
+    assert f"refining each interval {C._SUBDIVISIONS}x" in result.render()
+
+
+def test_f04_the_docstring_no_longer_claims_completeness():
+    """The word `Every` was the overstatement; narrowing it is the fix."""
+    doc = C.operating_points_from_characteristic.__doc__
+    assert "Every flow **this search can resolve**" in doc
+    assert "not completeness" in doc
+    assert not doc.lstrip().startswith("**Every** flow at which")
+
+
+def test_f05_a_non_finite_characteristic_is_indeterminate_not_an_empty_result():
+    """The distinction is the substance: 'none exist' vs 'cannot be determined'."""
+    with pytest.raises(C.IndeterminateCharacteristicError, match=r"cannot be determined"):
+        C.operating_points_from_characteristic(
+            lambda m: float("nan"), F4_PUMP, **F4_FLOWS
+        )
+
+
+def test_f05_a_nan_patch_over_a_real_root_does_not_report_no_steady_state():
+    """The probe that matters: a broken calculation must not manufacture a negative.
+
+    A NaN band across 1.60-1.62 swallows a genuine root at 1.61. Reporting zero roots
+    would be a confident claim about the loop, earned by arithmetic that failed --
+    exactly what criterion 7 forbids.
+    """
+
+    def sneaky(m):
+        return float("nan") if 1.6 < m < 1.62 else m - 1.61
+
+    with pytest.raises(C.IndeterminateCharacteristicError):
+        C.operating_points_from_characteristic(sneaky, F4_PUMP, **F4_FLOWS)
+
+
+def test_f05_control_a_genuine_absence_is_still_an_ordinary_empty_result():
+    """The paired control. A finite characteristic with no root reports none, cleanly.
+
+    Without this, 'refuses everything' would satisfy the test above.
+    """
+    assert C.operating_points_from_characteristic(lambda m: 5.0, F4_PUMP, **F4_FLOWS) == ()
+
+
+def test_f05_the_two_outcomes_render_differently():
+    from orbital_thermal.coupled_loop import DemonstrationResult
+
+    absent = DemonstrationResult(case=demo_case(), pump=PUMP, legs=())
+    unknown = DemonstrationResult(
+        case=demo_case(), pump=PUMP, legs=(), undetermined_reason="the characteristic returned nan"
+    )
+    assert absent.determined and not unknown.determined
+    assert "none -- the loop was not solved" in absent.render()
+    assert "NOT DETERMINED" in unknown.render()
+    assert "NOT the finding that the loop has no steady state" in unknown.render()
+
+
+def test_f05_energy_closure_refuses_non_finite_inputs():
+    """`closes=False` on a NaN balance reads as a physical finding. It is not one."""
+    with pytest.raises(ValueError, match=r"must be finite"):
+        C.energy_closure(
+            duty_W=float("nan"), mass_flow_kg_s=0.02, pressure_drop_Pa=1e4,
+            density_kg_m3=997.0,
+        )
+
+
+def test_f05_control_a_valid_closure_still_computes():
+    c = C.energy_closure(
+        duty_W=1000.0, mass_flow_kg_s=0.02, pressure_drop_Pa=1.5e4, density_kg_m3=997.0
+    )
+    assert c.closes and c.rejected_W > 1000.0
+
+
+def test_f05_a_nan_slope_still_refuses_at_the_verdict():
+    """The paired control that the emission gate is real -- keep it (round-2 §2.2)."""
+    p = C.OperatingPoint(
+        mass_flow_kg_s=1.0, pressure_drop_Pa=1.0, residual_Pa=0.0,
+        slope_dP_dmdot_Pa_s_kg=float("nan"),
+    )
+    with pytest.raises(ValueError, match=r"non-finite slope"):
+        _ = p.ledinegg_unstable
 
 
 def test_f06_no_test_in_this_package_carries_a_tautological_assertion():

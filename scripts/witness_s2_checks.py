@@ -1565,6 +1565,78 @@ MUTATIONS: list[Mutation] = [
         notes="The sharpest entry: it is not a tracked repo file, so a filter over "
         "git ls-files would never have seen it.",
     ),
+    # ------------------------------------------------------ OTB-G003 round 2 (D26)
+    Mutation(
+        name="G3R2-F04-remove-the-resolution-bound-from-the-output",
+        guards="D26/C6: F-04's residual is disclosed in the OUTPUT, not a comment",
+        finding="G3R2-F04",
+        path=COUPLED,
+        old="            self.resolution_disclosure,",
+        new="",
+        expect_failing=(
+            "test_f04_the_resolution_bound_is_in_both_rendered_outputs",
+            "test_f04_the_bound_carries_the_numbers_that_actually_applied",
+        ),
+        notes="A disclosure nothing checks is the shape this project has recorded "
+        "eleven times; this is the check.",
+    ),
+    Mutation(
+        name="G3R2-F04-restate-the-completeness-claim",
+        guards="D26: the word 'Every' was the overstatement",
+        finding="G3R2-F04",
+        path=COUPLED,
+        old=(
+            '    """Every flow **this search can resolve** at which a supplied '
+            "characteristic meets"
+        ),
+        new='    """**Every** flow at which a supplied characteristic meets',
+        expect_failing=("test_f04_the_docstring_no_longer_claims_completeness",),
+    ),
+    Mutation(
+        name="G3R2-F04-report-the-default-sample-count-instead-of-the-one-used",
+        guards="the bound must carry the numbers that actually applied",
+        finding="G3R2-F04",
+        path=COUPLED,
+        old="        return resolution_disclosure(self.search_samples)",
+        new="        return resolution_disclosure(240)",
+        expect_failing=("test_f04_the_bound_carries_the_numbers_that_actually_applied",),
+    ),
+    Mutation(
+        name="G3R2-F05-stop-guarding-the-characteristics-outputs",
+        guards="F-05: 'no steady state' and 'cannot be determined' are different",
+        finding="G3R2-F05",
+        path=COUPLED,
+        old="    characteristic = _finite_characteristic(characteristic)",
+        new="    pass",
+        expect_failing=(
+            "test_f05_a_non_finite_characteristic_is_indeterminate_not_an_empty_result",
+            "test_f05_a_nan_patch_over_a_real_root_does_not_report_no_steady_state",
+        ),
+        notes="Without it a NaN band over a genuine root reports ZERO roots -- a "
+        "confident negative claim manufactured by arithmetic that failed.",
+    ),
+    Mutation(
+        name="G3R2-F05-let-energy-closure-take-a-non-finite-duty",
+        guards="F-05: closes=False on a NaN balance reads as a physical finding",
+        finding="G3R2-F05",
+        path=COUPLED,
+        old="        _v.finite(name, value)",
+        new="        pass",
+        expect_failing=("test_f05_energy_closure_refuses_non_finite_inputs",),
+    ),
+    Mutation(
+        name="G3R2-F01-insert-a-reworded-claim-that-the-coupling-is-solved",
+        guards="F-01 2.4: the absence check tests the CLAIM, not three spellings",
+        finding="G3R2-F01",
+        path=COUPLED,
+        old="That is a **declared collapse, not a solved coupling**.",
+        new="With these fixes S4 now couples the sink into the operating point and the "
+        "milestone is satisfied.",
+        expect_failing=("test_f01_the_artifact_does_not_claim_the_coupling_is_solved",),
+        notes="The analogue of the mutation that survived a +/-160-character window: "
+        "an outright claim in wording no literal blocklist contains. The previous "
+        "version of this test pinned three exact strings and would have passed.",
+    ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
         guards="gate combination (a permissive gate must not outvote a strict one)",
