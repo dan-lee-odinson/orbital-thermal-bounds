@@ -1,10 +1,20 @@
-"""S4: the four legs stop being independent calculations and become a loop.
+"""S4: a partially coupled loop. **S4 ships with acceptance criterion S4-3 FAILING.**
 
-S2 built the evaporator, S3 built pressure drop, the condenser energy boundary and
-pump-inlet feasibility. This module solves them **together**: one operating point that
-satisfies the loop's hydraulics, the condenser's energy books, the pump-inlet liquid
-condition and an energy balance carrying pump heat in the rejected load -- with the
-static Ledinegg guard on the solution it finds.
+That is a ruling, not a hedge (**D28**). S0 asks for loop, condenser and radiator
+*"solved together"*; this module does not do that, and the Director has put its
+shipping in that state on the record rather than leaving it for a reader to discover.
+Anything describing S4 as satisfying the coupling milestone contradicts D28.
+
+What it does do: find one operating point where the loop's hydraulics meet the pump,
+check the pump-inlet liquid condition, close an energy balance carrying pump heat in
+the rejected load, and run the static Ledinegg guard on the solution. S2 built the
+evaporator, S3 built pressure drop, the condenser energy boundary and pump-inlet
+feasibility; this module makes the hydraulic legs meet at a single flow.
+
+What it does **not** do: bring the sink into that solution. Duty, bore, length and the
+pump curve reach the operating point; **the sink temperature does not**, so the
+condenser and radiator are not solved with the loop but bookkept after it. That gap is
+declared under C11 below rather than described as solved.
 
 Two runs, and they are not interchangeable
 ------------------------------------------
@@ -739,7 +749,21 @@ def find_operating_points(
     samples: int = 240,
     residual_tol_Pa: float = 1.0e-3,
 ) -> tuple[OperatingPoint, ...]:
-    """Every operating point of a :class:`LoopCase`, with its outlet quality attached."""
+    """Every operating point of a :class:`LoopCase` **this search can resolve**, with
+    its outlet quality attached.
+
+    **The narrowing belongs here, on the exported entry point**, not only on the helper
+    that implements it. This function opened "Every operating point of a ``LoopCase``"
+    while :func:`operating_points_from_characteristic` carried the bound -- the
+    narrowing had gone where the fix was made rather than where the claim is exported,
+    which is the shape D26 caught once already as F-04's residual.
+
+    Completeness is to the search resolution: ``samples`` coarse flows, each interval
+    refined ``_SUBDIVISIONS`` times. Roots closer together than one sub-interval, three
+    in one sampled interval, or two inside one already-subdivided interval are not
+    resolvable and are not reported. The same bound is stated in the rendered output of
+    every result that carries these points.
+    """
     grid = tuple(
         flow_min_kg_s + (flow_max_kg_s - flow_min_kg_s) * i / (samples - 1)
         for i in range(max(samples, 3))

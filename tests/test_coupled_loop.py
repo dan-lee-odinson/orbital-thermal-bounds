@@ -892,18 +892,50 @@ def test_f01_the_sink_declaration_transcribes_the_module_prose():
     assert transcription_mismatches(collapses) == ()
 
 
-#: Words that assert the sink is coupled into the solution, and words that deny it.
-#: A claim is a SENTENCE containing a subject and an assertion with no denial in it --
-#: which is what makes this a check on the claim rather than on three spellings of it.
-_COUPLING_SUBJECT = ("sink", "s4-3", "solved together", "coupling")
-_COUPLING_ASSERTED = (
-    "couples", "coupled", "is solved", "now solves", "reaches the operating point",
-    "feeds the operating point", "discharged", "satisfied", "passes", "moves the",
+#: A coupling claim is a sentence that says legs/quantities are SOLVED and says they
+#: are solved TOGETHER. Two families, both required -- which is what lets it see the
+#: module's own phrasing rather than three spellings someone thought of.
+#:
+#: The first version wanted the literal ``"solved together"`` as a SUBJECT term, so the
+#: module's opening -- *"This module solves them **together**"* -- matched no subject
+#: and no assertion term, and the detector returned empty on the exact sentence it
+#: existed to catch. Splitting verb from togetherness is the fix: the verb varies
+#: ("solves", "couples", "become"), the togetherness does not vary much, and a claim
+#: needs both.
+_SOLVE_VERB = (
+    "solve", "solves", "solved", "solving",
+    "couple", "couples", "coupled", "coupling",
+    "become", "becomes", "integrates", "unifies",
 )
+_TOGETHERNESS = (
+    "together", "simultaneously", "a loop", "one loop", "single solve",
+    "into the operating point", "reaches the operating point",
+    "feeds the operating point", "in one solution",
+)
+#: A second claim shape: the SINK specifically reaching the solution.
+_SINK_SUBJECT = ("sink", "s4-3", "radiator", "condenser")
+_SINK_REACHES = (
+    "reaches", "feeds", "moves", "drives", "enters the solve", "is coupled",
+    "discharged", "satisfied", "passes",
+)
+#: Denials, matched on WORD BOUNDARIES.
+#:
+#: They used to be bare substrings, so ``"not"`` matched inside ``"another"``,
+#: ``"nothing"`` and ``"notable"`` -- any sentence containing "another" was read as
+#: denying the claim. That is the ``ach``/``each`` and
+#: ``"transient"``/``"transients"`` shape a third time, inside the detector written to
+#: enforce honesty about this very claim.
 _DENIAL = (
-    "not", "cannot", "does not", "no ", "never", "fails", "undischarged",
-    "unrepresentable", "collapsed", "without",
+    "not", "cannot", "never", "fails", "failing", "undischarged", "unrepresentable",
+    "collapsed", "without", "no", "nor", "neither", "does",
 )
+
+
+def _denies(sentence: str) -> bool:
+    """Whether a sentence contains a denial as a WORD, not as a substring."""
+    import re
+
+    return any(re.search(rf"\b{re.escape(d)}\b", sentence, re.I) for d in _DENIAL)
 
 
 def _coupling_claims_without_denial(text: str) -> list[str]:
@@ -913,9 +945,14 @@ def _coupling_claims_without_denial(text: str) -> list[str]:
     offenders = []
     for sentence in re.split(r"(?<=[.!?])\s+|\n\n", text):
         s = sentence.lower()
-        if any(w in s for w in _COUPLING_SUBJECT) and any(w in s for w in _COUPLING_ASSERTED):
-            if not any(d in s for d in _DENIAL):
-                offenders.append(" ".join(sentence.split())[:140])
+        asserts_solved_together = any(v in s for v in _SOLVE_VERB) and any(
+            t in s for t in _TOGETHERNESS
+        )
+        asserts_sink_reaches = any(w in s for w in _SINK_SUBJECT) and any(
+            w in s for w in _SINK_REACHES
+        )
+        if (asserts_solved_together or asserts_sink_reaches) and not _denies(sentence):
+            offenders.append(" ".join(sentence.split())[:140])
     return offenders
 
 
@@ -934,6 +971,63 @@ def test_f01_the_artifact_does_not_claim_the_coupling_is_solved():
     assert "fails on its own terms" in doc.lower()
     offenders = _coupling_claims_without_denial(doc)
     assert not offenders, f"the module docstring asserts the coupling is solved: {offenders}"
+
+
+def test_g3f_the_module_states_that_s4_ships_with_s4_3_failing():
+    """D28, verbatim ruling: S4 ships with acceptance criterion S4-3 FAILING.
+
+    On the record as a decision, not left for a reader to discover -- and in the
+    OPENING, where a reader meets it, rather than under a heading twenty-eight lines
+    down that says read this before quoting a result.
+    """
+    doc = C.__doc__
+    opening = doc.strip().splitlines()[0]
+    assert "S4-3 FAILING" in opening, f"the first line must say it; it says {opening!r}"
+    assert "D28" in doc
+    assert "contradicts D28" in doc
+
+
+def test_g3f_the_detector_sees_the_wording_that_actually_slipped_through():
+    """F-01 2.2. The module's own opening, not a phrasing chosen to match the list.
+
+    ``"This module solves them **together**"`` matched no subject term and no
+    assertion term, so the detector returned empty on the exact sentence it exists to
+    catch. These are the two sentences as they stood.
+    """
+    for slipped in (
+        "This module solves them **together**: one operating point that satisfies the "
+        "loop's hydraulics, the condenser's energy books.",
+        "S4: the four legs stop being independent calculations and become a loop.",
+        "The loop, condenser and radiator are solved together.",
+    ):
+        assert _coupling_claims_without_denial(slipped), (
+            f"the detector cannot see {slipped[:60]!r} -- the vocabulary does not "
+            "cover the wording the module actually used"
+        )
+
+
+def test_g3f_a_denial_is_matched_as_a_word_not_a_substring():
+    """F-01 2.3. ``"not"`` matched inside ``"another"``, ``"nothing"``, ``"notable"``.
+
+    Any sentence containing "another" was read as denying the claim -- the third
+    appearance of this shape, inside the detector written to enforce honesty about
+    this claim.
+    """
+    claim_with_another = (
+        "The sink reaches the operating point through another mechanism entirely."
+    )
+    assert _coupling_claims_without_denial(claim_with_another), (
+        "'another' contains 'not' as a substring; it must not excuse a claim"
+    )
+    for innocent in ("another", "nothing", "notable", "notation"):
+        assert not _denies(innocent), f"{innocent!r} is not a denial"
+    for genuine in ("does not", "cannot", "never", "fails"):
+        assert _denies(f"the sink {genuine} reach it"), f"{genuine!r} is a denial"
+
+
+def test_g3f_control_the_module_prose_is_still_clean_under_the_stricter_detector():
+    """The control. A stricter detector must not fire on the honest text."""
+    assert _coupling_claims_without_denial(C.__doc__) == []
 
 
 def test_f01_the_absence_check_catches_a_reworded_claim():
@@ -1183,6 +1277,79 @@ def test_f04_the_bound_carries_the_numbers_that_actually_applied():
     assert result.search_samples == 61
     assert "sampling 61 flows" in result.render()
     assert f"refining each interval {C._SUBDIVISIONS}x" in result.render()
+
+
+# --- F-02: the narrowing belongs on the EXPORTED surface, enforced once ----------
+
+
+def _exported_operating_point_functions() -> list[str]:
+    """Every exported callable that hands back operating points, found by annotation.
+
+    **Not a hand-written list.** A list would have to be remembered when the next entry
+    point is added, which is the failure mode this regression exists to prevent -- the
+    narrowing went onto the helper where the fix was made rather than onto the function
+    where the claim is exported, and D26 had already caught that exact shape once.
+
+    Membership is derived from the return annotation, so a new exported function
+    returning ``OperatingPoint`` joins the check automatically and fails it until it
+    carries the narrowing.
+    """
+    import typing
+
+    found = []
+    for name in C.__all__:
+        obj = getattr(C, name, None)
+        if not callable(obj) or isinstance(obj, type):
+            continue
+        ann = str(typing.get_type_hints(obj).get("return", ""))
+        if "OperatingPoint" in ann:
+            found.append(name)
+    return sorted(found)
+
+
+#: The narrowing every such function must carry. One string, one place.
+_RESOLUTION_NARROWING = "this search can resolve"
+
+
+def test_f02_every_exported_operating_point_entry_point_carries_the_narrowing():
+    """F-02, class-level under C9.
+
+    ``find_operating_points`` -- the public case-level entry point -- opened "Every
+    operating point of a LoopCase" with no narrowing, while the helper carried it.
+    Repairing the reported instance and leaving the rule permissive does not discharge
+    the finding, so this checks the whole exported surface rather than one function.
+    """
+    exported = _exported_operating_point_functions()
+    assert len(exported) >= 2, f"expected the surface to be discovered, got {exported}"
+    missing = [
+        n for n in exported if _RESOLUTION_NARROWING not in (getattr(C, n).__doc__ or "")
+    ]
+    assert not missing, (
+        f"these exported entry points return operating points without narrowing the "
+        f"completeness claim: {missing}. The bound belongs on the function that "
+        "exports the claim, not only on the helper that implements it."
+    )
+
+
+def test_f02_the_surface_is_discovered_not_enumerated():
+    """A hand-written list would have to be remembered; this one cannot be forgotten.
+
+    Falsifiable: a new exported function returning operating points and lacking the
+    narrowing must make the test above fail without anyone editing it.
+    """
+    exported = _exported_operating_point_functions()
+    assert "find_operating_points" in exported
+    assert "operating_points_from_characteristic" in exported
+
+    # A newcomer with no narrowing is caught by the same rule, with no list to update.
+    def newly_exported(x: float) -> tuple[C.OperatingPoint, ...]:
+        """Every operating point, with no bound stated at all."""
+        return ()
+
+    assert _RESOLUTION_NARROWING not in (newly_exported.__doc__ or "")
+    import typing
+
+    assert "OperatingPoint" in str(typing.get_type_hints(newly_exported)["return"])
 
 
 def test_f04_the_docstring_no_longer_claims_completeness():

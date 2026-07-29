@@ -62,6 +62,7 @@ COLLAPSE = SRC / "registry" / "collapse.py"
 COUPLED_MODEL = SRC / "coupled_model.py"
 HARMONIZED = SRC / "harmonized_comparison.py"
 EXCLUSIONS = REPO / "scripts" / "packet_exclusions.py"
+TESTS_COUPLED = REPO / "tests" / "test_coupled_loop.py"
 
 
 @dataclass(frozen=True)
@@ -1636,6 +1637,78 @@ MUTATIONS: list[Mutation] = [
         notes="The analogue of the mutation that survived a +/-160-character window: "
         "an outright claim in wording no literal blocklist contains. The previous "
         "version of this test pinned three exact strings and would have passed.",
+    ),
+    # ------------------------------------------------- OTB-G003-FIXES (D28)
+    Mutation(
+        name="G3FX-F01-restore-the-solved-together-claim-in-the-opening",
+        guards="F-01 2.1/2.2: no affirmative solved-together claim in the public prose",
+        finding="G3FX-F01",
+        path=COUPLED,
+        old='"""S4: a partially coupled loop. **S4 ships with acceptance criterion S4-3 FAILING.**',
+        new='"""S4: the four legs become a loop. This module solves them together.',
+        expect_failing=(
+            "test_g3f_the_module_states_that_s4_ships_with_s4_3_failing",
+            "test_g3f_control_the_module_prose_is_still_clean_under_the_stricter_detector",
+            "test_f01_the_artifact_does_not_claim_the_coupling_is_solved",
+        ),
+        notes=(
+            "THE WORDING THAT ACTUALLY SLIPPED THROUGH -- the module's own phrasing, "
+            "not one chosen to match the vocabulary. Under the old detector this "
+            "matched no subject term and no assertion term and passed."
+        ),
+    ),
+    Mutation(
+        name="G3FX-F01-narrow-the-vocabulary-back-to-the-blind-version",
+        guards="F-01 2.2: the detector must see 'solves them together'",
+        finding="G3FX-F01",
+        path=TESTS_COUPLED,
+        old='_TOGETHERNESS = (\n    "together",',
+        new='_TOGETHERNESS = (\n    "solved together",',
+        expect_failing=(
+            "test_g3f_the_detector_sees_the_wording_that_actually_slipped_through",
+        ),
+        notes="The vocabulary wanted the literal 'solved together'; the module said "
+        "'solves them together'. One word apart, and the detector was blind.",
+    ),
+    Mutation(
+        name="G3FX-F01-match-denials-as-bare-substrings-again",
+        guards="F-01 2.3: a denial is a WORD, not a substring",
+        finding="G3FX-F01",
+        path=TESTS_COUPLED,
+        old='    return any(re.search(rf"\\b{re.escape(d)}\\b", sentence, re.I) for d in _DENIAL)',
+        new="    return any(d in sentence.lower() for d in _DENIAL)",
+        expect_failing=("test_g3f_a_denial_is_matched_as_a_word_not_a_substring",),
+        notes="'not' inside 'another', 'nothing', 'notable' -- the ach/each and "
+        "transient/transients shape a third time, inside the honesty detector itself.",
+    ),
+    Mutation(
+        name="G3FX-F02-strip-the-narrowing-from-the-exported-entry-point",
+        guards="F-02: the bound lives on the EXPORTED function, not only the helper",
+        finding="G3FX-F02",
+        path=COUPLED,
+        old='    """Every operating point of a :class:`LoopCase` **this search can resolve**, with',
+        new='    """Every operating point of a :class:`LoopCase`, with',
+        expect_failing=(
+            "test_f02_every_exported_operating_point_entry_point_carries_the_narrowing",
+        ),
+        notes="The reported instance. Repairing it alone would leave the rule "
+        "permissive, which is why the regression walks the whole exported surface.",
+    ),
+    Mutation(
+        name="G3FX-F02-enumerate-the-surface-instead-of-discovering-it",
+        guards="F-02: a hand-written list has to be remembered; discovery does not",
+        finding="G3FX-F02",
+        path=TESTS_COUPLED,
+        old='        ann = str(typing.get_type_hints(obj).get("return", ""))\n'
+        '        if "OperatingPoint" in ann:',
+        new='        ann = str(typing.get_type_hints(obj).get("return", ""))\n'
+        '        if name == "operating_points_from_characteristic":',
+        expect_failing=(
+            "test_f02_every_exported_operating_point_entry_point_carries_the_narrowing",
+            "test_f02_the_surface_is_discovered_not_enumerated",
+        ),
+        notes="Pinning the check to the helper is exactly what the certificate did, "
+        "and it certified a narrowing the exported surface did not carry.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
