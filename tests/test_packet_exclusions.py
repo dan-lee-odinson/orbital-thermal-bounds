@@ -28,9 +28,13 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 
 from packet_exclusions import (  # noqa: E402
+    DIRECTOR_ADDRESSED_MARKERS,
     DIRECTOR_ADDRESSED_MEMBERS,
     PACKAGING_TIME_DOCUMENTS,
+    QUOTATION_ALLOWLIST,
+    discover_director_addressed,
     excluded_members,
+    inert_allowlist,
     unknown_exclusions,
 )
 
@@ -64,6 +68,45 @@ _PACKET_CANDIDATES = (
     "OTB-G001-FIXES_PACKAGING_REPORT.md",
     "OTB-G003_S4_SCOPE_PROPOSAL.md",
 )
+
+#: Member text for the discovery checks, written out rather than read from anywhere.
+#:
+#: The strings are the real shapes: the line each newly excluded report was judged on,
+#: the provenance citation that must NOT fire, and the self-quoting module that was the
+#: one measured false positive.
+_MEMBER_TEXT: dict[str, str] = {
+    "OTB-G002_BUILD_REPORT.md": (
+        "# Build report\n\n## Remaining\n\n"
+        "- [ ] Sol review and Director disposition -- not the builder's\n"
+    ),
+    "OTB-G001-FIXES_PACKAGING_REPORT.md": (
+        "# Packaging report\n\nWhether METHOD's packet checker should accept an honest\n"
+        "`xfail` is a Director question about the tool, not something a build can\n"
+        "resolve.\n"
+    ),
+    "src/orbital_thermal/registry/two_phase.py": (
+        '"""Two-phase registry."""\n\n'
+        "# Bound enforced per Director ruling D9.\n"
+        "# Director ruling D9 is the basis for the de-ranking below.\n"
+        "# See Director ruling D14 for the admitted window.\n"
+    ),
+    "scripts/packet_exclusions.py": (
+        '"""C10 at packaging time."""\n\n'
+        'REASONS = {"OTB-G001_BUILD_REPORT.md": "a build report addressed to the '
+        'Director: it reports completion of work he commissioned and asks him to '
+        'disposition it."}\n'
+    ),
+    "SETTLED_DECISIONS.md": (
+        "# Settled decisions\n\nD-11: Notes seeking a ruling, flagging something\n"
+        '"for Dan", or listing what the Director must decide belong in review-inbox/.\n'
+    ),
+    "STATE.md": (
+        "# State\n\n- **Built and verified, awaiting the Director's `status: closed`:**"
+        " none\n"
+    ),
+    "README.md": "# orbital-thermal-bounds\n\nRadiator sizing bounds.\n",
+    "ACCEPTANCE_CRITERIA_OTB-G003.md": "# Acceptance criteria\n\nS4-3: fails.\n",
+}
 
 
 def _assembled() -> list[str]:
@@ -145,6 +188,154 @@ def test_no_committed_history_is_rewritten_by_this_module():
     src = pathlib.Path(packet_exclusions.__file__).read_text(encoding="utf-8")
     for forbidden in ("unlink", "remove(", "git rm", "rewrite", "filter-branch"):
         assert forbidden not in src
+
+
+# --- D30: the enumeration cannot certify its own coverage --------------------------
+
+
+def test_the_enumeration_alone_did_not_catch_the_d30_four():
+    """Why discovery exists. Four members qualified and were not on the list.
+
+    Not a hypothetical: each of these was measured carrying a marker in the deposited
+    `OTB-G003-FIXES` packet, and each is on the list now BECAUSE discovery would have
+    found it. The enumeration certified its entries and said nothing about its coverage.
+    """
+    for late in (
+        "OTB-G001-FIXES_PACKAGING_REPORT.md",
+        "OTB-G002_BUILD_REPORT.md",
+        "OTB-G002_FIXES_REPORT.md",
+        "OTB-G002_FINDINGS_REPORT.md",
+    ):
+        assert late in DIRECTOR_ADDRESSED_MEMBERS
+        assert len(DIRECTOR_ADDRESSED_MEMBERS[late]) > 40
+
+
+def test_witness_1_a_new_member_carrying_a_marker_fails_the_check():
+    """A member nobody enumerated, carrying a marker, must be found."""
+    members = dict(_MEMBER_TEXT)
+    members["OTB-G004_BUILD_REPORT.md"] = (
+        "# Build report\n\n- [ ] Director disposition of the three findings\n"
+    )
+
+    found = discover_director_addressed(members)
+    names = {n for n, _, _, _ in found}
+    assert "OTB-G004_BUILD_REPORT.md" in names, (
+        "a member carrying a Director-addressed marker that is neither enumerated nor "
+        "allowlisted must fail the build -- that is the coverage D30 exposed"
+    )
+    hit = next(f for f in found if f[0] == "OTB-G004_BUILD_REPORT.md")
+    assert hit[1] == "unchecked-checklist"
+    assert hit[2] == 3, "the line number must locate the evidence, not just the file"
+    assert "Director disposition" in hit[3]
+
+
+def test_witness_2_removing_an_enumerated_entry_is_still_caught_by_discovery():
+    """**The one that makes list and discovery independent.**
+
+    Without this, a forgotten entry still passes: discovery skips whatever the
+    enumeration names, so an enumeration that silently shrinks would take discovery's
+    coverage with it. Deleting an entry must reopen the finding.
+    """
+    members = dict(_MEMBER_TEXT)
+
+    # With the entry present, the packager drops it and discovery stays quiet.
+    assert "OTB-G002_BUILD_REPORT.md" in DIRECTOR_ADDRESSED_MEMBERS
+    assert "OTB-G002_BUILD_REPORT.md" not in {
+        n for n, _, _, _ in discover_director_addressed(members)
+    }
+
+    # Now remove it, exactly as a careless edit would.
+    import packet_exclusions
+
+    saved = dict(packet_exclusions.DIRECTOR_ADDRESSED_MEMBERS)
+    try:
+        del packet_exclusions.DIRECTOR_ADDRESSED_MEMBERS["OTB-G002_BUILD_REPORT.md"]
+        found = discover_director_addressed(members)
+    finally:
+        packet_exclusions.DIRECTOR_ADDRESSED_MEMBERS.clear()
+        packet_exclusions.DIRECTOR_ADDRESSED_MEMBERS.update(saved)
+
+    assert "OTB-G002_BUILD_REPORT.md" in {n for n, _, _, _ in found}, (
+        "discovery must catch a member the enumeration forgot; if it only reports what "
+        "the list already names, the two mechanisms are one mechanism"
+    )
+    # And the enumeration is restored, so this test leaves no residue.
+    assert "OTB-G002_BUILD_REPORT.md" in DIRECTOR_ADDRESSED_MEMBERS
+
+
+def test_witness_3_negative_control_provenance_citations_do_not_fire():
+    """``Director ruling D9`` as provenance is the artifact working, not C10 breaking.
+
+    The rejected design -- a sweep for "Director" -- would delete the registry to protect
+    the packet. This is the control that keeps the marker set narrow.
+    """
+    members = dict(_MEMBER_TEXT)
+    registry = "src/orbital_thermal/registry/two_phase.py"
+
+    assert members[registry].count("Director ruling") > 2
+    names = {n for n, _, _, _ in discover_director_addressed(members)}
+    assert registry not in names, (
+        "a provenance citation must not fire; an exclusion that cannot tell citing the "
+        "Director from addressing him would be worse than none"
+    )
+    assert registry not in DIRECTOR_ADDRESSED_MEMBERS
+
+
+def test_the_assembled_set_is_clean_once_the_d30_four_are_enumerated():
+    """The whole point: with the list correct, discovery reports nothing."""
+    assert discover_director_addressed(dict(_MEMBER_TEXT)) == []
+
+
+def test_ordinary_members_never_fire():
+    """Controls that carry no marker at all."""
+    for keeper in ("README.md", "ACCEPTANCE_CRITERIA_OTB-G003.md"):
+        assert discover_director_addressed({keeper: _MEMBER_TEXT[keeper]}) == []
+
+
+def test_every_allowlist_entry_is_named_with_a_reason_and_suppresses_something():
+    """An exemption that exempts nothing reads as a decision and protects nothing."""
+    assert QUOTATION_ALLOWLIST
+    for name, reason in QUOTATION_ALLOWLIST.items():
+        assert len(reason) > 40, f"{name} is allowlisted without a stated reason"
+    assert inert_allowlist(dict(_MEMBER_TEXT)) == [], (
+        "every allowlisted member must actually carry a marker; otherwise the entry is "
+        "dead weight that looks like protection"
+    )
+
+
+def test_the_allowlist_staleness_check_can_actually_fail():
+    """The staleness check must not be vacuous -- the round-1 lesson, applied to itself."""
+    thinned = {k: v for k, v in _MEMBER_TEXT.items() if k != "STATE.md"}
+    assert ("STATE.md", "not in the member set this round") in inert_allowlist(thinned)
+
+    blanked = dict(_MEMBER_TEXT)
+    blanked["STATE.md"] = "# State\n\nNothing outstanding.\n"
+    assert ("STATE.md", "in the packet but carries no marker; suppressing nothing") in (
+        inert_allowlist(blanked)
+    )
+
+
+def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
+    """Six shapes, each traceable to F-05. A marker nothing can trigger is not a check."""
+    assert len(DIRECTOR_ADDRESSED_MARKERS) == 6
+    probes = {
+        "for-dan": "a knock-on finding for Dan to weigh",
+        "director-question": "that is a Director question about the tool",
+        "asks-him-to": "the report asks him to disposition it",
+        "unchecked-checklist": "- [ ] Director disposition of the findings",
+        "director-must-rule": "the Director must decide the 20 bar point",
+        "awaiting": "awaiting the Director's closure",
+    }
+    assert set(probes) == set(DIRECTOR_ADDRESSED_MARKERS)
+    for label, probe in probes.items():
+        found = discover_director_addressed({"PROBE.md": probe})
+        assert [f[1] for f in found] == [label], f"{label} did not fire on its own shape"
+
+
+def test_the_allowlist_and_the_exclusion_list_do_not_overlap():
+    """A member cannot be both dropped and exempted -- that would be a silent decision."""
+    overlap = set(QUOTATION_ALLOWLIST) & set(DIRECTOR_ADDRESSED_MEMBERS)
+    assert overlap == set(), f"{sorted(overlap)} is both excluded and allowlisted"
 
 
 def test_these_tests_read_no_repository():
