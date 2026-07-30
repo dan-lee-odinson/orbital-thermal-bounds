@@ -147,6 +147,13 @@ QUOTATION_ALLOWLIST: dict[str, str] = {
         "filter, and on first measurement it was the only one of five hits that was not "
         "genuine."
     ),
+    "tests/test_packet_exclusions.py": (
+        "the regressions for this module, whose fixtures must hold REAL marker shapes to "
+        "test detection of them -- a test that detects only obfuscated markers tests "
+        "nothing. Found by :func:`discover_director_addressed` refusing the D30 freeze on "
+        "its first run against a changed tree, which is the same false positive as the "
+        "module's, one level out: the test for the filter quotes what the filter detects."
+    ),
 }
 
 #: Gate-record documents a packager adds alongside the repository members. Named here

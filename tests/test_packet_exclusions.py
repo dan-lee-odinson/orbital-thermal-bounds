@@ -106,6 +106,15 @@ _MEMBER_TEXT: dict[str, str] = {
     ),
     "README.md": "# orbital-thermal-bounds\n\nRadiator sizing bounds.\n",
     "ACCEPTANCE_CRITERIA_OTB-G003.md": "# Acceptance criteria\n\nS4-3: fails.\n",
+    # This very file. Its fixtures hold real marker shapes, so it carries markers and
+    # must be allowlisted -- see QUOTATION_ALLOWLIST. Stated here so the allowlist
+    # staleness check has it in the member set and stays honest about it.
+    "tests/test_packet_exclusions.py": (
+        "MARKER_FIXTURES = {\n"
+        '    "q": "that is a Director question about the tool",\n'
+        '    "a": "the report asks him to disposition it",\n'
+        "}\n"
+    ),
 }
 
 
