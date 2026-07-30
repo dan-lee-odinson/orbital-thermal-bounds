@@ -109,7 +109,19 @@ DIRECTOR_ADDRESSED_MEMBERS: dict[str, str] = {
 DIRECTOR_ADDRESSED_MARKERS: dict[str, str] = {
     "for-dan": r"for Dan",
     "director-question": r"is a Director question",
-    "asks-him-to": r"asks (?:him|the Director) to",
+    # D31: widened. The old form was ``asks (?:him|the Director) to`` and it missed
+    # ``asks Dan to rule`` -- the name is recognised by ``for-dan`` and was not
+    # recognised here, so which noun the sentence used decided whether it fired.
+    "asks-him-to": r"asks (?:him|Dan|the Director) to",
+    # D31: NEW, and it exists because the marker written FROM a case did not match
+    # that case's own words. The docstring above cites the scope proposal's
+    # "section 8 asks the Director eleven decisions" as the most flagrant example on
+    # the list -- and no marker fired on it, because the verb is not followed by "to".
+    # That is `_COUPLING_SUBJECT` wanting "solved together" while the module said
+    # "solves them together", one level out.
+    "asks-him-for-a-decision": (
+        r"asks (?:him|Dan|the Director) [^.\n]{0,40}?(?:decision|ruling|approval)"
+    ),
     "unchecked-checklist": r"^[ \t]*-[ \t]*\[ \].*Director",
     "director-must-rule": (
         r"Director (?:must|needs to|should) (?:rule|decide|choose|disposition)"
@@ -153,6 +165,21 @@ QUOTATION_ALLOWLIST: dict[str, str] = {
         "nothing. Found by :func:`discover_director_addressed` refusing the D30 freeze on "
         "its first run against a changed tree, which is the same false positive as the "
         "module's, one level out: the test for the filter quotes what the filter detects."
+    ),
+    # --- added under D31, both because the widened vocabulary reached them ---------
+    "OTB-G003_dispositioned.md": (
+        "the dispositioned ledger, whose line 274 states the FINDING that the packet "
+        "contained files addressed to the Director -- it quotes the shape in order to "
+        "record that it was raised. A ledger that cannot describe a C10 finding cannot "
+        "disposition one."
+    ),
+    "00_GATE_BRIEF.md": (
+        "the brief, which quotes the Director's rulings throughout and -- at D31 -- "
+        "quotes the two wordings this round's widening was written to catch, in the "
+        "paragraph explaining why they were missed. It is clean under the OLD vocabulary "
+        "and fires only under the new one, which makes it the same class as this module "
+        "and its tests: a document that quotes what the filter detects, in order to "
+        "explain it."
     ),
 }
 

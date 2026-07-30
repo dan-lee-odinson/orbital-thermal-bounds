@@ -100,6 +100,20 @@ _MEMBER_TEXT: dict[str, str] = {
         "# Settled decisions\n\nD-11: Notes seeking a ruling, flagging something\n"
         '"for Dan", or listing what the Director must decide belong in review-inbox/.\n'
     ),
+    # The marker cannot span a line break -- `[^.\n]` excludes the newline on purpose,
+    # so a bridging match cannot be manufactured across two sentences. This fixture is
+    # therefore kept unwrapped, as the real line 274 is: wrapping it turned the witness
+    # green-by-accident on the first attempt, and the test caught that.
+    "OTB-G003_dispositioned.md": (
+        "# Dispositioned\n\n**Finding.** The packet again contains files addressed to "
+        "the Director rather than the reviewer: OTB-G001_BUILD_REPORT asks Dan for "
+        "rulings it should not be asking for.\n"
+    ),
+    "00_GATE_BRIEF.md": (
+        "# Gate brief\n\nThe old marker missed the scope proposal's own wording --\n"
+        "its section 8 asks the Director eleven decisions -- and also missed\n"
+        '"asks Dan to rule". Both are widened this round.\n'
+    ),
     "STATE.md": (
         "# State\n\n- **Built and verified, awaiting the Director's `status: closed`:**"
         " none\n"
@@ -324,13 +338,77 @@ def test_the_allowlist_staleness_check_can_actually_fail():
     )
 
 
+def test_witness_d31_the_scope_proposals_own_wording_is_caught():
+    """**The D31 witness, and the wording is the case's, not one chosen to match.**
+
+    The module's docstring cites ``section 8 asks the Director eleven decisions`` as the
+    most flagrant entry on the list. No marker fired on it: ``asks-him-to`` required the
+    verb to be followed by ``to``. Picking a phrasing that suited the new vocabulary
+    would witness nothing -- that is the mistake that produced the miss -- so this
+    mutation uses the sentence the module itself quotes.
+    """
+    scope_proposal_wording = (
+        "S4 - scope proposal for Director approval. Nothing is built until this is "
+        "approved, and its section 8 asks the Director eleven decisions."
+    )
+    found = discover_director_addressed({"OTB-G004_SCOPE_PROPOSAL.md": scope_proposal_wording})
+    labels = {f[1] for f in found}
+    assert "asks-him-for-a-decision" in labels, (
+        "discovery must fire on the wording of the case the module cites; a marker "
+        "written from a case that cannot match that case is the sixteenth instance"
+    )
+
+
+def test_witness_d31_the_name_dan_is_recognised_by_the_asks_marker_too():
+    """``asks Dan to rule`` was a miss: the noun decided whether the marker fired."""
+    found = discover_director_addressed({"OTB-G004_REPORT.md": "it asks Dan to rule on the bore"})
+    assert [f[1] for f in found] == ["asks-him-to"]
+
+
+def test_witness_d31_removing_the_new_allowlist_entry_fails_the_build():
+    """The fifth entry is inert-checked: remove it and the ledger must be flagged.
+
+    An allowlist entry that could be deleted without anything noticing would be
+    indistinguishable from one that was never needed.
+    """
+    import packet_exclusions
+
+    members = dict(_MEMBER_TEXT)
+    assert "OTB-G003_dispositioned.md" not in {
+        n for n, _, _, _ in discover_director_addressed(members)
+    }
+
+    saved = dict(packet_exclusions.QUOTATION_ALLOWLIST)
+    try:
+        del packet_exclusions.QUOTATION_ALLOWLIST["OTB-G003_dispositioned.md"]
+        found = discover_director_addressed(members)
+    finally:
+        packet_exclusions.QUOTATION_ALLOWLIST.clear()
+        packet_exclusions.QUOTATION_ALLOWLIST.update(saved)
+
+    hit = [f for f in found if f[0] == "OTB-G003_dispositioned.md"]
+    assert hit, "removing the allowlist entry must reopen the finding"
+    assert hit[0][1] == "asks-him-for-a-decision"
+    assert "OTB-G003_dispositioned.md" in QUOTATION_ALLOWLIST
+
+
+def test_the_sibling_ledger_is_not_allowlisted_because_it_does_not_fire():
+    """``OTB-G003-02_dispositioned.md`` must NOT be added -- it carries no marker.
+
+    Entries exist only for documents that measurably fire. Adding the sibling because
+    it looks like its twin is exactly the dead weight :func:`inert_allowlist` reports.
+    """
+    assert "OTB-G003-02_dispositioned.md" not in QUOTATION_ALLOWLIST
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
-    """Six shapes, each traceable to F-05. A marker nothing can trigger is not a check."""
-    assert len(DIRECTOR_ADDRESSED_MARKERS) == 6
+    """Seven shapes, each traceable to a case. A marker nothing triggers is not a check."""
+    assert len(DIRECTOR_ADDRESSED_MARKERS) == 7
     probes = {
         "for-dan": "a knock-on finding for Dan to weigh",
         "director-question": "that is a Director question about the tool",
         "asks-him-to": "the report asks him to disposition it",
+        "asks-him-for-a-decision": "its section 8 asks the Director eleven decisions",
         "unchecked-checklist": "- [ ] Director disposition of the findings",
         "director-must-rule": "the Director must decide the 20 bar point",
         "awaiting": "awaiting the Director's closure",
