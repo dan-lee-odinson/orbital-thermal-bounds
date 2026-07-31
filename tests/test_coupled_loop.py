@@ -7,9 +7,13 @@ control that fails if the guard merely refuses everything.
 
 from __future__ import annotations
 
+import dataclasses
+import enum
 import inspect
 import math
+import types
 import warnings
+from dataclasses import dataclass
 from itertools import pairwise
 
 import pytest
@@ -1262,13 +1266,12 @@ def test_f05_control_a_valid_case_still_constructs_and_evaluates():
 # --- round 2: F-04's residual and F-05's second half -----------------------------
 
 
-def test_f04_the_resolution_bound_is_in_both_rendered_outputs():
-    """D26: the bound goes in the OUTPUT, not a comment (C6)."""
-    for result in (solve_demo(), solve_ref()):
-        rendered = result.render()
-        assert "ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED" in rendered
-        assert "completeness TO THAT RESOLUTION, not" in rendered
-        assert "'none this search can resolve'" in rendered
+# NOTE (D32/F-02): ``test_f04_the_resolution_bound_is_in_both_rendered_outputs`` used to
+# live here. It enumerated the two known result types, and it was one of the TWO partial
+# controls the reviewer found a seam between. It is not deleted work -- it is subsumed by
+# ``test_f02_d32_one_rule_governs_everything_that_reaches_the_caller`` below, which
+# derives the containing types instead of naming them and requires each to render the
+# disclosure. Kept as a pointer so the collapse is visible rather than silent.
 
 
 def test_f04_the_bound_carries_the_numbers_that_actually_applied():
@@ -1279,77 +1282,389 @@ def test_f04_the_bound_carries_the_numbers_that_actually_applied():
     assert f"refining each interval {C._SUBDIVISIONS}x" in result.render()
 
 
-# --- F-02: the narrowing belongs on the EXPORTED surface, enforced once ----------
+# --- F-02 under D32: ONE rule for everything that reaches the caller -------------
+#
+# The synthetic exports the witnesses run the rule against. Defined at module level so
+# ``typing.get_type_hints`` resolves their annotations against this module's globals,
+# exactly as it does for the real package.
 
 
-def _exported_operating_point_functions() -> list[str]:
-    """Every exported callable that hands back operating points, found by annotation.
+@dataclass(frozen=True)
+class _SilentResult:
+    """A containing type that hands back operating points and discloses nothing."""
 
-    **Not a hand-written list.** A list would have to be remembered when the next entry
-    point is added, which is the failure mode this regression exists to prevent -- the
-    narrowing went onto the helper where the fix was made rather than onto the function
-    where the claim is exported, and D26 had already caught that exact shape once.
+    operating_points: tuple[C.OperatingPoint, ...] = ()
 
-    Membership is derived from the return annotation, so a new exported function
-    returning ``OperatingPoint`` joins the check automatically and fails it until it
-    carries the narrowing.
+    def render(self) -> str:
+        return "SOME RESULT\n\npoints: 0\n"
+
+
+@dataclass(frozen=True)
+class _DisclosingResult:
+    """The same shape, carrying the disclosure. The paired positive control."""
+
+    operating_points: tuple[C.OperatingPoint, ...] = ()
+    search_samples: int = 0
+
+    def render(self) -> str:
+        return "SOME RESULT\n\n" + C.resolution_disclosure(self.search_samples) + "\n"
+
+
+@dataclass(frozen=True)
+class _CyclicResult:
+    """Self-referential AND carrying points: the walk must terminate and still find them."""
+
+    operating_points: tuple[C.OperatingPoint, ...] = ()
+    nested: _CyclicResult | None = None
+
+
+@dataclass(frozen=True)
+class _CyclicNoPoints:
+    """Self-referential and carrying none: must terminate and report unreachable."""
+
+    nested: _CyclicNoPoints | None = None
+    label: str = ""
+
+
+def _returns_silent_result() -> _SilentResult:
+    """Returns a result object holding operating points, disclosing nothing."""
+    return _SilentResult()
+
+
+def _returns_disclosing_result() -> _DisclosingResult:
+    """Returns a result object holding operating points, and discloses."""
+    return _DisclosingResult()
+
+
+def _returns_points_without_narrowing() -> tuple[C.OperatingPoint, ...]:
+    """Every operating point of the loop, with no bound stated at all."""
+    return ()
+
+
+def _returns_points_with_narrowing() -> tuple[C.OperatingPoint, ...]:
+    """Every operating point **this search can resolve**, which is not completeness."""
+    return ()
+
+
+def _returns_unrelated() -> tuple[str, ...]:
+    """Returns nothing that reaches the caller carrying operating points."""
+    return ()
+
+
+def _module_with(**exports) -> types.SimpleNamespace:
+    """A stand-in module exposing ``__all__``, so the rule can be run against anything."""
+    return types.SimpleNamespace(__all__=sorted(exports), **exports)
+
+
+#: The narrowing a function carries when it hands operating points back DIRECTLY.
+_RESOLUTION_NARROWING = "this search can resolve"
+
+#: The disclosure a CONTAINING type must render. Same property, different carrier.
+_RESOLUTION_DISCLOSURE = "ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED"
+
+#: Depth guard for the type walk. Cycles are caught by ``seen``; this bounds pathology
+#: that is not a cycle, such as a deeply nested generic.
+_MAX_TYPE_DEPTH = 12
+
+
+def _operating_point_hops(tp, *, seen: frozenset = frozenset(), depth: int = 0):
+    """**THE derivation.** Class-field hops from ``tp`` to an ``OperatingPoint``.
+
+    ``0`` means the caller receives operating points directly -- possibly inside
+    ``tuple``/``|``/``list``, which are transparent and cost no hop. ``N > 0`` means they
+    arrive inside a returned type, ``N`` field-traversals down. ``None`` means this type
+    does not put operating points in the caller's hands at all.
+
+    **This function is the single point the whole rule rests on**, and that is
+    deliberate. Before D32 there were two mechanisms -- one walking the exported
+    annotations, one naming ``DemonstrationResult`` and ``ReferenceCaseResult`` -- and a
+    function returning a NEW containing type joined neither while both reported green.
+    The defect was never the missing case; it was that a seam existed between two partial
+    controls. So there is now one derivation, and
+    ``test_f02_d32_a_single_mutation_disables_both_halves`` proves it by breaking this
+    function and requiring BOTH the direct and the containing case to stop being caught.
+    Two mechanisms wearing one name would survive that.
+
+    Cycle guard: a type already on the path is not re-entered, so ``A`` holding a ``B``
+    holding an ``A`` terminates instead of recursing forever.
+    """
+    import typing
+
+    if depth > _MAX_TYPE_DEPTH:
+        return None
+    if tp is None:
+        return None
+
+    origin = typing.get_origin(tp)
+    if origin is not None:
+        # A generic container is transparent: `tuple[OperatingPoint, ...]` hands them
+        # to the caller just as directly as `OperatingPoint` does. No hop is charged.
+        best = None
+        for arg in typing.get_args(tp):
+            if arg is Ellipsis or arg is type(None):
+                continue
+            h = _operating_point_hops(arg, seen=seen, depth=depth + 1)
+            if h is not None and (best is None or h < best):
+                best = h
+        return best
+
+    if not isinstance(tp, type):
+        return None
+    if tp is C.OperatingPoint:
+        return 0
+    if tp in seen or issubclass(tp, enum.Enum):
+        return None
+
+    if dataclasses.is_dataclass(tp):
+        try:
+            hints = typing.get_type_hints(tp)
+        except Exception:  # pragma: no cover - unresolvable annotation
+            return None
+        best = None
+        for field in dataclasses.fields(tp):
+            h = _operating_point_hops(
+                hints.get(field.name), seen=seen | {tp}, depth=depth + 1
+            )
+            if h is not None and (best is None or h + 1 < best):
+                best = h + 1  # crossing a field boundary is the hop
+        return best
+    return None
+
+
+def _resolution_surface(module) -> list[tuple[str, object, int]]:
+    """**THE membership set.** ``(name, returned_type, hops)`` for every exported callable
+    that puts operating points in the caller's hands, however deep.
+
+    Derived, never listed. A new export joins on its own and must satisfy the rule.
     """
     import typing
 
     found = []
-    for name in C.__all__:
-        obj = getattr(C, name, None)
+    for name in module.__all__:
+        obj = getattr(module, name, None)
         if not callable(obj) or isinstance(obj, type):
             continue
-        ann = str(typing.get_type_hints(obj).get("return", ""))
-        if "OperatingPoint" in ann:
-            found.append(name)
+        try:
+            ann = typing.get_type_hints(obj).get("return")
+        except Exception:  # pragma: no cover - unresolvable annotation
+            continue
+        hops = _operating_point_hops(ann)
+        if hops is not None:
+            found.append((name, ann, hops))
     return sorted(found)
 
 
-#: The narrowing every such function must carry. One string, one place.
-_RESOLUTION_NARROWING = "this search can resolve"
-
-
-def test_f02_every_exported_operating_point_entry_point_carries_the_narrowing():
-    """F-02, class-level under C9.
-
-    ``find_operating_points`` -- the public case-level entry point -- opened "Every
-    operating point of a LoopCase" with no narrowing, while the helper carried it.
-    Repairing the reported instance and leaving the rule permissive does not discharge
-    the finding, so this checks the whole exported surface rather than one function.
-    """
-    exported = _exported_operating_point_functions()
-    assert len(exported) >= 2, f"expected the surface to be discovered, got {exported}"
-    missing = [
-        n for n in exported if _RESOLUTION_NARROWING not in (getattr(C, n).__doc__ or "")
-    ]
-    assert not missing, (
-        f"these exported entry points return operating points without narrowing the "
-        f"completeness claim: {missing}. The bound belongs on the function that "
-        "exports the claim, not only on the helper that implements it."
-    )
-
-
-def test_f02_the_surface_is_discovered_not_enumerated():
-    """A hand-written list would have to be remembered; this one cannot be forgotten.
-
-    Falsifiable: a new exported function returning operating points and lacking the
-    narrowing must make the test above fail without anyone editing it.
-    """
-    exported = _exported_operating_point_functions()
-    assert "find_operating_points" in exported
-    assert "operating_points_from_characteristic" in exported
-
-    # A newcomer with no narrowing is caught by the same rule, with no list to update.
-    def newly_exported(x: float) -> tuple[C.OperatingPoint, ...]:
-        """Every operating point, with no bound stated at all."""
-        return ()
-
-    assert _RESOLUTION_NARROWING not in (newly_exported.__doc__ or "")
+def _carrier_types(tp) -> list[type]:
+    """The returned dataclass(es) through which operating points reach the caller."""
     import typing
 
-    assert "OperatingPoint" in str(typing.get_type_hints(newly_exported)["return"])
+    origin = typing.get_origin(tp)
+    if origin is not None:
+        out: list[type] = []
+        for arg in typing.get_args(tp):
+            if arg is Ellipsis or arg is type(None):
+                continue
+            out += _carrier_types(arg)
+        return out
+    if (
+        isinstance(tp, type)
+        and dataclasses.is_dataclass(tp)
+        and _operating_point_hops(tp) is not None
+    ):
+        return [tp]
+    return []
+
+
+def _render_blank(cls) -> str:
+    """Render an all-zero instance, bypassing ``__init__``.
+
+    Deliberately blank rather than realistic: the disclosure must be **non-suppressible**,
+    so it has to appear even when every field is empty. A sample built from a healthy
+    solve could hide a disclosure that is emitted only when there is something to
+    disclose, which is precisely the suppression this is meant to forbid.
+    """
+    import typing
+
+    def zero(tp, depth=0):
+        if depth > _MAX_TYPE_DEPTH:
+            return None
+        origin = typing.get_origin(tp)
+        if origin in (tuple, list, set, frozenset):
+            return origin()
+        if origin is not None:
+            args = [a for a in typing.get_args(tp) if a is not type(None)]
+            return zero(args[0], depth + 1) if args else None
+        if tp is bool:
+            return False
+        if tp is int:
+            return 0
+        if tp is float:
+            return 0.0
+        if tp is str:
+            return ""
+        if isinstance(tp, type) and issubclass(tp, enum.Enum):
+            return next(iter(tp))
+        if isinstance(tp, type) and dataclasses.is_dataclass(tp):
+            return build(tp, depth + 1)
+        return None
+
+    def build(cls_, depth=0):
+        obj = object.__new__(cls_)
+        hints = typing.get_type_hints(cls_)
+        for field in dataclasses.fields(cls_):
+            object.__setattr__(obj, field.name, zero(hints.get(field.name), depth))
+        return obj
+
+    return build(cls).render()
+
+
+def _resolution_violations(module) -> list[str]:
+    """**THE assertion.** Everything reaching the caller must carry the disclosure.
+
+    One property, two carriers, because the two shapes hand it over differently: a
+    function returning them directly carries the narrowing on its own docstring; a
+    function returning a containing type carries it because that TYPE renders the
+    disclosure. Both branches read the same membership set from the same derivation, so
+    neither can be satisfied while the other is bypassed.
+
+    Fails closed: a containing type that cannot be rendered is a violation, not a skip.
+    """
+    violations = []
+    for name, ann, hops in _resolution_surface(module):
+        obj = getattr(module, name)
+        if hops == 0:
+            if _RESOLUTION_NARROWING not in (obj.__doc__ or ""):
+                violations.append(
+                    f"{name}: returns operating points directly and its docstring does "
+                    f"not narrow the completeness claim ({_RESOLUTION_NARROWING!r})"
+                )
+            continue
+        carriers = _carrier_types(ann)
+        if not carriers:
+            violations.append(f"{name}: carries operating points but no carrier type found")
+            continue
+        for cls in carriers:
+            try:
+                rendered = _render_blank(cls)
+            except Exception as exc:
+                violations.append(
+                    f"{name}: {cls.__name__} contains operating points and could not be "
+                    f"rendered ({type(exc).__name__}: {exc}). A type whose disclosure "
+                    "cannot be shown is not disclosing."
+                )
+                continue
+            if _RESOLUTION_DISCLOSURE not in rendered:
+                violations.append(
+                    f"{name}: {cls.__name__} contains operating points and its render() "
+                    "omits the resolution disclosure"
+                )
+    return violations
+
+
+def test_f02_d32_one_rule_governs_everything_that_reaches_the_caller():
+    """**F-02 under D32: one rule replacing two, not a third beside them.**
+
+    The reviewer found the seam: an exported function returning a frozen dataclass
+    holding ``tuple[OperatingPoint, ...]`` was absent from the exported-surface rule,
+    carried no disclosure field, and was outside the two named result types -- it joined
+    neither control while both reported green. The Director ruled that a third rule would
+    reproduce the shape one notch further out (C9), so the two collapse into this.
+
+    Both former tests are subsumed: the direct branch is what
+    ``test_f02_every_exported_operating_point_entry_point_carries_the_narrowing``
+    asserted, and the containing branch is what
+    ``test_f04_the_resolution_bound_is_in_both_rendered_outputs`` asserted about two
+    named types -- now derived rather than named.
+    """
+    surface = _resolution_surface(C)
+    names = {n for n, _, _ in surface}
+    assert {"find_operating_points", "operating_points_from_characteristic"} <= names
+    assert {"demonstrate_machinery", "solve_reference_case"} <= names, (
+        "the containing returns must be in the SAME membership set as the direct ones; "
+        "if they are not, the seam is still there"
+    )
+    assert any(h == 0 for _, _, h in surface) and any(h > 0 for _, _, h in surface)
+
+    assert _resolution_violations(C) == []
+
+
+def test_f02_d32_a_single_mutation_disables_both_halves():
+    """**The witness that this is one rule and not two wearing one name.**
+
+    A merge is trivially faked by putting two checks in one function. The test for a
+    real merge is that breaking the single derivation stops BOTH cases being caught --
+    if they were still two mechanisms, disabling one would leave the other working.
+    """
+    module = _module_with(
+        returns_points_without_narrowing=_returns_points_without_narrowing,
+        returns_silent_result=_returns_silent_result,
+    )
+
+    caught = {v.split(":")[0] for v in _resolution_violations(module)}
+    assert caught == {"returns_points_without_narrowing", "returns_silent_result"}, (
+        f"both halves must be caught while the rule is intact, got {caught}"
+    )
+
+    # ONE mutation, to the ONE derivation.
+    original = globals()["_operating_point_hops"]
+    globals()["_operating_point_hops"] = lambda tp, **kw: None
+    try:
+        blinded = _resolution_violations(module)
+    finally:
+        globals()["_operating_point_hops"] = original
+
+    assert blinded == [], (
+        "breaking the single derivation must blind the direct case AND the containing "
+        "case together. Anything still caught here is a second mechanism, which is the "
+        "seam D32 exists to remove."
+    )
+    # And the rule is restored, so this test leaves no residue.
+    assert len(_resolution_violations(module)) == 2
+
+
+def test_f02_d32_a_new_containing_type_without_the_disclosure_fails():
+    """Witness 2: a result type nobody named, holding operating points, no disclosure."""
+    module = _module_with(returns_silent_result=_returns_silent_result)
+    violations = _resolution_violations(module)
+    assert len(violations) == 1
+    assert "_SilentResult" in violations[0] and "omits the resolution disclosure" in violations[0]
+
+    # The paired positive control: the same shape WITH the disclosure passes.
+    ok = _module_with(returns_disclosing_result=_returns_disclosing_result)
+    assert _resolution_violations(ok) == []
+
+
+def test_f02_d32_a_new_direct_export_without_narrowing_fails_the_same_rule():
+    """Witness 3: the merge did not drop what the old exported-surface rule covered."""
+    module = _module_with(returns_points_without_narrowing=_returns_points_without_narrowing)
+    violations = _resolution_violations(module)
+    assert len(violations) == 1
+    assert "does not narrow the completeness claim" in violations[0]
+
+    ok = _module_with(returns_points_with_narrowing=_returns_points_with_narrowing)
+    assert _resolution_violations(ok) == []
+
+
+def test_f02_d32_negative_control_unrelated_returns_are_not_swept_in():
+    """Witness 4: an over-broad rule would sweep the module and be worse than none."""
+    module = _module_with(
+        returns_unrelated=_returns_unrelated,
+        returns_a_closure=C.energy_closure,
+        returns_characteristic_points=C.internal_characteristic,
+    )
+    assert _resolution_surface(module) == []
+    assert _resolution_violations(module) == []
+
+    # And on the real module the non-carriers stay out of the membership set.
+    names = {n for n, _, _ in _resolution_surface(C)}
+    for outsider in ("energy_closure", "internal_characteristic", "registered_s4_entries"):
+        assert outsider not in names
+
+
+def test_f02_d32_the_walk_terminates_on_a_cycle():
+    """A self-referential result type must not hang the derivation."""
+    assert _operating_point_hops(_CyclicResult) == 1
+    assert _operating_point_hops(_CyclicNoPoints) is None
 
 
 def test_f04_the_docstring_no_longer_claims_completeness():

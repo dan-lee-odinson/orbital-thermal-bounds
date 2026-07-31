@@ -1575,7 +1575,9 @@ MUTATIONS: list[Mutation] = [
         old="            self.resolution_disclosure,",
         new="",
         expect_failing=(
-            "test_f04_the_resolution_bound_is_in_both_rendered_outputs",
+            # D32: the enumerating test this named was collapsed into the one rule.
+            # The containing types are now DERIVED, so the merged rule is what notices.
+            "test_f02_d32_one_rule_governs_everything_that_reaches_the_caller",
             "test_f04_the_bound_carries_the_numbers_that_actually_applied",
         ),
         notes="A disclosure nothing checks is the shape this project has recorded "
@@ -1689,26 +1691,30 @@ MUTATIONS: list[Mutation] = [
         old='    """Every operating point of a :class:`LoopCase` **this search can resolve**, with',
         new='    """Every operating point of a :class:`LoopCase`, with',
         expect_failing=(
-            "test_f02_every_exported_operating_point_entry_point_carries_the_narrowing",
+            "test_f02_d32_one_rule_governs_everything_that_reaches_the_caller",
         ),
         notes="The reported instance. Repairing it alone would leave the rule "
         "permissive, which is why the regression walks the whole exported surface.",
     ),
     Mutation(
-        name="G3FX-F02-enumerate-the-surface-instead-of-discovering-it",
-        guards="F-02: a hand-written list has to be remembered; discovery does not",
+        name="G3FX-F02-D32-blind-the-single-derivation-both-halves-must-go",
+        guards="F-02/D32: ONE rule, so ONE mutation must disable direct AND containing",
         finding="G3FX-F02",
         path=TESTS_COUPLED,
-        old='        ann = str(typing.get_type_hints(obj).get("return", ""))\n'
-        '        if "OperatingPoint" in ann:',
-        new='        ann = str(typing.get_type_hints(obj).get("return", ""))\n'
-        '        if name == "operating_points_from_characteristic":',
+        old="    if tp is C.OperatingPoint:\n        return 0",
+        new="    if tp is C.OperatingPoint:\n        return None",
         expect_failing=(
-            "test_f02_every_exported_operating_point_entry_point_carries_the_narrowing",
-            "test_f02_the_surface_is_discovered_not_enumerated",
+            # The whole point of D32, expressed as a mutation. Both halves are listed:
+            # if these were still two mechanisms, breaking one base case would leave the
+            # other working and one of these would keep passing.
+            "test_f02_d32_a_new_direct_export_without_narrowing_fails_the_same_rule",
+            "test_f02_d32_a_new_containing_type_without_the_disclosure_fails",
+            "test_f02_d32_a_single_mutation_disables_both_halves",
+            "test_f02_d32_one_rule_governs_everything_that_reaches_the_caller",
         ),
-        notes="Pinning the check to the helper is exactly what the certificate did, "
-        "and it certified a narrowing the exported surface did not carry.",
+        notes="Replaces the pre-D32 'enumerate the surface' mutation, whose anchor was "
+        "the discovery helper that the merge removed. One base case now feeds the "
+        "direct and the containing branch alike, which is what makes it one rule.",
     ),
     Mutation(
         name="take-the-best-gate-outcome-instead-of-the-worst",
