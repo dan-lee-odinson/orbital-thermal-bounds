@@ -45,7 +45,8 @@ one at the round-2 freeze.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from typing import NamedTuple
 
 #: Names that must not enter a review packet, each with the reason it qualifies.
 #:
@@ -106,31 +107,81 @@ DIRECTOR_ADDRESSED_MEMBERS: dict[str, str] = {
 #: naming him in an open checklist item, or waiting on him -- not on one *citing* him.
 #: Measured on the assembled member set: ten members carry a marker, seven are enumerated
 #: exclusions and three are quotation (see :data:`QUOTATION_ALLOWLIST`).
+#: **D37/F-04: matched case-INSENSITIVELY, and every pattern carries word boundaries.**
+#:
+#: The vocabulary was case-sensitive, so ``for Dan`` matched and ``for dan`` did not. That
+#: alone was not the whole defect and it is worth stating precisely, because the fix was
+#: nearly scoped to it: the review record that escaped uses *none* of the shapes below in
+#: any case. ``need a director ruling``, ``pending director disposition``,
+#: ``Findings requiring director disposition``, ``for director attention`` and
+#: ``is a director decision`` were measured to miss as-is, capitalised AND
+#: case-insensitively. Case-blindness was necessary; it was not sufficient.
+#:
+#: **Word boundaries went on BEFORE the case flag, and that ordering matters.** Under
+#: ``re.I`` the bare ``for Dan`` matches "waiting **for dan**ger to pass" and ``awaiting
+#: (?:Dan|...)`` matches "**awaiting dan**gerous weather" -- both measured. Trading a
+#: false negative for a false positive would have been a worse rule, not a fixed one.
+#:
+#: The five shapes added below all require a REQUESTING verb or a pending-state word beside
+#: the noun. That is what keeps the standing control intact: ``registry/two_phase.py`` cites
+#: "Director ruling D9" **28 times** as provenance and none of them fires.
 DIRECTOR_ADDRESSED_MARKERS: dict[str, str] = {
-    "for-dan": r"for Dan",
-    "director-question": r"is a Director question",
+    "for-dan": r"\bfor Dan\b",
+    "director-question": r"\bis a Director question\b",
     # D31: widened. The old form was ``asks (?:him|the Director) to`` and it missed
     # ``asks Dan to rule`` -- the name is recognised by ``for-dan`` and was not
     # recognised here, so which noun the sentence used decided whether it fired.
-    "asks-him-to": r"asks (?:him|Dan|the Director) to",
+    "asks-him-to": r"\basks (?:him|Dan|the Director) to\b",
     # D31: NEW, and it exists because the marker written FROM a case did not match
     # that case's own words. The docstring above cites the scope proposal's
     # "section 8 asks the Director eleven decisions" as the most flagrant example on
     # the list -- and no marker fired on it, because the verb is not followed by "to".
     # That is `_COUPLING_SUBJECT` wanting "solved together" while the module said
     # "solves them together", one level out.
+    # ``s?`` before the boundary, not a bare ``\b``: the boundary added for D37 broke
+    # BOTH cases this marker was written from -- "eleven decision**s**" and "asks Dan for
+    # ruling**s**" -- because ``\b`` fails between "decision" and its plural. The two D31
+    # regressions caught it immediately, which is the only reason it is not shipping.
     "asks-him-for-a-decision": (
-        r"asks (?:him|Dan|the Director) [^.\n]{0,40}?(?:decision|ruling|approval)"
+        r"\basks (?:him|Dan|the Director) [^.\n]{0,40}?(?:decision|ruling|approval)s?\b"
     ),
-    "unchecked-checklist": r"^[ \t]*-[ \t]*\[ \].*Director",
+    "unchecked-checklist": r"^[ \t]*-[ \t]*\[ \].*\bDirector\b",
     "director-must-rule": (
-        r"Director (?:must|needs to|should) (?:rule|decide|choose|disposition)"
+        r"\bDirector (?:must|needs to|should) (?:rule|decide|choose|disposition)\b"
     ),
-    "awaiting": r"awaiting (?:Dan|the Director)",
+    "awaiting": r"\bawaiting (?:Dan|the Director)\b",
+    # --- D37/F-04: the shapes the escaped review record actually uses ---------------
+    # Each requires a requesting verb or a pending-state word next to the noun, which is
+    # the line between a member ASKING him for something and one CITING what he decided.
+    # Every trailing noun takes ``s?``: `\b` alone fails between a noun and its plural,
+    # which is how the D37 boundary pass briefly broke two markers that had worked.
+    "pending-his-action": (
+        r"\bpending (?:the )?director(?:'s)? "
+        r"(?:disposition|review|ruling|decision|judg[e]?ment|approval)s?\b"
+    ),
+    "needs-his-action": (
+        r"\b(?:need|needs|needed|requir\w+|await\w+)\b[^.\n]{0,20}?\b(?:a |the )?"
+        r"director(?:'s)? "
+        r"(?:disposition|ruling|decision|judg[e]?ment|attention|review|approval)s?\b"
+    ),
+    "for-his-attention": (
+        r"\bfor (?:the )?director(?:'s)? "
+        r"(?:attention|approval|disposition|review|judg[e]?ment|decision)s?\b"
+    ),
+    # ``question`` is deliberately NOT in this alternation: ``director-question`` already
+    # covers "is a Director question", and now that both are case-blind the two would be
+    # redundant. A marker that only ever fires where another already has is not a check.
+    "is-his-call": r"\bis a director (?:decision|call|judg[e]?ment)s?\b",
+    "his-call-to-make": (
+        r"\b(?:judg[e]?ment|decision|call|question|choice)\b[^.\n]{0,14}?"
+        r"\bfor (?:the )?director\b"
+    ),
 }
 
+#: ``re.I`` is the D37 fix; ``re.M`` is what the checklist marker's ``^`` needs.
 _COMPILED_MARKERS = {
-    label: re.compile(pattern, re.M) for label, pattern in DIRECTOR_ADDRESSED_MARKERS.items()
+    label: re.compile(pattern, re.I | re.M)
+    for label, pattern in DIRECTOR_ADDRESSED_MARKERS.items()
 }
 
 #: Members whose FUNCTION is to quote the Director, so a marker in them is the artifact
@@ -142,44 +193,105 @@ _COMPILED_MARKERS = {
 #: :func:`unknown_exclusions` exists to catch, one level out. The verification certificate
 #: is among the eight, which also spares this list an entry whose filename changes at
 #: every freeze and would go stale by construction.
-QUOTATION_ALLOWLIST: dict[str, str] = {
-    "SETTLED_DECISIONS.md": (
-        "the decision record itself. It quotes C10's own text about notes 'for Dan' and "
-        "what 'the Director must decide', and D30's table quotes the very line each newly "
-        "excluded report was judged on. A record of rulings must be able to state them."
+class _Exemption(NamedTuple):
+    """An allowlist entry: prose for a human, and a predicate the build actually trusts.
+
+    **D37/F-04.** ``STATE.md``'s reason ended *"and its value here is 'none'"* while the
+    shipped file carried ``F-01`` -- an exemption that read as reasoned and was resting on
+    a fact that had stopped being true. The prose could not notice, because prose does not
+    execute.
+
+    So every entry now carries ``holds(text) -> bool``, checked against the member's own
+    text at packaging time by :func:`false_premises`. The prose stays as the human-readable
+    reason; the predicate is the part that fails the build.
+
+    **The predicate asserts the CONCRETE thing the reason cites**, never merely "this member
+    contains a marker" -- that is true by construction for every entry (:func:`inert_allowlist`
+    already requires it), so it would pass always and tell nobody anything. A check whose
+    passing carries no information is the shape this project counts.
+    """
+
+    reason: str
+    premise: str
+    holds: Callable[[str], bool]
+
+
+def _all_awaiting_values_are_none(text: str) -> bool:
+    """Every ``awaiting the Director's status: closed`` value in the member reads ``none``.
+
+    The literal claim ``STATE.md``'s reason makes. Line 95 of the shipped file read
+    ``F-01`` and this returns False for it.
+    """
+    values = re.findall(
+        r"awaiting the Director's[^\n]*?status: closed[^\n]*?:\*\*\s*([^\n]+)", text
+    )
+    return bool(values) and all(v.strip().rstrip(".").lower() == "none" for v in values)
+
+
+QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
+    "SETTLED_DECISIONS.md": _Exemption(
+        reason=(
+            "the decision record itself. It quotes C10's own text about notes 'for Dan' "
+            "and what 'the Director must decide', and D30's table quotes the very line "
+            "each newly excluded report was judged on. A record of rulings must be able "
+            "to state them."
+        ),
+        premise="it still quotes both C10 fragments the reason names",
+        holds=lambda t: "for Dan" in t and "Director must decide" in t,
     ),
-    "STATE.md": (
-        "a status document with a standing field for what awaits the Director's "
-        "'status: closed'. Naming the field is not addressing him -- and its value here "
-        "is 'none'."
+    "STATE.md": _Exemption(
+        reason=(
+            "a status document with a standing field for what awaits the Director's "
+            "'status: closed'. Naming the field is not addressing him -- and its value "
+            "here is 'none'."
+        ),
+        premise="every 'awaiting the Director's status: closed' value reads 'none'",
+        holds=_all_awaiting_values_are_none,
     ),
-    "scripts/packet_exclusions.py": (
-        "this module, which quotes the reasons above. The predicted false positive: the "
-        "docstring warned that a filter over Director-addressed prose would flag the "
-        "filter, and on first measurement it was the only one of five hits that was not "
-        "genuine."
+    "scripts/packet_exclusions.py": _Exemption(
+        reason=(
+            "this module, which quotes the reasons above. The predicted false positive: "
+            "the docstring warned that a filter over Director-addressed prose would flag "
+            "the filter, and on first measurement it was the only one of five hits that "
+            "was not genuine."
+        ),
+        premise="its marker text sits inside its own exclusion reasons",
+        holds=lambda t: "asks him to disposition it" in t,
     ),
-    "tests/test_packet_exclusions.py": (
-        "the regressions for this module, whose fixtures must hold REAL marker shapes to "
-        "test detection of them -- a test that detects only obfuscated markers tests "
-        "nothing. Found by :func:`discover_director_addressed` refusing the D30 freeze on "
-        "its first run against a changed tree, which is the same false positive as the "
-        "module's, one level out: the test for the filter quotes what the filter detects."
+    "tests/test_packet_exclusions.py": _Exemption(
+        reason=(
+            "the regressions for this module, whose fixtures must hold REAL marker shapes "
+            "to test detection of them -- a test that detects only obfuscated markers "
+            "tests nothing. Found by :func:`discover_director_addressed` refusing the D30 "
+            "freeze on its first run against a changed tree, which is the same false "
+            "positive as the module's, one level out: the test for the filter quotes what "
+            "the filter detects."
+        ),
+        premise="its marker text sits inside the declared member-text fixtures",
+        holds=lambda t: "_MEMBER_TEXT" in t and "asks him to disposition it" in t,
     ),
     # --- added under D31, both because the widened vocabulary reached them ---------
-    "OTB-G003_dispositioned.md": (
-        "the dispositioned ledger, whose line 274 states the FINDING that the packet "
-        "contained files addressed to the Director -- it quotes the shape in order to "
-        "record that it was raised. A ledger that cannot describe a C10 finding cannot "
-        "disposition one."
+    "OTB-G003_dispositioned.md": _Exemption(
+        reason=(
+            "the dispositioned ledger, whose line 274 states the FINDING that the packet "
+            "contained files addressed to the Director -- it quotes the shape in order to "
+            "record that it was raised. A ledger that cannot describe a C10 finding cannot "
+            "disposition one."
+        ),
+        premise="it still states the finding about Director-addressed files",
+        holds=lambda t: "addressed to the Director" in t,
     ),
-    "00_GATE_BRIEF.md": (
-        "the brief, which quotes the Director's rulings throughout and -- at D31 -- "
-        "quotes the two wordings this round's widening was written to catch, in the "
-        "paragraph explaining why they were missed. It is clean under the OLD vocabulary "
-        "and fires only under the new one, which makes it the same class as this module "
-        "and its tests: a document that quotes what the filter detects, in order to "
-        "explain it."
+    "00_GATE_BRIEF.md": _Exemption(
+        reason=(
+            "the brief, which quotes the Director's rulings throughout and -- at D31 -- "
+            "quotes the two wordings this round's widening was written to catch, in the "
+            "paragraph explaining why they were missed. It is clean under the OLD "
+            "vocabulary and fires only under the new one, which makes it the same class "
+            "as this module and its tests: a document that quotes what the filter "
+            "detects, in order to explain it."
+        ),
+        premise="it quotes a Director ruling, which is why it carries the shape",
+        holds=lambda t: bool(re.search(r"\bD\d{2}\b", t)) and "Director" in t,
     ),
 }
 
@@ -259,6 +371,38 @@ def discover_director_addressed(
             line = text.splitlines()[line_no - 1].strip()
             findings.append((name, label, line_no, line))
     return findings
+
+
+def false_premises(members: Mapping[str, str]) -> list[tuple[str, str]]:
+    """Allowlist entries whose stated premise is FALSE for this packet. **Fatal.**
+
+    D37/F-04: an exemption is only as good as the fact it rests on, and ``STATE.md``'s
+    fact had stopped being true without anything noticing. Each entry's ``holds``
+    predicate is evaluated against the member's own text, and a false one must fail the
+    build -- not warn. An exemption resting on a false premise is not a weaker exemption,
+    it is an unjustified one.
+
+    **Only entries that are actually exempting something are checked.** If a member no
+    longer carries a marker, the exemption is doing no work and its premise is moot --
+    that is :func:`inert_allowlist`'s advisory business, not a build failure. Checking it
+    here too would make one stale entry fail twice under two different severities.
+
+    An entry with no predicate is itself a failure: an unchecked premise is what this
+    function exists to abolish, so a missing one cannot be the way to avoid the check.
+    """
+    bad: list[tuple[str, str]] = []
+    for name, entry in sorted(QUOTATION_ALLOWLIST.items()):
+        text = members.get(name)
+        if text is None:
+            continue
+        if not any(rx.search(text) for rx in _COMPILED_MARKERS.values()):
+            continue  # exempting nothing this round; inert_allowlist reports it
+        if not callable(getattr(entry, "holds", None)):
+            bad.append((name, "allowlisted with no checkable premise"))
+            continue
+        if not entry.holds(text):
+            bad.append((name, f"stated premise is false for this packet: {entry.premise}"))
+    return bad
 
 
 def inert_allowlist(members: Mapping[str, str]) -> list[tuple[str, str]]:

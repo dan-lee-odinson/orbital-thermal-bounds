@@ -34,6 +34,7 @@ from packet_exclusions import (  # noqa: E402
     QUOTATION_ALLOWLIST,
     discover_director_addressed,
     excluded_members,
+    false_premises,
     inert_allowlist,
     unknown_exclusions,
 )
@@ -318,8 +319,10 @@ def test_ordinary_members_never_fire():
 def test_every_allowlist_entry_is_named_with_a_reason_and_suppresses_something():
     """An exemption that exempts nothing reads as a decision and protects nothing."""
     assert QUOTATION_ALLOWLIST
-    for name, reason in QUOTATION_ALLOWLIST.items():
-        assert len(reason) > 40, f"{name} is allowlisted without a stated reason"
+    for name, entry in QUOTATION_ALLOWLIST.items():
+        assert len(entry.reason) > 40, f"{name} is allowlisted without a stated reason"
+        assert len(entry.premise) > 10, f"{name} has no stated checkable premise"
+        assert callable(entry.holds), f"{name} has no predicate; the premise is unchecked"
     assert inert_allowlist(dict(_MEMBER_TEXT)) == [], (
         "every allowlisted member must actually carry a marker; otherwise the entry is "
         "dead weight that looks like protection"
@@ -401,9 +404,141 @@ def test_the_sibling_ledger_is_not_allowlisted_because_it_does_not_fire():
     assert "OTB-G003-02_dispositioned.md" not in QUOTATION_ALLOWLIST
 
 
+#: **D37/F-04 §2.2: the STATE.md fixture is DERIVED, not written.**
+#:
+#: The old fixture hard-coded ``none`` as the awaiting-value, so a real non-``none``
+#: Director action could not make it differ -- and one had already shipped. This builds
+#: the member text from a value, so the same generator produces both the premise-true and
+#: the premise-false member and neither can be quietly special-cased.
+def _state_md(*awaiting_values: str) -> str:
+    """The shipped STATE.md shape, with whatever awaiting-values it is given."""
+    lines = ["# STATE", ""]
+    for value in awaiting_values:
+        lines += [
+            f"- **Built and verified, awaiting the Director's `status: closed`:** {value}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def test_witness_d37_a_lower_case_director_line_is_discovered():
+    """**Witness 1, in the escaped record's own words -- not a synthetic upper-case probe.**
+
+    ``verification/review-records/2026-07-25-s2-two-phase-evaporator.md`` sat inside the
+    packet saying two findings needed a ruling, and discovery reported zero unaccounted
+    members over all 199. Its lines are used verbatim here.
+
+    **Case-blindness alone would not have caught any of them**, and that is worth pinning:
+    every line below was measured to miss as-is, capitalised AND case-insensitively under
+    the old vocabulary. The shapes were missing, not just the casing.
+    """
+    escaped = {
+        "pending-his-action": "OPEN pending director disposition + Sol cross-model review",
+        "needs-his-action": "two findings below need a director ruling before S3",
+        "for-his-attention": "**Knock-on for director attention:** the registry entry",
+        "is-his-call": "Registry-level correction is a director decision, not a builder one.",
+        "his-call-to-make": "> **Judgment call for the director.** §2 of the handoff bars",
+    }
+    for label, line in escaped.items():
+        found = discover_director_addressed({"verification~s2-record.md": line})
+        assert found, f"the record's own line was not discovered: {line!r}"
+        assert label in {f[1] for f in found}, (
+            f"expected {label} on {line!r}, got {[f[1] for f in found]}"
+        )
+
+    # And upper case still works: the fix widened the vocabulary, it did not move it.
+    upper = discover_director_addressed({"m.md": "Two findings need a Director ruling"})
+    assert upper and upper[0][1] == "needs-his-action"
+
+
+def test_witness_d37_case_blindness_does_not_bleed_into_ordinary_words():
+    """The paired control for ``re.I``: a case-blind rule must not become a loose one.
+
+    Measured before the flag went on -- bare ``for Dan`` matches "waiting **for dan**ger"
+    under ``re.I``, and ``awaiting (?:Dan|...)`` matches "**awaiting dan**gerous". Trading
+    a false negative for a false positive would not be a fix.
+    """
+    for benign in (
+        "we waited for danger to pass",
+        "awaiting dangerous weather at the site",
+        "the bound is enforced per Director ruling D9",
+        "See Director ruling D14 for the admitted window.",
+        "director ruling 9.5 bands (gate 5)",
+    ):
+        assert discover_director_addressed({"ordinary.md": benign}) == [], (
+            f"{benign!r} is not addressed to anyone and must stay quiet"
+        )
+
+
+def test_witness_d37_the_fixture_is_derived_so_a_real_action_cannot_hide():
+    """**Witness 2: mutate the member text and discovery/premise must follow it.**
+
+    The old regression asserted against a hand-written ``none``. A fixture that cannot
+    differ from what it asserts is not a fixture, so the member text is generated from the
+    value and the same generator produces both cases.
+    """
+    clean = _state_md("none", "none")
+    dirty = _state_md("none", "F-01")
+
+    assert discover_director_addressed({"STATE.md": clean}) == []
+    assert discover_director_addressed({"STATE.md": dirty}) == []  # still allowlisted
+
+    assert false_premises({"STATE.md": clean}) == []
+    bad = false_premises({"STATE.md": dirty})
+    assert [n for n, _ in bad] == ["STATE.md"], (
+        "a real non-'none' Director action must make the allowlist premise false; the "
+        "hard-coded fixture could not notice one that had already shipped"
+    )
+    assert "premise is false" in bad[0][1]
+
+
+def test_witness_d37_a_false_allowlist_premise_is_fatal_not_advisory():
+    """**Witness 3: a false premise FAILS, and it fails differently from an inert entry.**
+
+    Two conditions that look similar and are not: an entry exempting nothing is advisory
+    (:func:`inert_allowlist`), an entry exempting something on a false premise is fatal
+    (:func:`false_premises`). Collapsing them would let a false premise ship as a warning.
+    """
+    def for_state(pairs):
+        return [p for p in pairs if p[0] == "STATE.md"]
+
+    dirty = _state_md("F-01")
+    assert false_premises({"STATE.md": dirty}), "false premise must be reported"
+    assert for_state(inert_allowlist({"STATE.md": dirty})) == [], (
+        "the entry IS suppressing a marker, so it is not inert -- only its premise is false"
+    )
+
+    # An entry whose member carries no marker is inert and NOT a premise failure.
+    quiet = "# STATE\n\nnothing outstanding.\n"
+    assert false_premises({"STATE.md": quiet}) == [], (
+        "an exemption doing no work has a moot premise; failing it here would make one "
+        "stale entry fail twice under two different severities"
+    )
+    assert for_state(inert_allowlist({"STATE.md": quiet})) == [
+        ("STATE.md", "in the packet but carries no marker; suppressing nothing")
+    ]
+
+
+def test_witness_d37_every_entry_carries_a_predicate_and_a_missing_one_is_fatal():
+    """An unchecked premise cannot be the way to avoid the premise check."""
+    import packet_exclusions
+
+    saved = dict(packet_exclusions.QUOTATION_ALLOWLIST)
+    try:
+        packet_exclusions.QUOTATION_ALLOWLIST["STATE.md"] = saved["STATE.md"]._replace(
+            holds=None
+        )
+        bad = packet_exclusions.false_premises({"STATE.md": _state_md("none")})
+    finally:
+        packet_exclusions.QUOTATION_ALLOWLIST.clear()
+        packet_exclusions.QUOTATION_ALLOWLIST.update(saved)
+
+    assert bad == [("STATE.md", "allowlisted with no checkable premise")]
+    assert callable(QUOTATION_ALLOWLIST["STATE.md"].holds)
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
-    """Seven shapes, each traceable to a case. A marker nothing triggers is not a check."""
-    assert len(DIRECTOR_ADDRESSED_MARKERS) == 7
+    """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
+    assert len(DIRECTOR_ADDRESSED_MARKERS) == 12
     probes = {
         "for-dan": "a knock-on finding for Dan to weigh",
         "director-question": "that is a Director question about the tool",
@@ -412,6 +547,12 @@ def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
         "unchecked-checklist": "- [ ] Director disposition of the findings",
         "director-must-rule": "the Director must decide the 20 bar point",
         "awaiting": "awaiting the Director's closure",
+        # D37: the shapes the escaped review record actually uses.
+        "pending-his-action": "OPEN pending director disposition + Sol cross-model review",
+        "needs-his-action": "two findings below need a director ruling before S3",
+        "for-his-attention": "Knock-on for director attention: the registry classification",
+        "is-his-call": "Registry-level correction is a director decision, not a builder one",
+        "his-call-to-make": "Judgment call for the director",
     }
     assert set(probes) == set(DIRECTOR_ADDRESSED_MARKERS)
     for label, probe in probes.items():
