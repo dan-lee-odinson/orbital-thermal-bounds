@@ -1351,6 +1351,138 @@ def _returns_unrelated() -> tuple[str, ...]:
     return ()
 
 
+# --- D34: the shapes the deleted depth bound used to hide or hang on ---------------
+
+
+@dataclass(frozen=True)
+class _Deep0:
+    """The bottom of a deliberately deep chain: this is where the points actually are."""
+
+    operating_points: tuple[C.OperatingPoint, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Deep1:
+    nested: _Deep0 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep2:
+    nested: _Deep1 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep3:
+    nested: _Deep2 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep4:
+    nested: _Deep3 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep5:
+    nested: _Deep4 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep6:
+    nested: _Deep5 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep7:
+    nested: _Deep6 | None = None
+
+
+@dataclass(frozen=True)
+class _Deep8:
+    nested: _Deep7 | None = None
+
+
+@dataclass(frozen=True)
+class _DeepCarrier:
+    """Ten field-hops above the operating points, and disclosing nothing.
+
+    The old bound's effective ceiling was six hops, so this whole type read as carrying
+    none -- the fail-open D34 deletes.
+    """
+
+    nested: _Deep8 | None = None
+
+    def render(self) -> str:
+        return "DEEP RESULT\n\nno disclosure here\n"
+
+
+@dataclass(frozen=True)
+class _DeepDisclosing(_DeepCarrier):
+    """Same depth, disclosing. The paired positive control."""
+
+    search_samples: int = 0
+
+    def render(self) -> str:
+        return "DEEP RESULT\n\n" + C.resolution_disclosure(self.search_samples) + "\n"
+
+
+@dataclass(frozen=True)
+class _CyclicCarrier:
+    """Holds operating points AND a field of its own type.
+
+    This is the shape that makes the ``_render_blank`` cycle guard load-bearing: it is
+    DISCOVERED (hops == 1), so the renderer is called on it.
+    """
+
+    operating_points: tuple[C.OperatingPoint, ...] = ()
+    nested: _CyclicCarrier | None = None
+    search_samples: int = 0
+
+    def render(self) -> str:
+        return "CYCLIC RESULT\n\n" + C.resolution_disclosure(self.search_samples) + "\n"
+
+
+@dataclass(frozen=True)
+class _Sibling:
+    """A leaf held twice over, to prove the cycle guard is path-based."""
+
+    operating_points: tuple[C.OperatingPoint, ...] = ()
+    label: str = ""
+
+
+@dataclass(frozen=True)
+class _TwoSiblings:
+    left: _Sibling | None = None
+    right: _Sibling | None = None
+    search_samples: int = 0
+
+    def render(self) -> str:
+        assert self.left is not None and self.right is not None, (
+            "a path-based guard must build BOTH siblings; a global visited-set would "
+            "blank the second and this render would fail"
+        )
+        return "TWO SIBLINGS\n\n" + C.resolution_disclosure(self.search_samples) + "\n"
+
+
+def _returns_deep_carrier() -> _DeepCarrier:
+    """Returns a carrier ten hops above its operating points, disclosing nothing."""
+    return _DeepCarrier()
+
+
+def _returns_deep_disclosing() -> _DeepDisclosing:
+    """Returns a carrier ten hops above its operating points, and discloses."""
+    return _DeepDisclosing()
+
+
+def _returns_cyclic_carrier() -> _CyclicCarrier:
+    """Returns a self-referential carrier."""
+    return _CyclicCarrier()
+
+
+def _returns_two_siblings() -> _TwoSiblings:
+    """Returns a carrier holding the same leaf type twice."""
+    return _TwoSiblings()
+
+
 def _module_with(**exports) -> types.SimpleNamespace:
     """A stand-in module exposing ``__all__``, so the rule can be run against anything."""
     return types.SimpleNamespace(__all__=sorted(exports), **exports)
@@ -1362,12 +1494,27 @@ _RESOLUTION_NARROWING = "this search can resolve"
 #: The disclosure a CONTAINING type must render. Same property, different carrier.
 _RESOLUTION_DISCLOSURE = "ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED"
 
-#: Depth guard for the type walk. Cycles are caught by ``seen``; this bounds pathology
-#: that is not a cycle, such as a deeply nested generic.
-_MAX_TYPE_DEPTH = 12
+#: **D34: there is no depth bound anywhere in this rule, and that is the fix.**
+#:
+#: ``_MAX_TYPE_DEPTH = 12`` used to guard both walks. Sol found that the rule FAILED OPEN
+#: at that boundary: ``_operating_point_hops`` returned ``None`` for depth exhaustion, and
+#: ``_resolution_surface`` reads ``None`` as "not a member" -- so a carrier deeper than the
+#: bound became a silent absence instead of a checked member. A guard whose failure mode is
+#: to quietly excuse the thing it guards is the shape this project keeps recording.
+#:
+#: The Director ruled the stronger branch: delete the bound rather than reclassify it. Both
+#: walks now terminate on a **cycle guard** instead -- a type already on the current path is
+#: not re-entered. That is sufficient, not merely convenient: the set of types is finite, so
+#: a path that cannot repeat a type is finite, and an annotation tree is finite in itself.
+#: The number could only ever truncate legitimate depth; the guard cannot.
+#:
+#: Measured before deleting it, because the bound's real reach was worse than reported:
+#: carriers at **7 field-hops and deeper read as absent**, not 12 (Sol) or 11 (the
+#: handoff's correction). Each hop through ``X | None`` spends two recursion levels, so the
+#: effective ceiling was about half the constant's face value.
 
 
-def _operating_point_hops(tp, *, seen: frozenset = frozenset(), depth: int = 0):
+def _operating_point_hops(tp, *, seen: frozenset = frozenset()):
     """**THE derivation.** Class-field hops from ``tp`` to an ``OperatingPoint``.
 
     ``0`` means the caller receives operating points directly -- possibly inside
@@ -1386,12 +1533,11 @@ def _operating_point_hops(tp, *, seen: frozenset = frozenset(), depth: int = 0):
     Two mechanisms wearing one name would survive that.
 
     Cycle guard: a type already on the path is not re-entered, so ``A`` holding a ``B``
-    holding an ``A`` terminates instead of recursing forever.
+    holding an ``A`` terminates instead of recursing forever. **It is the only bound**
+    (D34) -- see the note on the deleted depth limit above.
     """
     import typing
 
-    if depth > _MAX_TYPE_DEPTH:
-        return None
     if tp is None:
         return None
 
@@ -1403,7 +1549,7 @@ def _operating_point_hops(tp, *, seen: frozenset = frozenset(), depth: int = 0):
         for arg in typing.get_args(tp):
             if arg is Ellipsis or arg is type(None):
                 continue
-            h = _operating_point_hops(arg, seen=seen, depth=depth + 1)
+            h = _operating_point_hops(arg, seen=seen)
             if h is not None and (best is None or h < best):
                 best = h
         return best
@@ -1422,9 +1568,7 @@ def _operating_point_hops(tp, *, seen: frozenset = frozenset(), depth: int = 0):
             return None
         best = None
         for field in dataclasses.fields(tp):
-            h = _operating_point_hops(
-                hints.get(field.name), seen=seen | {tp}, depth=depth + 1
-            )
+            h = _operating_point_hops(hints.get(field.name), seen=seen | {tp})
             if h is not None and (best is None or h + 1 < best):
                 best = h + 1  # crossing a field boundary is the hop
         return best
@@ -1482,18 +1626,28 @@ def _render_blank(cls) -> str:
     so it has to appear even when every field is empty. A sample built from a healthy
     solve could hide a disclosure that is emitted only when there is something to
     disclose, which is precisely the suppression this is meant to forbid.
+
+    **D34: this walk is bounded by a cycle guard, and it MUST have one.** It used to share
+    ``_MAX_TYPE_DEPTH`` with the discovery walk, and the two uses were not equivalent --
+    there the number was redundant beside a cycle guard, here it was the ONLY thing
+    stopping infinite recursion. A self-referential carrier is reachable, not hypothetical:
+    a dataclass holding ``tuple[OperatingPoint, ...]`` **and a field of its own type** is
+    discovered as a carrier (the discovery cycle guard stops re-entry, it does not
+    disqualify the type), so this function is called on it. Deleting the number without
+    putting a guard here recurses until the interpreter stops it -- measured, not assumed.
+    ``seen`` is path-based, exactly as in the discovery walk: two independent fields of the
+    same type are both built, and only a type already on the current path is cut to
+    ``None``.
     """
     import typing
 
-    def zero(tp, depth=0):
-        if depth > _MAX_TYPE_DEPTH:
-            return None
+    def zero(tp, seen: frozenset):
         origin = typing.get_origin(tp)
         if origin in (tuple, list, set, frozenset):
             return origin()
         if origin is not None:
             args = [a for a in typing.get_args(tp) if a is not type(None)]
-            return zero(args[0], depth + 1) if args else None
+            return zero(args[0], seen) if args else None
         if tp is bool:
             return False
         if tp is int:
@@ -1505,14 +1659,17 @@ def _render_blank(cls) -> str:
         if isinstance(tp, type) and issubclass(tp, enum.Enum):
             return next(iter(tp))
         if isinstance(tp, type) and dataclasses.is_dataclass(tp):
-            return build(tp, depth + 1)
+            if tp in seen:
+                return None  # THE cycle guard: this type is already on the path
+            return build(tp, seen)
         return None
 
-    def build(cls_, depth=0):
+    def build(cls_, seen: frozenset = frozenset()):
+        seen = seen | {cls_}
         obj = object.__new__(cls_)
         hints = typing.get_type_hints(cls_)
         for field in dataclasses.fields(cls_):
-            object.__setattr__(obj, field.name, zero(hints.get(field.name), depth))
+            object.__setattr__(obj, field.name, zero(hints.get(field.name), seen))
         return obj
 
     return build(cls).render()
@@ -1665,6 +1822,101 @@ def test_f02_d32_the_walk_terminates_on_a_cycle():
     """A self-referential result type must not hang the derivation."""
     assert _operating_point_hops(_CyclicResult) == 1
     assert _operating_point_hops(_CyclicNoPoints) is None
+
+
+def test_f02_d34_a_carrier_beyond_the_old_depth_bound_is_a_member_and_is_checked():
+    """**D34: the rule no longer fails open at a depth boundary.**
+
+    ``_MAX_TYPE_DEPTH`` made ``_operating_point_hops`` return ``None`` for exhaustion, and
+    ``_resolution_surface`` reads ``None`` as "not a member" -- so a carrier past the bound
+    was silently excused rather than checked. ``_DeepCarrier`` sits **10 field-hops** down,
+    comfortably past the old effective ceiling of six, and it must now BOTH join the
+    surface and be held to the disclosure.
+    """
+    assert _operating_point_hops(_DeepCarrier) == 10, (
+        "the depth of the chain is the point: under the old bound this was None"
+    )
+
+    silent = _module_with(returns_deep_carrier=_returns_deep_carrier)
+    assert [n for n, _, _ in _resolution_surface(silent)] == ["returns_deep_carrier"]
+    violations = _resolution_violations(silent)
+    assert len(violations) == 1 and "omits the resolution disclosure" in violations[0], (
+        "a deep carrier must be CHECKED, not merely discovered -- failing open at the "
+        "boundary was the finding"
+    )
+
+    ok = _module_with(returns_deep_disclosing=_returns_deep_disclosing)
+    assert _resolution_violations(ok) == []
+
+
+def test_f02_d34_a_self_referential_carrier_renders_instead_of_recursing_forever():
+    """**The site-1489 regression. It fails if the cycle guard is removed.**
+
+    A carrier that holds operating points AND a field of its own type is discovered --
+    ``_operating_point_hops`` returns 1, because the discovery cycle guard stops re-entry
+    without disqualifying the type -- so ``_render_blank`` is called on it. Before D34 the
+    only thing stopping that from recursing forever was the depth number. Deleting the
+    number without giving this walk a cycle guard raises ``RecursionError`` here.
+    """
+    assert _operating_point_hops(_CyclicCarrier) == 1, "it must really be a carrier"
+
+    rendered = _render_blank(_CyclicCarrier)
+    assert _RESOLUTION_DISCLOSURE in rendered
+
+    # And the whole rule runs over it without hanging.
+    module = _module_with(returns_cyclic_carrier=_returns_cyclic_carrier)
+    assert _resolution_violations(module) == []
+
+
+def test_f02_d34_the_discovery_cycle_guard_is_witnessed_by_its_cost():
+    """**The discovery guard's removal is invisible in the RESULT, so witness the cost.**
+
+    Found while checking that the D34 guards were actually witnessed, and it is worth
+    stating plainly: deleting ``seen | {tp}`` from :func:`_operating_point_hops` changes
+    no answer. The walk recurses until ``typing.get_type_hints`` raises ``RecursionError``,
+    the traversal's broad ``except Exception`` swallows it and returns ``None`` for that
+    branch -- and on a carrier whose points are reachable by a shorter field, the shorter
+    field has already supplied the answer. Result identical, guard gone.
+
+    That is the same shape as the ``None``-means-two-things limb recorded as outstanding
+    (Sol's remaining proposal, not struck by D34 and deliberately not built here): a broad
+    except turning one outcome into another silently. It is disclosed rather than fixed.
+
+    What CAN be witnessed without touching that except is the cost. With the guard the
+    cyclic walk resolves the type once; without it, it resolves until the stack ends.
+    """
+    import typing
+
+    real = typing.get_type_hints
+    calls = []
+
+    def counting(*args, **kwargs):
+        calls.append(1)
+        return real(*args, **kwargs)
+
+    typing.get_type_hints = counting
+    try:
+        assert _operating_point_hops(_CyclicResult) == 1
+    finally:
+        typing.get_type_hints = real
+
+    assert len(calls) <= 4, (
+        f"the cyclic walk resolved {len(calls)} type-hint sets; with the cycle guard it "
+        "needs a handful. A large number means the guard is gone and the recursion is "
+        "being stopped by the stack limit instead"
+    )
+
+
+def test_f02_d34_two_independent_fields_of_one_type_are_both_built():
+    """The cycle guard is PATH-based, not a global visited-set.
+
+    A global set would blank the second of two sibling fields of the same type, which
+    would be a new silent-absence defect in the fix for a silent-absence defect.
+    """
+    rendered = _render_blank(_TwoSiblings)
+    assert _RESOLUTION_DISCLOSURE in rendered
+    built = _module_with(returns_two_siblings=_returns_two_siblings)
+    assert _resolution_violations(built) == []
 
 
 def test_f04_the_docstring_no_longer_claims_completeness():
