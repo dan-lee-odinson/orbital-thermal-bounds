@@ -97,6 +97,29 @@ DIRECTOR_ADDRESSED_MEMBERS: dict[str, str] = {
         "line 343 carries the same unchecked checklist item naming his action, closing a "
         "findings report addressed to the review cycle he owns."
     ),
+    # --- added under D38: surfaced by the D37 vocabulary, ruled member by member -----
+    # Each reason is the LINE that makes the member qualify, not a summary of it.
+    #
+    # **Three of the five D38 named are here. Two are not, and that is reported rather
+    # than quietly done**: excluding `verification/review-records/2026-07-25-s2-two-phase-
+    # evaporator.md` or `src/orbital_thermal/visual_api.py` breaks the packet's own suite,
+    # measured by reconstructing a tree without each. That is the defect `verify_packet.py`
+    # exists to catch and the one this test module already carries a scar from.
+    "docs/development/phase-b-stage-2-scoping-note.md": (
+        "line 7 routes the note to him before work may start: 'for director review; no S1 "
+        "code proceeds until this note is approved'. A scoping note that gates the build "
+        "on his approval is addressed to him, not to the reviewer."
+    ),
+    "verification/mastery-ledger/index.md": (
+        "line 76 holds a ledger entry open on his action: 'Two items need **director "
+        "disposition** before this entry'. The ledger is a record for the reviewer; a line "
+        "inside it waiting on the Director is not."
+    ),
+    "external_models/biswas_suncatcher/author_clarifications.md": (
+        "line 43 conditions publication on him: 'Any public-documentation summary of these "
+        "values requires the project director's approval'. A standing request for his "
+        "approval, sitting in a vendored-source clarification file."
+    ),
 }
 
 #: The marker shapes, each traceable to what `OTB-G002` F-05 was actually raised on.
@@ -216,6 +239,44 @@ class _Exemption(NamedTuple):
     holds: Callable[[str], bool]
 
 
+#: The Director-addressed sentences the registry module is known to carry.
+#:
+#: **Keyed on the sentences, never on their line numbers.** A line number moves the instant
+#: anything above it changes, so a premise keyed to one would go false on an unrelated edit
+#: -- a false alarm that trains people to ignore the real one, which is the hard-coded-commit
+#: shape one level out. A regression inserts blank lines above and requires the premise to
+#: survive.
+#:
+#: **There are TWO, and the ruling was written believing there was one.** The second, at
+#: line 396 -- *"it is a finding for director disposition, not a defect this build is
+#: authorised to resolve"* -- was invisible to the evidence the ruling rests on, because
+#: that scan reports the first match per marker and both lines fire the same marker. So the
+#: premise "its only Director-addressed line is the one at 296" was false before it was
+#: written. Both are enumerated here with their text; a THIRD still fails the build, which
+#: is the falsifiability the exemption was granted for.
+_REGISTRY_KNOWN_ADDRESSES = (
+    "is a registry-level question for director disposition",
+    "it is a finding for director disposition",
+)
+
+
+def _only_known_registry_lines_address_him(text: str) -> bool:
+    """Every Director-addressed line in the registry module is one of the known sentences.
+
+    Falsifiable in the direction that matters: if the module grows another address, some
+    marker match lands on a line carrying neither known sentence and the exemption fails
+    the build. The 27 provenance citations of "Director ruling D9" match no marker at all,
+    so they neither excuse nor trigger anything here.
+    """
+    lines = text.splitlines()
+    for rx in _COMPILED_MARKERS.values():
+        for match in rx.finditer(text):
+            line = lines[text.count("\n", 0, match.start())]
+            if not any(known in line for known in _REGISTRY_KNOWN_ADDRESSES):
+                return False
+    return True
+
+
 def _all_awaiting_values_are_none(text: str) -> bool:
     """Every ``awaiting the Director's status: closed`` value in the member reads ``none``.
 
@@ -292,6 +353,19 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="it quotes a Director ruling, which is why it carries the shape",
         holds=lambda t: bool(re.search(r"\bD\d{2}\b", t)) and "Director" in t,
+    ),
+    # --- added under D38: the artifact stays in its own review packet ---------------
+    "src/orbital_thermal/registry/two_phase.py": _Exemption(
+        reason=(
+            "the registry module the finding at line 296 is ABOUT: 'that is a "
+            "registry-level question for director disposition, not for this build'. "
+            "Excluding it would drop the artifact from the packet a reviewer must review "
+            "-- and the Director declined the alternative of rewording the line, because "
+            "editing it moves the src/ tree object off f36aab28 after seven unmoved "
+            "commits, which is the statement every packet since 44d5b02 rests on."
+        ),
+        premise="every Director-addressed line in it is one of the two known sentences",
+        holds=_only_known_registry_lines_address_him,
     ),
 }
 

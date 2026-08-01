@@ -68,6 +68,27 @@ _PACKET_CANDIDATES = (
     "OTB-G002_FINDINGS_REPORT.md",
     "OTB-G001-FIXES_PACKAGING_REPORT.md",
     "OTB-G003_S4_SCOPE_PROPOSAL.md",
+    # D38: the three the Director ruled excluded that can be excluded.
+    "docs/development/phase-b-stage-2-scoping-note.md",
+    "verification/mastery-ledger/index.md",
+    "external_models/biswas_suncatcher/author_clarifications.md",
+)
+
+#: The registry module's real Director-addressed lines, in a stand-in with its shape.
+#:
+#: Both are present because the module carries both -- the ruling's premise named only the
+#: first, and the second was invisible to a scan that reports one match per marker.
+_REGISTRY_MEMBER = (
+    '"""Two-phase registry."""\n'
+    "\n"
+    "# Bound enforced per Director ruling D9.\n"
+    "# Director ruling D9 is the basis for the de-ranking below.\n"
+    "# See Director ruling D14 for the admitted window.\n"
+    "\n"
+    '        "that is a registry-level question for director disposition, not for this build."\n'
+    "\n"
+    "# not buried in prose; it is a finding for director disposition, not a defect this\n"
+    "# build is authorised to resolve by changing a director ruling.\n"
 )
 
 #: Member text for the discovery checks, written out rather than read from anywhere.
@@ -85,12 +106,10 @@ _MEMBER_TEXT: dict[str, str] = {
         "`xfail` is a Director question about the tool, not something a build can\n"
         "resolve.\n"
     ),
-    "src/orbital_thermal/registry/two_phase.py": (
-        '"""Two-phase registry."""\n\n'
-        "# Bound enforced per Director ruling D9.\n"
-        "# Director ruling D9 is the basis for the de-ranking below.\n"
-        "# See Director ruling D14 for the admitted window.\n"
-    ),
+    # D38: the REAL shape -- provenance citations AND both Director-addressed lines, so
+    # the exemption added for this member is exercised rather than merely declared. The
+    # provenance-only control moved to a name nothing exempts.
+    "src/orbital_thermal/registry/two_phase.py": _REGISTRY_MEMBER,
     "scripts/packet_exclusions.py": (
         '"""C10 at packaging time."""\n\n'
         'REASONS = {"OTB-G001_BUILD_REPORT.md": "a build report addressed to the '
@@ -293,16 +312,21 @@ def test_witness_3_negative_control_provenance_citations_do_not_fire():
     The rejected design -- a sweep for "Director" -- would delete the registry to protect
     the packet. This is the control that keeps the marker set narrow.
     """
-    members = dict(_MEMBER_TEXT)
-    registry = "src/orbital_thermal/registry/two_phase.py"
-
-    assert members[registry].count("Director ruling") > 2
-    names = {n for n, _, _, _ in discover_director_addressed(members)}
-    assert registry not in names, (
+    # **Deliberately NOT the allowlisted name.** Under D38 the registry module carries an
+    # exemption, so asking discovery about it would answer "quiet" because it is
+    # allowlisted rather than because provenance does not fire -- the control would pass
+    # for the wrong reason and stop being a control. The same bytes are put under a name
+    # nothing exempts, so genuine non-firing is what is measured.
+    provenance_only = "\n".join(
+        line for line in _REGISTRY_MEMBER.splitlines()
+        if "director disposition" not in line.lower()
+    )
+    assert provenance_only.count("Director ruling") > 2
+    assert discover_director_addressed({"src/some/other_registry.py": provenance_only}) == [], (
         "a provenance citation must not fire; an exclusion that cannot tell citing the "
         "Director from addressing him would be worse than none"
     )
-    assert registry not in DIRECTOR_ADDRESSED_MEMBERS
+    assert "src/orbital_thermal/registry/two_phase.py" not in DIRECTOR_ADDRESSED_MEMBERS
 
 
 def test_the_assembled_set_is_clean_once_the_d30_four_are_enumerated():
@@ -534,6 +558,84 @@ def test_witness_d37_every_entry_carries_a_predicate_and_a_missing_one_is_fatal(
 
     assert bad == [("STATE.md", "allowlisted with no checkable premise")]
     assert callable(QUOTATION_ALLOWLIST["STATE.md"].holds)
+
+
+def test_witness_d38_each_newly_excluded_member_is_dropped_for_its_stated_reason():
+    """**Witness 1: the pair, not the name.** A name with no evidence is what the
+    enumeration exists not to be, so the reason must carry the qualifying line."""
+    dropped = dict(excluded_members(_assembled()))
+    expected = {
+        "docs/development/phase-b-stage-2-scoping-note.md": "no S1 code proceeds",
+        "verification/mastery-ledger/index.md": "director disposition",
+        "external_models/biswas_suncatcher/author_clarifications.md": "requires the project",
+    }
+    for member, quoted in expected.items():
+        assert member in dropped, f"{member} was ruled excluded and is not dropped"
+        assert quoted in dropped[member], (
+            f"{member}'s reason must quote the line that makes it qualify, got "
+            f"{dropped[member]!r}"
+        )
+        assert len(dropped[member]) > 40
+
+
+def test_witness_d38_the_registry_premise_fails_on_another_address():
+    """**Witness 2: green under this mutation would mean the predicate is decorative.**"""
+    key = "src/orbital_thermal/registry/two_phase.py"
+    assert false_premises({key: _REGISTRY_MEMBER}) == []
+
+    grown = _REGISTRY_MEMBER + "\n# The 20 bar point is a director decision, not ours.\n"
+    bad = false_premises({key: grown})
+    assert [n for n, _ in bad] == [key], (
+        "a module that grows another Director-addressed line must fail the exemption; "
+        "an exemption that cannot go false is not falsifiable"
+    )
+
+
+def test_witness_d38_the_registry_premise_survives_an_unrelated_edit():
+    """**Witness 3: the line-number hazard, regressed.**
+
+    Keying on line 296 would go false the moment anything above it changed -- a false
+    alarm on an unrelated edit, which is the hard-coded-commit shape one level out. The
+    premise is keyed on the sentences, so inserting lines above must not disturb it.
+    """
+    key = "src/orbital_thermal/registry/two_phase.py"
+    lines = _REGISTRY_MEMBER.splitlines(True)
+    index = next(i for i, line in enumerate(lines) if "registry-level question" in line)
+    shifted = "".join(lines[:index] + ["\n"] * 12 + lines[index:])
+
+    assert "registry-level question" in shifted
+    assert shifted.splitlines().index(
+        next(x for x in shifted.splitlines() if "registry-level question" in x)
+    ) == index + 12, "the line really did move"
+    assert false_premises({key: shifted}) == [], (
+        "an unrelated edit above the line must not falsify the premise"
+    )
+
+
+def test_witness_d38_the_provenance_citations_still_stay_quiet():
+    """**Witness 4: the standing control.** 'Director ruling D9' is the artifact working."""
+    key = "src/orbital_thermal/registry/two_phase.py"
+    assert _REGISTRY_MEMBER.count("Director ruling") == 3
+
+    provenance_only = "\n".join(
+        line for line in _REGISTRY_MEMBER.splitlines()
+        if "director disposition" not in line.lower()
+    )
+    assert discover_director_addressed({key: provenance_only}) == [], (
+        "a module that only CITES rulings must not fire at all; an exclusion that could "
+        "not tell citing from addressing would delete the artifact to protect the packet"
+    )
+
+
+def test_witness_d38_the_registry_module_is_exempted_not_excluded():
+    """The artifact stays in its own review packet -- and is not in the drop list."""
+    key = "src/orbital_thermal/registry/two_phase.py"
+    assert key in QUOTATION_ALLOWLIST
+    assert key not in DIRECTOR_ADDRESSED_MEMBERS
+    assert key not in {p for p, _ in excluded_members(_assembled() + [key])}
+    assert discover_director_addressed({key: _REGISTRY_MEMBER}) == [], (
+        "the exemption must actually silence it, or the build fails on the artifact"
+    )
 
 
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
