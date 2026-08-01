@@ -638,6 +638,169 @@ def test_witness_d38_the_registry_module_is_exempted_not_excluded():
     )
 
 
+#: A stand-in for the S2 review record carrying all SEVEN of its addressed lines.
+#:
+#: Seven, because ``rx.search`` shows five: lines 27 and 217 each fire a marker another
+#: line already fired, so a fixture built the way the evidence was built would be missing
+#: exactly the two that make the point.
+_S2_MEMBER = "\n".join(
+    (
+        "OPEN pending director disposition + Sol cross-model review. No cross-model",
+        "review is mandatory at S2.",
+        "",
+        "- **Disposition:** **pending director review.** `main` untouched; no tag.",
+        "",
+        "> **Judgment call for the director.** The handoff bars implementing from a",
+        "> secondary source.",
+        "",
+        "## Findings requiring director disposition",
+        "",
+        "**Knock-on for director attention:** this also puts the registry's",
+        "classification in question. Do not touch it.",
+        # Unwrapped, as line 178 of the real record is: a fragment that spans a line
+        # break cannot be found on any single line, and the first draft of this fixture
+        # wrapped it -- which the premise caught immediately.
+        "touch it. **Registry-level correction is a director decision, not a builder one.**",
+        "",
+        "**Not closable by the builder.** Requires: (i) director disposition of **F1**",
+        "and **F2**; (ii) Sol's re-review.",
+        "",
+        "Ordinary prose citing Director ruling D9 as provenance, which must not fire.",
+    )
+) + "\n"
+
+_S2_KEY = "verification/review-records/2026-07-25-s2-two-phase-evaporator.md"
+_VISUAL_KEY = "src/orbital_thermal/visual_api.py"
+_VISUAL_MEMBER = (
+    '"""Visual API."""\n\n'
+    "STATUS = {\n"
+    '    "status": (\n'
+    '        "Author cross-check is source-author review, not independent external "\n'
+    '        "validation. Public documentation requires project-director approval."\n'
+    "    ),\n"
+    "}\n"
+)
+
+
+#: Registered into the member set so the two D39 exemptions are EXERCISED by
+#: :func:`inert_allowlist` and :func:`false_premises` rather than merely declared. An
+#: allowlist entry whose member never appears in any fixture is an entry nothing tests.
+_MEMBER_TEXT[_VISUAL_KEY] = _VISUAL_MEMBER
+_MEMBER_TEXT[_S2_KEY] = _S2_MEMBER
+
+
+def test_witness_d39_the_new_premises_hold_and_fail_on_one_more_address():
+    """**Witness 1: an exemption that cannot go false is not falsifiable.**"""
+    assert false_premises({_S2_KEY: _S2_MEMBER, _VISUAL_KEY: _VISUAL_MEMBER}) == []
+
+    grown_s2 = _S2_MEMBER + "\nAn eighth item needs a director ruling before S7.\n"
+    assert [n for n, _ in false_premises({_S2_KEY: grown_s2})] == [_S2_KEY]
+
+    grown_visual = _VISUAL_MEMBER + "\n# The axis choice is a director decision, not ours.\n"
+    assert [n for n, _ in false_premises({_VISUAL_KEY: grown_visual})] == [_VISUAL_KEY]
+
+
+def test_witness_d39_a_new_address_reusing_known_wording_is_still_caught():
+    """The first draft keyed a line on the MARKER's wording and this slipped through.
+
+    ``is a director decision`` is what the marker matches, so keying line 178 on it let a
+    fresh eighth address using those same words pass. A key that a new instance of the
+    thing satisfies is not a key. Every fragment is line-distinctive now, and the five
+    attacks below all reuse wording that is already present somewhere in the member.
+    """
+    for attack in (
+        "The 20 bar point is a director decision, not ours.",
+        "S5 is pending director review before any build proceeds.",
+        "New item for director attention: the bore bound.",
+        "Items requiring director disposition: three of them.",
+        "Judgment call for the director on eta_pump.",
+    ):
+        grown = _S2_MEMBER + "\n" + attack + "\n"
+        assert [n for n, _ in false_premises({_S2_KEY: grown})] == [_S2_KEY], (
+            f"an eighth address reusing known wording slipped through: {attack!r}"
+        )
+
+
+def test_witness_d39_the_new_premises_survive_unrelated_edits():
+    """**Witness 2: the line-number hazard, for both new members.**"""
+    shifted_s2 = "\n" * 25 + _S2_MEMBER
+    shifted_visual = "\n" * 25 + _VISUAL_MEMBER
+    assert false_premises({_S2_KEY: shifted_s2, _VISUAL_KEY: shifted_visual}) == []
+
+    appended = _S2_MEMBER + "\n" + ("Ordinary prose about ammonia viscosity. " * 20) + "\n"
+    assert false_premises({_S2_KEY: appended}) == []
+
+    # Deleting one of his lines is an improvement, not a build failure: subset, not equality.
+    trimmed = "\n".join(
+        line for line in _S2_MEMBER.splitlines()
+        if "Knock-on for director attention" not in line
+    )
+    assert false_premises({_S2_KEY: trimmed}) == []
+
+
+def test_witness_d39_false_premise_and_inert_stay_distinguishable():
+    """**Witness 3: the two conditions must not collapse into one severity.**"""
+    grown = _S2_MEMBER + "\nAn eighth item needs a director ruling before S7.\n"
+    assert [n for n, _ in false_premises({_S2_KEY: grown})] == [_S2_KEY]
+    assert [n for n, _ in inert_allowlist({_S2_KEY: grown}) if n == _S2_KEY] == []
+
+    quiet = "# S2 record\n\nNothing outstanding.\n"
+    assert false_premises({_S2_KEY: quiet}) == []
+    assert [p for p in inert_allowlist({_S2_KEY: quiet}) if p[0] == _S2_KEY] == [
+        (_S2_KEY, "in the packet but carries no marker; suppressing nothing")
+    ]
+
+
+def test_witness_d39_a_search_built_premise_would_fail_against_the_real_seven():
+    """**Witness 4: today's error, encoded so the next person cannot repeat it.**
+
+    ``discover_director_addressed`` uses ``rx.search`` -- one match per marker per member.
+    Lines 27 and 217 each fire a marker another line already fired, so a premise built
+    from that view enumerates FIVE sentences and is false against the real seven. D38's
+    premise was built exactly that way, one member over, and was false on arrival.
+    """
+    import re
+
+    import packet_exclusions as pe
+
+    # What `search` shows: first match per marker. This is how the evidence was made.
+    search_view = {
+        m.group(0)
+        for rx in pe._COMPILED_MARKERS.values()
+        if (m := rx.search(_S2_MEMBER)) is not None
+    }
+    finditer_view = {
+        m.group(0)
+        for rx in pe._COMPILED_MARKERS.values()
+        for m in rx.finditer(_S2_MEMBER)
+    }
+    assert len(search_view) < len(finditer_view), (
+        "if these agreed there would be no defect to encode"
+    )
+
+    # Build the premise the way the evidence was built: from the lines `search` reveals.
+    lines = _S2_MEMBER.splitlines()
+    search_lines = sorted(
+        {_S2_MEMBER.count("\n", 0, rx.search(_S2_MEMBER).start())
+         for rx in pe._COMPILED_MARKERS.values() if rx.search(_S2_MEMBER)}
+    )
+    search_fragments = tuple(lines[i].strip() for i in search_lines)
+    finditer_lines = sorted(
+        {_S2_MEMBER.count("\n", 0, m.start())
+         for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(_S2_MEMBER)}
+    )
+    assert len(search_fragments) < len(finditer_lines), (
+        f"search saw {len(search_fragments)} lines, finditer saw {len(finditer_lines)}"
+    )
+
+    assert not pe._addresses_only(search_fragments)(_S2_MEMBER), (
+        "a premise built from the search view MUST be false against the real member -- "
+        "that is the whole defect, and this is the regression that encodes it"
+    )
+    assert pe._addresses_only(tuple(lines[i].strip() for i in finditer_lines))(_S2_MEMBER)
+    assert re.search(r"director", _S2_MEMBER, re.I)
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
     """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
     assert len(DIRECTOR_ADDRESSED_MARKERS) == 12

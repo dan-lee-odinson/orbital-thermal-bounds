@@ -259,22 +259,60 @@ _REGISTRY_KNOWN_ADDRESSES = (
     "it is a finding for director disposition",
 )
 
+#: `visual_api.py`'s single address: a standing documentation-policy statement.
+_VISUAL_API_KNOWN_ADDRESSES = ("Public documentation requires project-director approval",)
 
-def _only_known_registry_lines_address_him(text: str) -> bool:
-    """Every Director-addressed line in the registry module is one of the known sentences.
+#: The S2 review record's **seven** addresses -- the member that escaped every sweep.
+#:
+#: **Seven, not five.** ``discover_director_addressed`` uses ``rx.search`` -- one match per
+#: marker per member -- so lines 27 and 217 were invisible: each fires a marker another
+#: line had already fired. A premise built from that view would have been false on
+#: arrival, exactly as D38's was one member over. These come from ``finditer``.
+#:
+#: **Each fragment is LINE-distinctive, not the marker's own wording**, and that is not a
+#: stylistic preference. The first draft keyed line 178 on ``is a director decision`` --
+#: the marker phrase itself -- and a new eighth address using those same words passed the
+#: check. A key that a fresh instance of the thing satisfies is not a key. Re-keyed with
+#: per-line context and attacked with eight different eighth-addresses, five of them
+#: deliberately reusing known wording: all eight are caught.
+_S2_RECORD_KNOWN_ADDRESSES = (
+    "OPEN pending director disposition + Sol cross-model review",
+    "**Disposition:** **pending director review.**",
+    "**Judgment call for the director.**",
+    "## Findings requiring director disposition",
+    "**Knock-on for director attention:**",
+    "Registry-level correction is a director decision, not a builder one",
+    "Requires: (i) director disposition of",
+)
 
-    Falsifiable in the direction that matters: if the module grows another address, some
-    marker match lands on a line carrying neither known sentence and the exemption fails
-    the build. The 27 provenance citations of "Director ruling D9" match no marker at all,
-    so they neither excuse nor trigger anything here.
+
+def _addresses_only(known: tuple[str, ...]) -> Callable[[str], bool]:
+    """Build the predicate: every Director-addressed line carries a known sentence.
+
+    One mechanism for all three exempted members, so there is one thing to witness rather
+    than three that could drift apart.
+
+    **Subset, not equality, and deliberately so.** A member that GAINS an address fails --
+    that is the property the exemption is granted on. A member that LOSES one still holds:
+    deleting text addressed to the Director is an improvement, and failing the build for it
+    would be a false alarm that trains people to ignore the real one.
+
+    Keyed on the sentences, never on line numbers. Measured against the real S2 record:
+    twenty-five blank lines inserted at the top, a long unrelated paragraph appended, an
+    address deleted, and a full reflow to 88 columns all leave it holding; eight different
+    new addresses are all caught.
     """
-    lines = text.splitlines()
-    for rx in _COMPILED_MARKERS.values():
-        for match in rx.finditer(text):
-            line = lines[text.count("\n", 0, match.start())]
-            if not any(known in line for known in _REGISTRY_KNOWN_ADDRESSES):
-                return False
-    return True
+
+    def holds(text: str) -> bool:
+        lines = text.splitlines()
+        for rx in _COMPILED_MARKERS.values():
+            for match in rx.finditer(text):
+                line = lines[text.count("\n", 0, match.start())].lower()
+                if not any(fragment.lower() in line for fragment in known):
+                    return False
+        return True
+
+    return holds
 
 
 def _all_awaiting_values_are_none(text: str) -> bool:
@@ -365,7 +403,32 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
             "commits, which is the statement every packet since 44d5b02 rests on."
         ),
         premise="every Director-addressed line in it is one of the two known sentences",
-        holds=_only_known_registry_lines_address_him,
+        holds=_addresses_only(_REGISTRY_KNOWN_ADDRESSES),
+    ),
+    # --- added under D39: allowlisted rather than excluded, because dropping either
+    # breaks the packet's own suite -- measured by reconstruction, and the Director
+    # ruled on the measurement rather than on the reading.
+    "src/orbital_thermal/visual_api.py": _Exemption(
+        reason=(
+            "line 874 is a standing documentation-policy statement, not a live question: "
+            "'Public documentation requires project-director approval.' Excluding it "
+            "removes a source module from the packet and the shipped suite stops at "
+            "collection -- ImportError in tests/test_visual_api.py, zero tests run."
+        ),
+        premise="its only Director-addressed line is the documentation-policy sentence",
+        holds=_addresses_only(_VISUAL_API_KNOWN_ADDRESSES),
+    ),
+    "verification/review-records/2026-07-25-s2-two-phase-evaporator.md": _Exemption(
+        reason=(
+            "the record that escaped every sweep before D37, and the reason F-04 exists. "
+            "Excluding it fails two tests that require a real review record on disk -- "
+            "test_sibling_f05_a_real_review_record_is_accepted and "
+            "test_f10_the_migration_path_is_explicit_and_requires_a_review_record. It is "
+            "a historical record of a review, and its Director-addressed lines are what "
+            "it is a record OF."
+        ),
+        premise="every Director-addressed line in it is one of the seven known sentences",
+        holds=_addresses_only(_S2_RECORD_KNOWN_ADDRESSES),
     ),
 }
 
