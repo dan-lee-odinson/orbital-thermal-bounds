@@ -434,13 +434,28 @@ def test_the_sibling_ledger_is_not_allowlisted_because_it_does_not_fire():
 #: Director action could not make it differ -- and one had already shipped. This builds
 #: the member text from a value, so the same generator produces both the premise-true and
 #: the premise-false member and neither can be quietly special-cased.
-def _state_md(*awaiting_values: str) -> str:
-    """The shipped STATE.md shape, with whatever awaiting-values it is given."""
+def _state_md(*awaiting_values: str, extra: str = "") -> str:
+    """The shipped STATE.md shape, with whatever awaiting-values it is given.
+
+    **D41 changed what falsifies, not how the fixture is built.** F-04 §2.2's clause -- the
+    fixture derives from the member shape so a real Director action cannot hide behind a
+    hand-written example -- is untouched: the rows are still generated from the values
+    passed in, and the values are still free to be anything a real ledger would produce.
+
+    What changed is which difference counts. A non-``none`` value is a CORRECT generated row
+    (``status: closed`` is the Director's field, so a built-and-verified finding waits there
+    by design), and the old assertion called that falsifying. ``extra`` is how the fixture
+    now expresses the thing that really is falsifying: a Director-addressed line of a shape
+    this file does not generate. Both cases come from the same generator, so neither can be
+    special-cased -- which is the property §2.2 was protecting.
+    """
     lines = ["# STATE", ""]
     for value in awaiting_values:
         lines += [
             f"- **Built and verified, awaiting the Director's `status: closed`:** {value}",
         ]
+    if extra:
+        lines += ["", extra]
     return "\n".join(lines) + "\n"
 
 
@@ -500,19 +515,35 @@ def test_witness_d37_the_fixture_is_derived_so_a_real_action_cannot_hide():
     differ from what it asserts is not a fixture, so the member text is generated from the
     value and the same generator produces both cases.
     """
-    clean = _state_md("none", "none")
-    dirty = _state_md("none", "F-01")
+    all_none = _state_md("none", "none")
+    a_real_finding = _state_md("none", "F-01")
+    a_new_kind_of_address = _state_md(
+        "none", "none", extra="Two items need a director ruling before this ships."
+    )
 
-    assert discover_director_addressed({"STATE.md": clean}) == []
-    assert discover_director_addressed({"STATE.md": dirty}) == []  # still allowlisted
+    assert discover_director_addressed({"STATE.md": all_none}) == []
+    assert discover_director_addressed({"STATE.md": a_real_finding}) == []
 
-    assert false_premises({"STATE.md": clean}) == []
-    bad = false_premises({"STATE.md": dirty})
+    # **A different VALUE is a correct generated row and must NOT falsify (D41).** The
+    # old assertion said the opposite, and the shipped file had carried F-01 all along.
+    assert false_premises({"STATE.md": all_none}) == []
+    assert false_premises({"STATE.md": a_real_finding}) == [], (
+        "a built-and-verified finding waiting on `status: closed` is STATE.md being "
+        "correct; failing the build for it is the premise that was false on arrival"
+    )
+
+    # **A different KIND of line does falsify** -- an address this file does not generate.
+    bad = false_premises({"STATE.md": a_new_kind_of_address})
     assert [n for n, _ in bad] == ["STATE.md"], (
-        "a real non-'none' Director action must make the allowlist premise false; the "
-        "hard-coded fixture could not notice one that had already shipped"
+        "a hand-added question to the Director is not a generated closure-status row, "
+        "and the premise must not survive one"
     )
     assert "premise is false" in bad[0][1]
+
+    # The §2.2 property itself: the fixture derives, so the falsifying case and the
+    # holding case come from one generator and neither can be quietly special-cased.
+    assert a_real_finding != all_none and a_new_kind_of_address != all_none
+    assert "F-01" in a_real_finding and "F-01" not in all_none
 
 
 def test_witness_d37_a_false_allowlist_premise_is_fatal_not_advisory():
@@ -525,7 +556,8 @@ def test_witness_d37_a_false_allowlist_premise_is_fatal_not_advisory():
     def for_state(pairs):
         return [p for p in pairs if p[0] == "STATE.md"]
 
-    dirty = _state_md("F-01")
+    # D41: the falsifying case is a line STATE.md does not generate, not a new VALUE.
+    dirty = _state_md("none", extra="Two items need a director ruling before this ships.")
     assert false_premises({"STATE.md": dirty}), "false premise must be reported"
     assert for_state(inert_allowlist({"STATE.md": dirty})) == [], (
         "the entry IS suppressing a marker, so it is not inert -- only its premise is false"
@@ -687,6 +719,140 @@ _VISUAL_MEMBER = (
 #: allowlist entry whose member never appears in any fixture is an entry nothing tests.
 _MEMBER_TEXT[_VISUAL_KEY] = _VISUAL_MEMBER
 _MEMBER_TEXT[_S2_KEY] = _S2_MEMBER
+
+
+#: The two D41 members. Both are review records that quote the marker vocabulary in order
+#: to rule on it, so their fixtures must carry the real quoting lines.
+_G004_DISP_KEY = "OTB-G004_dispositioned.md"
+_G004_FIND_KEY = "findings-OTB-G004.yaml"
+
+#: Each addressed line is kept UNWRAPPED, as the real member has them. Hand-wrapping put
+#: the fragment on one line and the marker match on the next, so no single line carried
+#: both and the premise failed -- the third time a fixture's line breaks have been the
+#: bug rather than the key. The real member's lines 174-183 and 219-221 are long single
+#: lines; the fixture mirrors that.
+_G004_DISP_MEMBER = "\n".join(
+    (
+        "# OTB-G004 dispositioned",
+        "",
+        "**F-04.** The marker regex is case-sensitive. Run against the shipped text: 'asks the Director to rule' fires",
+        "one marker; 'need a director ruling before S3 proceeds', 'OPEN pending director disposition' and",
+        "'Judgment call for the director.' each fire ZERO. That is why Cowork's coverage sweep returned 0 unaccounted.",
+        "",
+        "STATE.md separately names a finding awaiting the Director's closure. The regression fixture hard-codes a none value, so it cannot notice.",
+        "",
+        "This is _COUPLING_SUBJECT, 'asks Dan to rule' and 'asks the Director eleven decisions'.",
+        "",
+        "**Finding.** The S2 review record is explicitly pending Director disposition, places a judgment call before him.",
+        "",
+        "**Evidence.** The record says two findings need a Director ruling, lines 19-27 name pending Director review.",
+    )
+) + "\n"
+
+_G004_FIND_MEMBER = "\n".join(
+    (
+        "review:",
+        "  gate: OTB-G004",
+        "findings:",
+        "  - id: F-04",
+        "    evidence: >-",
+        "      The record says two findings need a Director ruling, lines 19-27 name "
+        "pending Director review, and",
+        "      the packaging allowlist names F-01 as awaiting the Director's status field "
+        "while the fixture tests none.",
+    )
+) + "\n"
+
+_MEMBER_TEXT[_G004_DISP_KEY] = _G004_DISP_MEMBER
+_MEMBER_TEXT[_G004_FIND_KEY] = _G004_FIND_MEMBER
+
+
+def test_witness_d41_state_md_holds_on_a_new_value_and_fails_on_a_new_kind_of_line():
+    """**D41's replacement premise, both directions, from the derived fixture.**
+
+    Green on the first is the old defect restated; red on the second is D41 unimplemented.
+    """
+    assert false_premises({"STATE.md": _state_md("none", "F-01", "F-02, F-03")}) == []
+    grown = _state_md("none", extra="Judgment call for the director on the bore bound.")
+    assert [n for n, _ in false_premises({"STATE.md": grown})] == ["STATE.md"]
+
+
+def test_witness_d41_the_two_new_premises_hold_and_fail_on_one_more_address():
+    """Each new entry must name itself, and only itself, when its member grows."""
+    both = {_G004_DISP_KEY: _G004_DISP_MEMBER, _G004_FIND_KEY: _G004_FIND_MEMBER}
+    assert false_premises(both) == []
+
+    for key, member in both.items():
+        grown = dict(both)
+        grown[key] = member + "\n\nOPEN pending director disposition of the new item.\n"
+        assert [n for n, _ in false_premises(grown)] == [key], (
+            f"{key} gained an address and must be the only member reported"
+        )
+
+
+def test_witness_d41_the_new_fragments_resist_a_fresh_address_reusing_their_wording():
+    """**Cowork's draft fragments were quotations of marker wording. These are not.**
+
+    Attacked with probes each asserted to fire a marker first -- a probe that fires
+    nothing is not an attack, and one in the first run read as a slipped key when the
+    member had simply not gained an address.
+    """
+    import packet_exclusions as pe
+
+    attacks = (
+        "Judgment call for the director on the 20 bar point.",
+        "This asks the Director to rule on the axis choice.",
+        "Two more findings need a director ruling before S5.",
+        "OPEN pending director disposition of the new item.",
+        "S7 is awaiting the Director's closure on eta_pump.",
+        "New rows are pending Director review before S6.",
+        "That is a Director question about the tooling.",
+    )
+    for attack in attacks:
+        assert any(rx.search(attack) for rx in pe._COMPILED_MARKERS.values()), (
+            f"probe fires no marker, so it is not an attack: {attack!r}"
+        )
+        for key, member in (
+            (_G004_DISP_KEY, _G004_DISP_MEMBER),
+            (_G004_FIND_KEY, _G004_FIND_MEMBER),
+            ("STATE.md", _state_md("none")),
+        ):
+            grown = member + "\n\n" + attack + "\n"
+            assert [n for n, _ in false_premises({key: grown})] == [key], (
+                f"{key}: an address reusing known wording slipped through: {attack!r}"
+            )
+
+
+def test_witness_d41_a_search_built_state_premise_would_fail_against_the_real_twelve():
+    """**Witness 4: the search gap has now produced two false premises in three rounds.**
+
+    ``STATE.md`` is the sharpest case in the project: ``rx.search`` reports ONE addressed
+    line because all eleven generated rows fire the same marker. A premise built from that
+    view describes one row and is false against the other eleven.
+    """
+    import packet_exclusions as pe
+
+    member = _state_md("none", "F-01", "none", "none")
+    lines = member.splitlines()
+
+    search_lines = sorted({
+        member.count("\n", 0, m.start())
+        for rx in pe._COMPILED_MARKERS.values() if (m := rx.search(member))
+    })
+    finditer_lines = sorted({
+        member.count("\n", 0, m.start())
+        for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(member)
+    })
+    assert len(search_lines) < len(finditer_lines), (
+        "if search and finditer agreed on this member there would be no defect to encode"
+    )
+
+    search_premise = pe._addresses_only(tuple(lines[i].strip() for i in search_lines))
+    assert not search_premise(member), (
+        "a premise built from the search view MUST be false against the real member -- "
+        "this is the regression that stops the next person building one the same way"
+    )
+    assert pe._addresses_only(tuple(lines[i].strip() for i in finditer_lines))(member)
 
 
 def test_witness_d39_the_new_premises_hold_and_fail_on_one_more_address():

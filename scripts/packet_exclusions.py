@@ -315,16 +315,50 @@ def _addresses_only(known: tuple[str, ...]) -> Callable[[str], bool]:
     return holds
 
 
-def _all_awaiting_values_are_none(text: str) -> bool:
-    """Every ``awaiting the Director's status: closed`` value in the member reads ``none``.
+#: ``STATE.md``'s Director-addressed lines: the generated closure-status rows.
+#:
+#: **D41 replaced a value-level premise with a structural one, and the value-level premise
+#: had never held.** It claimed every ``awaiting the Director's status: closed`` value read
+#: ``none``; the shipped file's line 95 read ``F-01``, and the review that reported F-04 had
+#: already measured the values as ``{'F-01', 'none'}``. The claim was written by reading the
+#: file rather than by running against it -- inside the mechanism built to abolish premises
+#: written that way -- and the freeze caught it.
+#:
+#: ``STATE.md`` is generated from the ledgers. Its VALUES change as findings open and close;
+#: its TEMPLATE does not. So the premise now rests on the template: every Director-addressed
+#: line is a generated closure-status row. ``F-01`` sitting in one is the file being correct.
+#:
+#: Two fragments cover all twelve lines that ``finditer`` reports -- eleven generated rows
+#: (35..185) and the release-blocker summary (194). ``search`` reports **one**, because every
+#: row fires the same marker; a premise built from that view would have been false on
+#: arrival for the third time in four rounds.
+_STATE_KNOWN_ADDRESSES = (
+    "**Built and verified, awaiting the Director's `status: closed`:**",
+    "built and verified, **awaiting the Director's closure**",
+)
 
-    The literal claim ``STATE.md``'s reason makes. Line 95 of the shipped file read
-    ``F-01`` and this returns False for it.
-    """
-    values = re.findall(
-        r"awaiting the Director's[^\n]*?status: closed[^\n]*?:\*\*\s*([^\n]+)", text
-    )
-    return bool(values) and all(v.strip().rstrip(".").lower() == "none" for v in values)
+#: The `OTB-G004` review record and its findings file: both quote the marker vocabulary in
+#: order to rule on it, which is what `OTB-G003_dispositioned.md` is already exempted for.
+#:
+#: **Re-keyed from Cowork's draft after attacking it.** The draft used quotations of marker
+#: wording -- ``"Judgment call for the director"``, ``"asks the Director to rule"``,
+#: ``"awaiting the Director's closure"`` -- and fresh addresses reusing those words passed
+#: the check: three of five on the ledger, one of three on ``STATE.md``. That is instance
+#: twenty-one again, a key a new instance of the thing satisfies. Every fragment below is
+#: line-distinctive and was attacked with nine probes, each asserted to fire a marker first.
+_G004_DISPOSITIONED_KNOWN_ADDRESSES = (
+    "Run against the shipped text:",
+    "one marker; 'need a director ruling before S3 proceeds'",
+    "each fire ZERO. That is why Cowork's coverage sweep",
+    "The regression fixture hard-codes a none value",
+    "_COUPLING_SUBJECT, 'asks Dan to rule'",
+    "is explicitly pending Director disposition, places a",
+    "two findings need a Director ruling, lines 19-27",
+)
+_G004_FINDINGS_KNOWN_ADDRESSES = (
+    "findings need a Director ruling, lines 19-27",
+    "names F-01 as awaiting the Director's status field",
+)
 
 
 QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
@@ -340,12 +374,15 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
     ),
     "STATE.md": _Exemption(
         reason=(
-            "a status document with a standing field for what awaits the Director's "
-            "'status: closed'. Naming the field is not addressing him -- and its value "
-            "here is 'none'."
+            "a status document GENERATED from the ledgers, whose every Director-addressed "
+            "line is a closure-status row of a fixed template. Naming the field is not "
+            "addressing him, and a finding sitting in one of those rows is the file being "
+            "correct: `status: closed` is his alone, so a built-and-verified finding "
+            "waits there by design. The value-level claim this reason used to make -- that "
+            "every value reads 'none' -- was false when it was written and is gone (D41)."
         ),
-        premise="every 'awaiting the Director's status: closed' value reads 'none'",
-        holds=_all_awaiting_values_are_none,
+        premise="every Director-addressed line in it is a generated closure-status row",
+        holds=_addresses_only(_STATE_KNOWN_ADDRESSES),
     ),
     "scripts/packet_exclusions.py": _Exemption(
         reason=(
@@ -429,6 +466,27 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="every Director-addressed line in it is one of the seven known sentences",
         holds=_addresses_only(_S2_RECORD_KNOWN_ADDRESSES),
+    ),
+    # --- added under D41: the review record quoting the vocabulary to rule on it -----
+    "OTB-G004_dispositioned.md": _Exemption(
+        reason=(
+            "the `OTB-G004` dispositioned ledger. It quotes the marker vocabulary at "
+            "length -- the sentences that fired, the ones that did not, and the stale "
+            "STATE.md premise -- because ruling on a vocabulary finding means restating "
+            "the vocabulary. Same class as `OTB-G003_dispositioned.md`, already exempted."
+        ),
+        premise="every Director-addressed line in it is one of the seven known sentences",
+        holds=_addresses_only(_G004_DISPOSITIONED_KNOWN_ADDRESSES),
+    ),
+    "findings-OTB-G004.yaml": _Exemption(
+        reason=(
+            "the `OTB-G004` findings file, whose F-04 evidence field cites the review "
+            "record's and STATE.md's own Director-addressed lines as the evidence FOR the "
+            "finding. A findings file that could not quote what it found could not report "
+            "it."
+        ),
+        premise="every Director-addressed line in it is one of the two known sentences",
+        holds=_addresses_only(_G004_FINDINGS_KNOWN_ADDRESSES),
     ),
 }
 
