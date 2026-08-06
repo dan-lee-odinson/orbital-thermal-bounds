@@ -199,6 +199,17 @@ DIRECTOR_ADDRESSED_MARKERS: dict[str, str] = {
         r"\b(?:judg[e]?ment|decision|call|question|choice)\b[^.\n]{0,14}?"
         r"\bfor (?:the )?director\b"
     ),
+    # --- D43/F-04: a shape no marker has ever matched -------------------------------
+    # An open task assigned to him, not a citation of a settled ruling. Twenty-two such
+    # lines have shipped in every packet since `OTB-G001` and none of the eleven markers
+    # above sees any of them: they carry no requesting verb and no pending-state word,
+    # only an imperative label.
+    #
+    # Bounded by the closing parenthesis, which is what stops it reading `TODO (directory)`
+    # or `TODO (directive)` -- `director` must be followed by optional space and then `)`.
+    # The `re.I` change taught that a case-blind pattern without a bound trades a false
+    # negative for a false positive, so the bound is regressed rather than assumed.
+    "todo-for-him": r"TODO\s*\(\s*director\s*\)",
 }
 
 #: ``re.I`` is the D37 fix; ``re.M`` is what the checklist marker's ``^`` needs.
@@ -255,12 +266,14 @@ class _Exemption(NamedTuple):
 #: written. Both are enumerated here with their text; a THIRD still fails the build, which
 #: is the falsifiability the exemption was granted for.
 _REGISTRY_KNOWN_ADDRESSES = (
-    "is a registry-level question for director disposition",
-    "it is a finding for director disposition",
+    "is a registry-level question for director disposition, not for this build",
+    "it is a finding for director disposition, not a defect this",
 )
 
 #: `visual_api.py`'s single address: a standing documentation-policy statement.
-_VISUAL_API_KNOWN_ADDRESSES = ("Public documentation requires project-director approval",)
+_VISUAL_API_KNOWN_ADDRESSES = (
+    "independent external validation. Public documentation requires project-director approval",
+)
 
 #: The S2 review record's **seven** addresses -- the member that escaped every sweep.
 #:
@@ -276,14 +289,96 @@ _VISUAL_API_KNOWN_ADDRESSES = ("Public documentation requires project-director a
 #: per-line context and attacked with eight different eighth-addresses, five of them
 #: deliberately reusing known wording: all eight are caught.
 _S2_RECORD_KNOWN_ADDRESSES = (
-    "OPEN pending director disposition + Sol cross-model review",
-    "**Disposition:** **pending director review.**",
-    "**Judgment call for the director.**",
+    "OPEN pending director disposition + Sol cross-model review. No cross-model",
+    "**Disposition:** **pending director review.** `main` untouched",
+    "**Judgment call for the director.** §2 of the handoff bars",
     "## Findings requiring director disposition",
-    "**Knock-on for director attention:**",
+    "**Knock-on for director attention:** this also puts the registry",
     "Registry-level correction is a director decision, not a builder one",
-    "Requires: (i) director disposition of",
+    "Requires: (i) director disposition of **F1** and **F2**",
 )
+
+
+#: Vocabulary every Director-addressed line shares, so a key made only of it is a key a
+#: DIFFERENT new address could satisfy. Sol's F-03 sentence -- *"it is a finding for
+#: director disposition, not a repair this build owns"* -- contains the old registry key
+#: verbatim while being about an entirely different subject.
+_PROCESS_WORDS = frozenset(
+    """director directors dan disposition dispositions dispositioned ruling rulings rule
+    rules decision decisions decide judgment judgement call calls question questions
+    approval approve attention review reviews closure closed close pending awaiting await
+    awaits need needs needed requires require required requiring finding findings builder
+    build open status asks ask sol cross model raised record records""".split()
+)
+_FUNCTION_WORDS = frozenset(
+    """a an the is are was it its of for to and or not this that these those his her
+    their one two three in on at by with from as be been before after than so but if each
+    every all any no yes still again here there what which who whom i we you they he
+    """.split()
+)
+
+#: Keys the subject-token screen cannot judge, each with the reason. Checked, not waived:
+#: :func:`weak_keys` reports an entry here that does NOT fail the screen, so an exemption
+#: that has stopped being needed cannot sit here looking like a decision.
+_SCREEN_EXEMPT: dict[str, str] = {
+    "## Findings requiring director disposition": (
+        "a markdown SECTION HEADING, whose words are necessarily the generic ones -- a "
+        "heading naming the section's subject would not be this section. The member-"
+        "specific context is the '## ' prefix and the fact that a heading is not a "
+        "sentence: a new address about a different subject is prose, and prose does not "
+        "carry a level-two heading marker. The screen tokenises words and cannot see that."
+    ),
+}
+
+
+def subject_tokens(fragment: str) -> list[str]:
+    """Words in a key that name its own subject rather than the shared process."""
+    return [
+        token
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9_-]*", fragment.lower())
+        if token not in _PROCESS_WORDS and token not in _FUNCTION_WORDS
+    ]
+
+
+def weak_keys(known: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Keys a genuinely NEW Director-addressed line could plausibly satisfy. **A floor.**
+
+    D43/F-03. Sol found a shipped key that a plausible new sentence about a different
+    subject contains verbatim, and Cowork's mechanical probe could not: it excluded any
+    probe containing a key fragment, which is exactly what a realistic reuse contains.
+    The candidate replacement -- residual length after stripping the marker match --
+    separated the D40 pair perfectly and left Sol's key at fifteen characters, above any
+    threshold that would not condemn half the shipped set. It measured LENGTH; the
+    property is SUBJECT.
+
+    This screens on subject instead: a key containing no token outside the shared process
+    vocabulary is one a different address could reuse. It separates the D40 pair AND
+    catches Sol's key, which the length test could not.
+
+    **It is a floor and not a certificate, and the difference matters.** It passes keys a
+    reading still flags -- a standing policy sentence is lexically specific and
+    semantically reusable, so ``Public documentation requires project-director approval``
+    scores well while applying to any artifact. Passing this means "not obviously weak",
+    never "strong". The twenty-one-key reading stays the authority; this catches the one
+    shape a reading might tire of.
+    """
+    flagged = []
+    for fragment in known:
+        if subject_tokens(fragment):
+            continue
+        if fragment in _SCREEN_EXEMPT:
+            continue
+        flagged.append((fragment, "no token outside the shared process vocabulary"))
+    return flagged
+
+
+def inert_screen_exemptions(known: tuple[str, ...]) -> list[str]:
+    """Screen exemptions that are not exempting anything -- dead weight, reported."""
+    return sorted(
+        fragment
+        for fragment in _SCREEN_EXEMPT
+        if fragment in known and subject_tokens(fragment)
+    )
 
 
 def _addresses_only(known: tuple[str, ...]) -> Callable[[str], bool]:
@@ -347,12 +442,12 @@ _STATE_KNOWN_ADDRESSES = (
 #: twenty-one again, a key a new instance of the thing satisfies. Every fragment below is
 #: line-distinctive and was attacked with nine probes, each asserted to fire a marker first.
 _G004_DISPOSITIONED_KNOWN_ADDRESSES = (
-    "Run against the shipped text:",
+    "Run against the shipped text: 'asks the Director to rule' fires",
     "one marker; 'need a director ruling before S3 proceeds'",
-    "each fire ZERO. That is why Cowork's coverage sweep",
-    "The regression fixture hard-codes a none value",
-    "_COUPLING_SUBJECT, 'asks Dan to rule'",
-    "is explicitly pending Director disposition, places a",
+    "'Judgment call for the director.' each fire ZERO. That is why Cowork's",
+    "The regression fixture hard-codes a none value, so it cannot",
+    "_COUPLING_SUBJECT, 'asks Dan to rule' and 'asks the Director eleven",
+    "is explicitly pending Director disposition, places a judgment call before him",
     "two findings need a Director ruling, lines 19-27",
 )
 _G004_FINDINGS_KNOWN_ADDRESSES = (

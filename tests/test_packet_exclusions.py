@@ -682,8 +682,8 @@ _S2_MEMBER = "\n".join(
         "",
         "- **Disposition:** **pending director review.** `main` untouched; no tag.",
         "",
-        "> **Judgment call for the director.** The handoff bars implementing from a",
-        "> secondary source.",
+        "> **Judgment call for the director.** §2 of the handoff bars implementing",
+        "> from a secondary source.",
         "",
         "## Findings requiring director disposition",
         "",
@@ -694,8 +694,7 @@ _S2_MEMBER = "\n".join(
         # wrapped it -- which the premise caught immediately.
         "touch it. **Registry-level correction is a director decision, not a builder one.**",
         "",
-        "**Not closable by the builder.** Requires: (i) director disposition of **F1**",
-        "and **F2**; (ii) Sol's re-review.",
+        "**Not closable by the builder.** Requires: (i) director disposition of **F1** and **F2**; (ii) Sol's re-review.",
         "",
         "Ordinary prose citing Director ruling D9 as provenance, which must not fire.",
     )
@@ -707,8 +706,10 @@ _VISUAL_MEMBER = (
     '"""Visual API."""\n\n'
     "STATUS = {\n"
     '    "status": (\n'
-    '        "Author cross-check is source-author review, not independent external "\n'
-    '        "validation. Public documentation requires project-director approval."\n'
+    # D43: unwrapped, as the real line 874 is. The re-keyed fragment now carries the
+    # clause that precedes the policy sentence, and a fixture wrap would orphan it.
+    '        "Author cross-check is source-author review, not "\n'
+    '        "independent external validation. Public documentation requires project-director approval."\n'
     "    ),\n"
     "}\n"
 )
@@ -967,9 +968,149 @@ def test_witness_d39_a_search_built_premise_would_fail_against_the_real_seven():
     assert re.search(r"director", _S2_MEMBER, re.I)
 
 
+#: Sol's F-03 sentence, verbatim. A genuinely new Director-addressed line, about the
+#: dryout basis rather than the CHF classification, which contained the shipped registry
+#: key word for word and left the premise holding.
+_SOL_F03_SENTENCE = (
+    "The incomplete dryout basis remains open; it is a finding for director disposition, "
+    "not a repair this build owns"
+)
+
+#: The `TODO (director)` wording as it actually ships, from a mastery-ledger entry --
+#: not a synthetic probe. The regression that matters is written from the text that
+#: escaped, and 22 lines of this shape have shipped in every packet since `OTB-G001`.
+_TODO_SHIPPED_LINES = (
+    "`TODO (director)` -- to be written without model drafting before status advances to",
+    "- `TODO (director)`: plain-language explanation of the case-space classification and",
+    "TODO (director)",
+    "drafting. Leave as `TODO (director)` until done -- do not fabricate.>",
+)
+
+
+def test_witness_d43_sols_sentence_fails_the_registry_premise():
+    """**Witness 1: the exact wording Sol found, not a paraphrase of it.**
+
+    It fires a marker -- asserted first, because a probe that fires nothing is not an
+    address and holding would be correct -- and it must now falsify the registry premise.
+    Before the re-key it did not, and that is the whole of F-03.
+    """
+    import packet_exclusions as pe
+
+    assert any(rx.search(_SOL_F03_SENTENCE) for rx in pe._COMPILED_MARKERS.values()), (
+        "the sentence must be a Director-addressed line or there is nothing to catch"
+    )
+    key = "src/orbital_thermal/registry/two_phase.py"
+    grown = _REGISTRY_MEMBER + "\n# " + _SOL_F03_SENTENCE + "\n"
+    assert [n for n, _ in false_premises({key: grown})] == [key], (
+        "a new Director-addressed line about a different subject must fail the premise; "
+        "the old key was contained in it verbatim and the build stayed green"
+    )
+    # And the member without it still holds, so the failure is the sentence's doing.
+    assert false_premises({key: _REGISTRY_MEMBER}) == []
+
+
+def test_witness_d43_no_shipped_key_is_pure_process_vocabulary():
+    """**The screen: a floor on key strength, and it catches what the length test missed.**
+
+    Not a certificate. It passes keys a reading still flags -- a standing policy sentence
+    is lexically specific and semantically reusable. Passing means "not obviously weak".
+    """
+    import packet_exclusions as pe
+
+    for name, known in (
+        ("registry", pe._REGISTRY_KNOWN_ADDRESSES),
+        ("visual_api", pe._VISUAL_API_KNOWN_ADDRESSES),
+        ("S2 record", pe._S2_RECORD_KNOWN_ADDRESSES),
+        ("STATE.md", pe._STATE_KNOWN_ADDRESSES),
+        ("G004 dispositioned", pe._G004_DISPOSITIONED_KNOWN_ADDRESSES),
+        ("G004 findings", pe._G004_FINDINGS_KNOWN_ADDRESSES),
+    ):
+        assert pe.weak_keys(known) == [], f"{name} carries a pure-process-vocabulary key"
+        assert pe.inert_screen_exemptions(known) == [], (
+            f"{name} has a screen exemption that is no longer exempting anything"
+        )
+
+
+def test_witness_d43_the_screen_separates_the_recorded_pair_and_catches_sols_key():
+    """The screen must not be vacuous: it has to fail on the shapes it was built from."""
+    import packet_exclusions as pe
+
+    assert pe.weak_keys(("is a director decision",)), (
+        "the D40 withdrawn key must be flagged or the screen measures nothing"
+    )
+    assert pe.weak_keys(("it is a finding for director disposition",)), (
+        "Sol's key must be flagged -- the length test could not, and that is the point"
+    )
+    assert pe.weak_keys(
+        ("Registry-level correction is a director decision, not a builder one",)
+    ) == [], "the D40 replacement must pass, or the screen condemns good keys too"
+
+
+def test_witness_d43_the_todo_marker_fires_on_the_real_shipped_wording():
+    """**Witness 3: from the text that escaped, not from a synthetic probe.**
+
+    Twenty-two lines of this shape have shipped in every packet since `OTB-G001` and no
+    marker has ever seen one: they carry no requesting verb and no pending-state word,
+    only an imperative label naming him.
+    """
+    for line in _TODO_SHIPPED_LINES:
+        found = discover_director_addressed({"verification~ledger~entry.md": line})
+        assert found, f"the shipped wording must be discovered: {line!r}"
+        assert "todo-for-him" in {f[1] for f in found}
+
+    # Spacing tolerance, since the shape varies across entries.
+    for variant in ("TODO(director)", "todo ( DIRECTOR )", "Todo (Director)"):
+        assert discover_director_addressed({"m.md": variant}), variant
+
+
+def test_witness_d43_the_todo_marker_is_word_bounded():
+    """**Witness 4: the `re.I` trap again -- a case-blind pattern needs its bound.**
+
+    ``director`` must be followed by optional space and then the closing parenthesis, so
+    the longer words cannot satisfy it.
+    """
+    for benign in (
+        "TODO (directory) -- move these files into place",
+        "TODO (directive) from the style guide",
+        "TODO (directorate) review of the schedule",
+        "TODO (direct) fix the sign convention",
+        "a directory listing for the director",
+    ):
+        assert discover_director_addressed({"ordinary.md": benign}) == [], (
+            f"{benign!r} is not a task assigned to him and must stay quiet"
+        )
+
+
+def test_witness_d43_the_surfaced_members_are_reported_not_silenced():
+    """**Witness 5: green by REPORTING them, never by their absence.**
+
+    D38's rule stands -- nothing may be quieted by an entry the Director has not ruled on
+    -- so the members the new marker surfaces must still come back as unaccounted. A test
+    that passed because they had been enumerated or allowlisted would be the inversion of
+    his ruling, so both lists are asserted not to contain them.
+    """
+    surfaced = {
+        "verification/mastery-ledger/entries/architecture-cases.md":
+            "`TODO (director)` -- to be written without model drafting",
+        "verification/mastery-ledger/template.md":
+            "Leave as `TODO (director)` until done -- do not fabricate.>",
+    }
+    reported = {n for n, _, _, _ in discover_director_addressed(surfaced)}
+    assert reported == set(surfaced), (
+        "every member the new marker surfaces must be reported as unaccounted"
+    )
+    for member in surfaced:
+        assert member not in DIRECTOR_ADDRESSED_MEMBERS, (
+            f"{member} was silenced by an enumeration entry the Director has not ruled"
+        )
+        assert member not in QUOTATION_ALLOWLIST, (
+            f"{member} was silenced by an allowlist entry the Director has not ruled"
+        )
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
     """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
-    assert len(DIRECTOR_ADDRESSED_MARKERS) == 12
+    assert len(DIRECTOR_ADDRESSED_MARKERS) == 13
     probes = {
         "for-dan": "a knock-on finding for Dan to weigh",
         "director-question": "that is a Director question about the tool",
@@ -984,6 +1125,7 @@ def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
         "for-his-attention": "Knock-on for director attention: the registry classification",
         "is-his-call": "Registry-level correction is a director decision, not a builder one",
         "his-call-to-make": "Judgment call for the director",
+        "todo-for-him": "`TODO (director)` -- to be written before status advances",
     }
     assert set(probes) == set(DIRECTOR_ADDRESSED_MARKERS)
     for label, probe in probes.items():
