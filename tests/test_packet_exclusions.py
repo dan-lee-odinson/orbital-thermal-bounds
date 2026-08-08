@@ -1319,7 +1319,7 @@ _G004_02_FIND_MEMBER = "\n".join((
 #: label and hard-wrapping it at ~105 columns -- so D46's key for it matched nothing.
 #:
 #: These lines are **copied from the shipped bytes**, wrap points and all, rather than
-#: retyped. Line 135 really does end mid-sentence at "every member it"; reproducing that
+#: retyped. Line 136 really does end mid-sentence at "every member it"; reproducing that
 #: is the point, because a key must sit on the same line as its marker match and a fixture
 #: that tidied the wrap would test a file that does not exist.
 _G004_02_DISP_MEMBER = "\n".join((
@@ -1718,6 +1718,43 @@ def test_witness_d50_a_wrong_name_reports_the_disclosed_weakness():
     assert missing_round_records(
         "OTB-G004-02", ["findings-OTB-G004-02.yaml", "OTB-G004-02_dispositioned.md"]
     ) == [], "an empty-but-correctly-named record passes -- the class is still open"
+
+
+def test_witness_d50_the_check_belongs_to_the_refreeze_not_the_review_freeze():
+    """**The scoping fact, because getting it wrong makes this check a false alarm.**
+
+    A review packet is frozen to OPEN a round: the reviewer reads it in order to WRITE that
+    round's findings, so the round's own records cannot exist yet. Measured over every
+    packet in the deposit directory -- `OTB-G002-02`, `OTB-G003-02`, `OTB-G004-02`,
+    `OTB-G003`, `OTB-G004` -- **none contains its own round's records**, and all five froze
+    green. Wiring this into the review freeze would therefore fire on every packet this
+    project has produced.
+
+    The function is pure and takes the member set it is given, so this cannot be enforced
+    in code without teaching it packet types -- which would be the filename coupling again,
+    one level worse. What CAN be regressed is that the two shapes are distinguishable and
+    that the docstring says which is which, so a packager wiring it in reads the constraint
+    before the false alarm rather than after.
+    """
+    import packet_exclusions as pe
+    from packet_exclusions import missing_round_records
+
+    review_packet = ["00_GATE_BRIEF.md", "STATE.md", "OTB-G004_dispositioned.md",
+                     "findings-OTB-G004.yaml", "MANIFEST.sha256"]
+    assert len(missing_round_records("OTB-G004-02", review_packet)) == 2, (
+        "a review packet legitimately lacks its own round's records, and the check "
+        "cannot tell -- which is exactly why the caller must not run it there"
+    )
+
+    refreeze_packet = review_packet + ["findings-OTB-G004-02.yaml",
+                                       "OTB-G004-02_dispositioned.md"]
+    assert missing_round_records("OTB-G004-02", refreeze_packet) == []
+
+    doc = pe.missing_round_records.__doc__ or ""
+    assert "RE-FREEZE, NEVER AT THE REVIEW FREEZE" in doc, (
+        "the constraint must stay in the docstring; without it the first packager to "
+        "wire this in gets a failure on every review packet and learns to ignore it"
+    )
 
 
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():

@@ -612,23 +612,32 @@ _G004_02_FINDINGS_KNOWN_ADDRESSES = (
 #: D46 note here ended *"these are gate records deposited into a packet, not living
 #: documents -- nothing reflows them."* Nothing did. But the D47 three-zone seam repair
 #: **amended** the record: ``option_presented:`` must carry the exact option text the
-#: Director was shown, so the F-04 question (140), the option he CHOSE (141) and an option
-#: he did NOT choose (142) entered as addressed lines, and the ``action`` field describing
-#: the built marker entered as a fourth (201). An amended gate record gains addressed
+#: Director was shown, so the F-04 question (141), the option he CHOSE (142) and an option
+#: he did NOT choose (143) entered as addressed lines, and the ``action`` field describing
+#: the built marker entered as a fourth (202). An amended gate record gains addressed
 #: lines exactly the way a reflowed one loses keys. The premise failed in
 #: :func:`false_premises` before the freeze, which is the D40 subset rule working.
+#:
+#: **The line numbers here are PROSE, not keys, and they have already moved once.** The
+#: first render of this record was corrupt -- ``render_disposition.py`` writes the ``.md``
+#: itself and also logs to stdout, so ``> file.md`` overwrote the title, the blank line and
+#: the head of the ``**Gate**`` line. These seven keys were cut against that corrupt file.
+#: The repaired re-render restores three lines where two stood, so every number below is
+#: one higher than the file the keys were cut from -- and every key still matches, on
+#: exactly one line, with the keyed text byte-identical. That is the whole argument for
+#: keying on sentences: the numbers moved and nothing had to be re-cut.
 #:
 #: **And the D46 key for the selection line did not survive the re-render, which the
 #: handoff's own table did not catch.** That key was
 #: ``> D43, selected: A `TODO (director)` pattern is added to`` -- it carried the record's
 #: ``> `` blockquote prefix and its ``D43, `` label. The repair moved the label to a
 #: ``--- DIRECTOR SELECTION ---`` header line, dropped the blockquote, and hard-wrapped
-#: the text at ~105 columns. **The key matches nothing in the shipped file.** Line 135 was
+#: the text at ~105 columns. **The key matches nothing in the shipped file.** Line 136 was
 #: reported as previously keyed and was in fact a fourth broken line. The lesson is keyed
 #: into every fragment below: key on what the sentence SAYS, never on how the renderer
 #: decorated it. A ``> `` prefix and a ``D43, `` label are render, not content.
 #:
-#: **Line 183's D46 key was weak and is replaced.** It was
+#: **Line 184's D46 key was weak and is replaced.** It was
 #: ``is itself a plausible reusable issue phrase`` -- F-03's own vocabulary, which passes
 #: :func:`weak_keys` and fails the reading the screen is only a floor for. Measured: a new
 #: finding about a DIFFERENT reusable key -- *"The `STATE.md` allowlist key is itself a
@@ -636,13 +645,13 @@ _G004_02_FINDINGS_KNOWN_ADDRESSES = (
 #: verbatim"* -- fires ``awaiting`` and slips past it. The replacement names the registry
 #: allowlist key it is actually about, and catches that attack.
 #:
-#: **Three of these seven are verbatim option text and cannot be worded away.** 140 is the
-#: question, 141 the option he chose, 142 an option he rejected; D36 forbids editing a
+#: **Three of these seven are verbatim option text and cannot be worded away.** 141 is the
+#: question, 142 the option he chose, 143 an option he rejected; D36 forbids editing a
 #: record to quiet a detector, and the Director was offered "drop the verbatim option text"
 #: at D48 and declined it. So the residual is stated instead: **any future record that
 #: replays this same question and option set contains these fragments.** That is not the
 #: weak-key shape -- it is the same option set, re-recorded, not a new address about a
-#: different subject -- but the keys do not distinguish this record from that one, and 141
+#: different subject -- but the keys do not distinguish this record from that one, and 142
 #: in particular is a key cut from the Director's recorded CHOICE. Each is pinned as tightly
 #: to F-04's subject as its line allows: the counts (``22``, ``twelve``, ``twenty-two``),
 #: the cross-reference (``D38 handled the six the case-blind change``), the named symbol.
@@ -652,7 +661,7 @@ _G004_02_FINDINGS_KNOWN_ADDRESSES = (
 #: 327-525 characters. Three keyings were measured at 72/80/88/100/120 under two reflow
 #: implementations: these keys, a deliberately shortened set, and a marker-hugging set whose
 #: every key contains its own marker match. **All three fail at all five widths under both.**
-#: Line 183 alone carries TWO marker matches, so no single key on it can cover both once a
+#: Line 184 alone carries TWO marker matches, so no single key on it can cover both once a
 #: wrap separates them. Weakening buys nothing measurable and costs real attacks -- the short
 #: set leaks the ``STATE.md`` probe, the marker-hugging set leaks three. At D46 the frontier
 #: was real and strength was bought at a price; here there is no frontier and strength is free.
@@ -920,6 +929,17 @@ def missing_round_records(record_id: str, paths: list[str]) -> list[str]:
     **It closes ONE INSTANCE, not the class.** It does not detect a ledger that exists but
     is empty, a ledger missing findings, or a ``STATE.md`` derived from a partial set. The
     completeness gap this instance came from is still open.
+
+    **CALL IT AT THE RE-FREEZE, NEVER AT THE REVIEW FREEZE -- measured, not assumed.**
+    A review packet is frozen to OPEN a round: the reviewer reads it in order to WRITE that
+    round's findings, so the round's own records cannot exist yet. Checked against every
+    packet in the deposit directory -- ``OTB-G002-02``, ``OTB-G003-02``, ``OTB-G004-02``,
+    ``OTB-G003``, ``OTB-G004`` -- **not one contains its own round's findings file or
+    disposition record**, and all five froze green. So wiring this into the review-packet
+    freeze would fire on every packet this project has ever produced, which is a false
+    alarm that trains people to ignore the real one -- the failure mode named at
+    :data:`_REGISTRY_KNOWN_ADDRESSES` and the reason this module keys on sentences rather
+    than line numbers. The caller chooses when; this function only answers whether.
     """
     present = set(paths)
     return [
