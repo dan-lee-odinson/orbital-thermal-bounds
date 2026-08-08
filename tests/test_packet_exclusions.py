@@ -72,7 +72,42 @@ _PACKET_CANDIDATES = (
     "docs/development/phase-b-stage-2-scoping-note.md",
     "verification/mastery-ledger/index.md",
     "external_models/biswas_suncatcher/author_clarifications.md",
+    # D44: the ten mastery-ledger entries carrying a task assigned to him.
+    "verification/mastery-ledger/entries/architecture-cases.md",
+    "verification/mastery-ledger/entries/beta-angle-albedo-model.md",
+    "verification/mastery-ledger/entries/coupled-steady-state-solution.md",
+    "verification/mastery-ledger/entries/earth-view-factors.md",
+    "verification/mastery-ledger/entries/emitting-face-convention.md",
+    "verification/mastery-ledger/entries/radiative-equilibrium-and-net-rejection.md",
+    "verification/mastery-ledger/entries/radiator-attitude-and-sun-shielding.md",
+    "verification/mastery-ledger/entries/single-phase-pumped-loop.md",
+    "verification/mastery-ledger/entries/solid-thermal-network.md",
+    "verification/mastery-ledger/entries/spectral-separation-of-loads.md",
 )
+
+#: The two D44 members that assign him nothing, in the shapes their real files carry.
+_TWO_PHASE_KEY = ("verification/mastery-ledger/entries/"
+                  "two-phase-flow-boiling-heat-acquisition.md")
+_TEMPLATE_KEY = "verification/mastery-ledger/template.md"
+
+_TWO_PHASE_MEMBER = "\n".join((
+    "# Two-phase flow boiling",
+    "",
+    "## Explanation in the director's own words",
+    "",
+    "TODO (director)",
+    "",
+    "## Reproduction method",
+)) + "\n"
+
+_TEMPLATE_MEMBER = "\n".join((
+    "# <entry title>",
+    "",
+    "## Explanation in the director's own words",
+    "",
+    "<Written by the director, in his own words, without model",
+    "drafting. Leave as `TODO (director)` until done -- do not fabricate.>",
+)) + "\n"
 
 #: The registry module's real Director-addressed lines, in a stand-in with its shape.
 #:
@@ -766,6 +801,9 @@ _G004_FIND_MEMBER = "\n".join(
 
 _MEMBER_TEXT[_G004_DISP_KEY] = _G004_DISP_MEMBER
 _MEMBER_TEXT[_G004_FIND_KEY] = _G004_FIND_MEMBER
+#: D44's two, so their exemptions are exercised by the staleness and premise checks.
+_MEMBER_TEXT[_TWO_PHASE_KEY] = _TWO_PHASE_MEMBER
+_MEMBER_TEXT[_TEMPLATE_KEY] = _TEMPLATE_MEMBER
 
 
 def test_witness_d41_state_md_holds_on_a_new_value_and_fails_on_a_new_kind_of_line():
@@ -1089,23 +1127,164 @@ def test_witness_d43_the_surfaced_members_are_reported_not_silenced():
     that passed because they had been enumerated or allowlisted would be the inversion of
     his ruling, so both lists are asserted not to contain them.
     """
-    surfaced = {
-        "verification/mastery-ledger/entries/architecture-cases.md":
-            "`TODO (director)` -- to be written without model drafting",
-        "verification/mastery-ledger/template.md":
-            "Leave as `TODO (director)` until done -- do not fabricate.>",
-    }
-    reported = {n for n, _, _, _ in discover_director_addressed(surfaced)}
-    assert reported == set(surfaced), (
-        "every member the new marker surfaces must be reported as unaccounted"
+    # D44 RULED ON ALL TWELVE, so the assertion this test used to make -- that they are
+    # in neither list -- is now false BY RULING rather than by oversight. The property
+    # it was protecting survives and is what is asserted instead: nothing the marker
+    # surfaces is quiet unless a ruling put it there, and every one of them carries the
+    # evidence for that ruling. A member silenced with no reason would still fail here.
+    ruled_excluded = "verification/mastery-ledger/entries/architecture-cases.md"
+    ruled_exempt = "verification/mastery-ledger/template.md"
+
+    assert ruled_excluded in DIRECTOR_ADDRESSED_MEMBERS
+    assert "plain-language explanation of the case-space classification" in (
+        DIRECTOR_ADDRESSED_MEMBERS[ruled_excluded]
+    ), "an excluded member must carry the line that makes it qualify, not just a name"
+
+    assert ruled_exempt in QUOTATION_ALLOWLIST
+    assert callable(QUOTATION_ALLOWLIST[ruled_exempt].holds), (
+        "an exempted member must carry a premise the build checks, not prose alone"
     )
-    for member in surfaced:
-        assert member not in DIRECTOR_ADDRESSED_MEMBERS, (
-            f"{member} was silenced by an enumeration entry the Director has not ruled"
+
+    # And a member the marker surfaces that NOBODY has ruled on is still reported.
+    unruled = {"verification/mastery-ledger/entries/not-yet-ruled.md":
+               "`TODO (director)`: plain-language explanation of something new"}
+    assert {n for n, _, _, _ in discover_director_addressed(unruled)} == set(unruled), (
+        "a surfaced member with no ruling behind it must still come back unaccounted"
+    )
+
+
+_D44_EXCLUDED = {
+    "architecture-cases.md": "case-space classification and the modeled-component-mass",
+    "beta-angle-albedo-model.md": "sub-point albedo factor and its beta = 90 limitation",
+    "coupled-steady-state-solution.md": "chip heat through R1/R2; pump heat into R3",
+    "earth-view-factors.md": "~12x underestimate of the exact ~0.258",
+    "emitting-face-convention.md": "why emitting area, not planform, is correct",
+    "radiative-equilibrium-and-net-rejection.md": "plain-language explanation.",
+    "radiator-attitude-and-sun-shielding.md": "attitude/shielding assumption",
+    "single-phase-pumped-loop.md": "hydraulic-into-fluid pump-heat convention",
+    "solid-thermal-network.md": "spreading resistance and the isothermal vs convective",
+    "spectral-separation-of-loads.md": "why two bands (and Kirchhoff) are needed",
+}
+
+
+def test_witness_d44_each_of_the_ten_is_dropped_for_its_own_line():
+    """**Witness 1: the pair, and the reason must quote the member's own Shape-B line.**
+
+    The ten were split from the twelve on a distinction in the text: they carry a task
+    assigned to him WITH CONTENT, their two siblings do not. A reason that did not quote
+    that line would not record which distinction was applied.
+    """
+    dropped = dict(excluded_members(_assembled()))
+    for name, quoted in _D44_EXCLUDED.items():
+        member = f"verification/mastery-ledger/entries/{name}"
+        assert member in dropped, f"{member} was ruled excluded and is not dropped"
+        assert quoted in dropped[member], (
+            f"{member}'s reason must quote its own assigned-task line; got "
+            f"{dropped[member]!r}"
         )
-        assert member not in QUOTATION_ALLOWLIST, (
-            f"{member} was silenced by an allowlist entry the Director has not ruled"
-        )
+        assert len(dropped[member]) > 40
+
+
+def test_witness_d44_the_equality_key_rejects_what_a_containment_would_accept():
+    """**Witness 3, and the reason the `Exact` type exists at all.**
+
+    ``two-phase-flow-boiling-heat-acquisition.md:102`` is the bare token and nothing
+    else. A containment key on that fragment is the marker's own wording, so it is
+    satisfied by any line containing it -- including a task assigned to him. This drives
+    both key shapes over the same mutated member and requires them to DISAGREE. If they
+    ever agree, the equality key has stopped doing anything and the next person writes
+    the containment.
+    """
+    import packet_exclusions as pe
+
+    gains_a_task = _TWO_PHASE_MEMBER + "\nTODO (director): explain the CHF gate\n"
+
+    equality = pe._addresses_only((pe.Exact("TODO (director)"),))
+    containment = pe._addresses_only(("TODO (director)",))
+
+    assert equality(_TWO_PHASE_MEMBER), "the real member must hold under equality"
+    assert containment(_TWO_PHASE_MEMBER), "and under containment, before the mutation"
+
+    assert not equality(gains_a_task), (
+        "a task assigned to him is not an empty field; the equality key must fail"
+    )
+    assert containment(gains_a_task), (
+        "a containment key ACCEPTS the task line -- that is instance twenty-one, and "
+        "the whole reason this entry is keyed by equality"
+    )
+
+    # And the shipped entry is the equality one, not the containment one.
+    assert [n for n, _ in false_premises({_TWO_PHASE_KEY: gains_a_task})] == [
+        _TWO_PHASE_KEY]
+
+
+def test_witness_d44_a_second_bare_placeholder_is_not_a_new_address():
+    """Equality accepts another EMPTY field, and that is D41's finding, not a gap.
+
+    Naming a field he will one day fill is not addressing him. A second field of the
+    identical shape is the same class of content -- as a second generated `STATE.md`
+    closure row is. Stated as a test so the acceptance is a decision, not an accident.
+    """
+    second_field = _TWO_PHASE_MEMBER + "\n## Another section\n\nTODO (director)\n"
+    assert false_premises({_TWO_PHASE_KEY: second_field}) == []
+
+
+def test_witness_d44_the_two_new_premises_fail_on_one_more_address():
+    """**Witness 2.** Each new entry must name itself, and only itself, when it grows."""
+    both = {_TWO_PHASE_KEY: _TWO_PHASE_MEMBER, _TEMPLATE_KEY: _TEMPLATE_MEMBER}
+    assert false_premises(both) == []
+
+    grown = dict(both)
+    grown[_TWO_PHASE_KEY] = _TWO_PHASE_MEMBER + "\nTODO (director): write the CHF note\n"
+    assert [n for n, _ in false_premises(grown)] == [_TWO_PHASE_KEY]
+
+    grown = dict(both)
+    grown[_TEMPLATE_KEY] = _TEMPLATE_MEMBER + (
+        "\n- `TODO (director)`: plain-language explanation of the new convention.\n")
+    assert [n for n, _ in false_premises(grown)] == [_TEMPLATE_KEY]
+
+
+def test_witness_d44_the_two_new_premises_survive_unrelated_edits():
+    """Blank lines, appended prose, and a deleted address (D40: subset, not equality)."""
+    both = {_TWO_PHASE_KEY: "\n" * 20 + _TWO_PHASE_MEMBER,
+            _TEMPLATE_KEY: _TEMPLATE_MEMBER + "\n" + ("Ordinary prose. " * 30) + "\n"}
+    assert false_premises(both) == []
+
+    trimmed = "\n".join(line for line in _TWO_PHASE_MEMBER.splitlines()
+                        if line.strip() != "TODO (director)")
+    assert false_premises({_TWO_PHASE_KEY: trimmed}) == []
+
+
+def test_witness_d44_false_premise_and_inert_stay_distinguishable():
+    """**Witness 4.** The two conditions must not collapse into one severity."""
+    grown = _TWO_PHASE_MEMBER + "\nTODO (director): write the CHF note\n"
+    assert [n for n, _ in false_premises({_TWO_PHASE_KEY: grown})] == [_TWO_PHASE_KEY]
+    assert [p for p in inert_allowlist({_TWO_PHASE_KEY: grown})
+            if p[0] == _TWO_PHASE_KEY] == []
+
+    quiet = "# Two-phase flow boiling\n\nNothing outstanding.\n"
+    assert false_premises({_TWO_PHASE_KEY: quiet}) == []
+    assert [p for p in inert_allowlist({_TWO_PHASE_KEY: quiet})
+            if p[0] == _TWO_PHASE_KEY] == [
+        (_TWO_PHASE_KEY, "in the packet but carries no marker; suppressing nothing")]
+
+
+def test_witness_d44_an_exact_key_is_not_screened_as_weak_vocabulary():
+    """The screen asks what a NEW address could satisfy; equality already answers it.
+
+    ``TODO (director)`` is pure marker wording, so as a CONTAINMENT key it is exactly
+    what :func:`weak_keys` exists to flag -- and it is flagged. As an ``Exact`` key only
+    a byte-identical line satisfies it, so the question is closed by the matching rule
+    and screening it on vocabulary would condemn the one shape that cannot be weak.
+    """
+    import packet_exclusions as pe
+
+    assert pe.weak_keys(("TODO (director)",)), (
+        "as a containment key this is weak, and the screen must say so"
+    )
+    assert pe.weak_keys((pe.Exact("TODO (director)"),)) == [], (
+        "as an equality key it is not weak, and the screen must not condemn it"
+    )
 
 
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():

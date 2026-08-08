@@ -120,6 +120,70 @@ DIRECTOR_ADDRESSED_MEMBERS: dict[str, str] = {
         "values requires the project director's approval'. A standing request for his "
         "approval, sitting in a vendored-source clarification file."
     ),
+    # --- added under D44: mastery-ledger entries carrying a TASK assigned to him -----
+    #
+    # The D43 marker surfaced twelve members. The Director walked all twenty-two lines
+    # and split them on the distinction the text actually carries, not on the file they
+    # sit in. Three shapes:
+    #
+    #   A  the empty-field marker, in eleven entries, under the heading
+    #      "## Explanation in the director's own words" -- naming a field, not asking
+    #      for anything. That is the D41 `STATE.md` case.
+    #   B  a task assigned to him WITH CONTENT: a specific explanation he owes, naming
+    #      the physics it must cover.
+    #   C  `template.md`'s guidance to whoever fills a new entry, assigning nobody
+    #      anything.
+    #
+    # The ten below carry A **and** B in the same file. An exclusion is per-member, so
+    # for these ten it was binary, and B decides it. The reason for each is its own
+    # B-line verbatim: a name with no evidence is what the enumeration exists not to be.
+    "verification/mastery-ledger/entries/architecture-cases.md": (
+        "line 79 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of the case-space classification and the modeled-component-mass "
+        "limitation.' That is a task he owes, not a field naming him."
+    ),
+    "verification/mastery-ledger/entries/beta-angle-albedo-model.md": (
+        "line 81 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of the sub-point albedo factor and its beta = 90 limitation.'"
+    ),
+    "verification/mastery-ledger/entries/coupled-steady-state-solution.md": (
+        "line 79 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of the coupled solve and the heat-injection rule (chip heat through "
+        "R1/R2; pump heat into R3).'"
+    ),
+    "verification/mastery-ledger/entries/earth-view-factors.md": (
+        "line 99 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of the tilted-plate-to-sphere geometry and why the edge-on heuristic "
+        "floor (~0.021) is a ~12x underestimate of the exact ~0.258.'"
+    ),
+    "verification/mastery-ledger/entries/emitting-face-convention.md": (
+        "line 84 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of why emitting area, not planform, is correct, and when the "
+        "equal-sink condition holds.'"
+    ),
+    "verification/mastery-ledger/entries/radiative-equilibrium-and-net-rejection.md": (
+        "line 80 assigns him a write-up in his own words: '`TODO (director)`: "
+        "plain-language explanation.' Terser than its nine siblings and the same kind of "
+        "thing -- an open task with his name on it, not a field naming him."
+    ),
+    "verification/mastery-ledger/entries/radiator-attitude-and-sun-shielding.md": (
+        "line 87 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "statement of the attitude/shielding assumption and why direct-solar omission is "
+        "acceptable for the intended cold-side screening.'"
+    ),
+    "verification/mastery-ledger/entries/single-phase-pumped-loop.md": (
+        "line 75 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of the loop hydraulics/thermics and the hydraulic-into-fluid "
+        "pump-heat convention.'"
+    ),
+    "verification/mastery-ledger/entries/solid-thermal-network.md": (
+        "line 82 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of spreading resistance and the isothermal vs convective base.'"
+    ),
+    "verification/mastery-ledger/entries/spectral-separation-of-loads.md": (
+        "line 80 assigns him a specific write-up: '`TODO (director)`: plain-language "
+        "explanation of why two bands (and Kirchhoff) are needed.'"
+    ),
 }
 
 #: The marker shapes, each traceable to what `OTB-G002` F-05 was actually raised on.
@@ -308,8 +372,13 @@ _PROCESS_WORDS = frozenset(
     rules decision decisions decide judgment judgement call calls question questions
     approval approve attention review reviews closure closed close pending awaiting await
     awaits need needs needed requires require required requiring finding findings builder
-    build open status asks ask sol cross model raised record records""".split()
+    build open status asks ask sol cross model raised record records
+    todo""".split()
 )
+# ``todo`` is marker vocabulary, added at D44. Without it the screen scored
+# ``TODO (director)`` as carrying a subject token and passed it -- the exact containment
+# key D44 identifies as instance twenty-one. The screen had a hole precisely at the
+# shape the round was about, and the regression below is what found it.
 _FUNCTION_WORDS = frozenset(
     """a an the is are was it its of for to and or not this that these those his her
     their one two three in on at by with from as be been before after than so but if each
@@ -364,6 +433,13 @@ def weak_keys(known: tuple[str, ...]) -> list[tuple[str, str]]:
     """
     flagged = []
     for fragment in known:
+        # An Exact key is matched by EQUALITY, so the question this screen asks -- could
+        # a NEW address about a different subject satisfy this key? -- is already
+        # answered no by the matching rule. Only a byte-identical line satisfies it, and
+        # a byte-identical empty-field placeholder is not a new address (D41, D44).
+        # Screening it on vocabulary would condemn the one key shape that cannot be weak.
+        if isinstance(fragment, Exact):
+            continue
         if subject_tokens(fragment):
             continue
         if fragment in _SCREEN_EXEMPT:
@@ -374,18 +450,51 @@ def weak_keys(known: tuple[str, ...]) -> list[tuple[str, str]]:
 
 def inert_screen_exemptions(known: tuple[str, ...]) -> list[str]:
     """Screen exemptions that are not exempting anything -- dead weight, reported."""
+    texts = {_fragment_text(f) for f in known}
     return sorted(
         fragment
         for fragment in _SCREEN_EXEMPT
-        if fragment in known and subject_tokens(fragment)
+        if fragment in texts and subject_tokens(fragment)
     )
 
 
-def _addresses_only(known: tuple[str, ...]) -> Callable[[str], bool]:
+class Exact(NamedTuple):
+    """A key matched by EQUALITY on the stripped line, not by containment.
+
+    **D44, and it is the difference between a key and a wish.**
+    ``two-phase-flow-boiling-heat-acquisition.md:102`` is the bare token
+    ``TODO (director)`` and nothing else on the line. A containment key on that fragment
+    is satisfied by *any* line containing it -- including
+    ``TODO (director): explain the CHF gate``, a task assigned to him. That is instance
+    twenty-one's definition, in an entry created to avoid it: a key a fresh instance of
+    the thing satisfies.
+
+    Equality forecloses it. A new address carrying content does not strip to
+    ``TODO (director)``, so it fails. A second *bare* placeholder does satisfy it, and
+    that is correct rather than a gap -- it is the D41 ``STATE.md`` finding exactly:
+    naming an empty field is not addressing him, so another empty field of the identical
+    shape is the same class of content, not a new claim on his time.
+
+    Declared here as DATA rather than built as a second predicate function, so
+    :func:`_addresses_only` stays the single mechanism for all twelve exempted members.
+    A second function would be a second thing to witness and a second thing to drift;
+    a marker type in the key tuple is visible at the call site and cannot diverge.
+    """
+
+    text: str
+
+
+def _fragment_text(fragment) -> str:
+    """The literal text of a key, whichever matching rule it carries."""
+    return fragment.text if isinstance(fragment, Exact) else fragment
+
+
+def _addresses_only(known: tuple) -> Callable[[str], bool]:
     """Build the predicate: every Director-addressed line carries a known sentence.
 
-    One mechanism for all three exempted members, so there is one thing to witness rather
-    than three that could drift apart.
+    One mechanism for every exempted member, so there is one thing to witness rather
+    than several that could drift apart. A key is matched by CONTAINMENT unless it is an
+    :class:`Exact`, which is matched by equality on the stripped line.
 
     **Subset, not equality, and deliberately so.** A member that GAINS an address fails --
     that is the property the exemption is granted on. A member that LOSES one still holds:
@@ -398,12 +507,22 @@ def _addresses_only(known: tuple[str, ...]) -> Callable[[str], bool]:
     new addresses are all caught.
     """
 
+    def accounted(line: str) -> bool:
+        lowered = line.lower()
+        stripped = lowered.strip()
+        for fragment in known:
+            if isinstance(fragment, Exact):
+                if stripped == fragment.text.lower().strip():
+                    return True
+            elif fragment.lower() in lowered:
+                return True
+        return False
+
     def holds(text: str) -> bool:
         lines = text.splitlines()
         for rx in _COMPILED_MARKERS.values():
             for match in rx.finditer(text):
-                line = lines[text.count("\n", 0, match.start())].lower()
-                if not any(fragment.lower() in line for fragment in known):
+                if not accounted(lines[text.count("\n", 0, match.start())]):
                     return False
         return True
 
@@ -453,6 +572,22 @@ _G004_DISPOSITIONED_KNOWN_ADDRESSES = (
 _G004_FINDINGS_KNOWN_ADDRESSES = (
     "findings need a Director ruling, lines 19-27",
     "names F-01 as awaiting the Director's status field",
+)
+
+#: The two mastery-ledger members that carry NO task assigned to him (D44).
+#:
+#: ``two-phase-flow-boiling-heat-acquisition.md:102`` is the bare token and nothing else
+#: on the line, sitting under "## Explanation in the director's own words" -- an empty
+#: field. **Keyed by EQUALITY, not containment**, because the fragment IS the marker's
+#: own wording: a containment key here is satisfied by
+#: ``TODO (director): explain the CHF gate``, which is a task assigned to him and exactly
+#: what the exemption must not cover. See :class:`Exact`.
+_TWO_PHASE_ENTRY_KNOWN_ADDRESSES = (Exact("TODO (director)"),)
+
+#: ``template.md:29`` is guidance to whoever fills a new entry and assigns him nothing.
+#: It has real surrounding context, so it takes an ordinary containment key.
+_LEDGER_TEMPLATE_KNOWN_ADDRESSES = (
+    "Leave as `TODO (director)` until done -- do not fabricate.",
 )
 
 
@@ -582,6 +717,30 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="every Director-addressed line in it is one of the two known sentences",
         holds=_addresses_only(_G004_FINDINGS_KNOWN_ADDRESSES),
+    ),
+    # --- added under D44: the two ledger members that assign him nothing -------------
+    "verification/mastery-ledger/entries/two-phase-flow-boiling-heat-acquisition.md":
+        _Exemption(
+            reason=(
+                "the one mastery-ledger entry whose only Director-addressed line is an "
+                "EMPTY FIELD: line 102 is the bare token `TODO (director)` under "
+                "'## Explanation in the director's own words', with no task attached. Its "
+                "ten siblings each also carry a specific write-up he owes and are excluded "
+                "for that line; this one has no such line. Naming a field he will one day "
+                "fill is not addressing him -- the D41 `STATE.md` finding, in a ledger."
+            ),
+            premise="its only Director-addressed line is exactly the bare placeholder",
+            holds=_addresses_only(_TWO_PHASE_ENTRY_KNOWN_ADDRESSES),
+        ),
+    "verification/mastery-ledger/template.md": _Exemption(
+        reason=(
+            "the template, whose line 29 is instruction to whoever fills a NEW entry -- "
+            "'drafting. Leave as `TODO (director)` until done -- do not fabricate.' It "
+            "explains the placeholder convention and assigns the Director nothing. A "
+            "template that could not describe the convention could not teach it."
+        ),
+        premise="its only Director-addressed line is the placeholder-convention guidance",
+        holds=_addresses_only(_LEDGER_TEMPLATE_KNOWN_ADDRESSES),
     ),
 }
 
