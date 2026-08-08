@@ -1287,6 +1287,156 @@ def test_witness_d44_an_exact_key_is_not_screened_as_weak_vocabulary():
     )
 
 
+_G004_02_FIND_KEY = "findings-OTB-G004-02.yaml"
+_G004_02_DISP_KEY = "OTB-G004-02_dispositioned.md"
+
+#: Round 2's records, in the shapes their real files carry. The addressed lines are kept
+#: UNWRAPPED because the real ones are 87-525 characters on one line, and a fixture wrap
+#: would orphan a fragment from its marker match -- which has been the bug three times.
+_G004_02_FIND_MEMBER = "\n".join((
+    "review:",
+    "  gate: OTB-G004-02",
+    "findings:",
+    "  - id: F-03",
+    "    evidence: >-",
+    '      The registry allowlist key "it is a finding for director disposition" is itself a',
+    "      plausible reusable issue phrase. A new line such as \"The dryout basis remains",
+    '      open; it is a finding for director disposition, not a repair this build owns" both fires',
+    "      the marker and contains the known fragment.",
+    "  - id: F-04",
+    "    evidence: >-",
+    '      Eleven shipped mastery-ledger entries still contain live assignments to him,',
+    '      including "TODO (director)" requests for explanations and director-authored derivations',
+    "      that remain TODO.",
+)) + "\n"
+
+_G004_02_DISP_MEMBER = "\n".join((
+    "# OTB-G004-02 dispositioned",
+    "",
+    "## F-04",
+    "",
+    "> D43, selected: A `TODO (director)` pattern is added to `DIRECTOR_ADDRESSED_MARKERS`. It fires, every member it surfaces is reported, and each comes back to the Director as an exclusion or a checked exemption. Nothing is quieted by an entry he has not ruled on.",
+    "",
+    '**Finding.** The registry allowlist key "it is a finding for director disposition" is itself a plausible reusable issue phrase. A new line such as "The incomplete dryout basis remains open; it is a finding for director disposition, not a repair this build owns" both fires the marker and contains the known fragment.',
+    "",
+    '**Finding.** Eleven shipped mastery-ledger entries still contain live assignments to the Director, including "TODO (director)" requests for explanations and director-authored derivations that remain TODO.',
+)) + "\n"
+
+_MEMBER_TEXT[_G004_02_FIND_KEY] = _G004_02_FIND_MEMBER
+_MEMBER_TEXT[_G004_02_DISP_KEY] = _G004_02_DISP_MEMBER
+
+
+def test_witness_d46_both_premises_hold_and_fail_on_one_more_address():
+    """**Witness 1.** Each must name itself, and only itself, when its member grows."""
+    both = {_G004_02_FIND_KEY: _G004_02_FIND_MEMBER,
+            _G004_02_DISP_KEY: _G004_02_DISP_MEMBER}
+    assert false_premises(both) == []
+
+    for key, member in both.items():
+        grown = dict(both)
+        grown[key] = member + "\n\nA new item is pending director disposition before S7.\n"
+        assert [n for n, _ in false_premises(grown)] == [key], (
+            f"{key} gained an address and must be the only member reported"
+        )
+
+
+def test_witness_d46_no_fresh_address_slips_past_either_key():
+    """**Witness 4**, with probes that fire a marker and QUOTE NO FRAGMENT.
+
+    Three parties have now built the probe that wraps the key in a preamble, so the
+    probe contains the key verbatim and every containment check passes. The assertion
+    below rejects such a probe outright rather than scoring it.
+    """
+    import packet_exclusions as pe
+
+    probes = (
+        "The dryout basis remains open; it is a finding for director disposition.",
+        "A new item is pending director disposition before S7.",
+        "`TODO (director)`: plain-language explanation of the CHF gate.",
+        "TODO (director)",
+        "Two findings need a director ruling before the freeze.",
+        "**Knock-on for director attention:** the bore bound.",
+        "That is a Director question about the tooling.",
+        "This is awaiting the Director's closure on eta_pump.",
+    )
+    keysets = {
+        _G004_02_FIND_KEY: (_G004_02_FIND_MEMBER, pe._G004_02_FINDINGS_KNOWN_ADDRESSES),
+        _G004_02_DISP_KEY: (_G004_02_DISP_MEMBER,
+                            pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES),
+    }
+    for probe in probes:
+        assert any(rx.search(probe) for rx in pe._COMPILED_MARKERS.values()), (
+            f"probe fires no marker, so it is not an attack: {probe!r}"
+        )
+        for key, (member, fragments) in keysets.items():
+            assert not any(f.lower() in probe.lower() for f in fragments), (
+                f"probe quotes a key fragment, which makes it prove nothing: {probe!r}"
+            )
+            grown = member + "\n\n" + probe + "\n"
+            assert [n for n, _ in false_premises({key: grown})] == [key], (
+                f"{key}: a fresh address slipped past the key: {probe!r}"
+            )
+
+
+def test_witness_d46_a_search_built_premise_fails_against_the_real_three():
+    """**Witness 2, and this is the FOURTH member the gap has appeared in.**
+
+    ``rx.search`` reports one match per marker per member, so a line whose marker another
+    line already fired is invisible. Here that hides line 110 of the findings file and
+    line 99 of the disposition record. A premise built from the ``search`` view names two
+    sentences and is false against the real three.
+    """
+    import packet_exclusions as pe
+
+    for member in (_G004_02_FIND_MEMBER, _G004_02_DISP_MEMBER):
+        lines = member.splitlines()
+        search_lines = sorted({
+            member.count("\n", 0, m.start())
+            for rx in pe._COMPILED_MARKERS.values() if (m := rx.search(member))
+        })
+        finditer_lines = sorted({
+            member.count("\n", 0, m.start())
+            for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(member)
+        })
+        assert len(search_lines) < len(finditer_lines), (
+            "if the two views agreed here there would be no gap to encode"
+        )
+        search_premise = pe._addresses_only(
+            tuple(lines[i].strip() for i in search_lines))
+        assert not search_premise(member), (
+            "a premise built from the search view MUST be false against the real member"
+        )
+        assert pe._addresses_only(
+            tuple(lines[i].strip() for i in finditer_lines))(member)
+
+
+def test_witness_d46_the_two_conditions_stay_distinguishable():
+    """**Witness 3.** A false premise reports; an inert entry is silent, and vice versa."""
+    grown = _G004_02_DISP_MEMBER + "\n\nA new item is pending director disposition.\n"
+    assert [n for n, _ in false_premises({_G004_02_DISP_KEY: grown})] == [
+        _G004_02_DISP_KEY]
+    assert [p for p in inert_allowlist({_G004_02_DISP_KEY: grown})
+            if p[0] == _G004_02_DISP_KEY] == []
+
+    quiet = "# OTB-G004-02 dispositioned\n\nNothing outstanding.\n"
+    assert false_premises({_G004_02_DISP_KEY: quiet}) == []
+    assert [p for p in inert_allowlist({_G004_02_DISP_KEY: quiet})
+            if p[0] == _G004_02_DISP_KEY] == [
+        (_G004_02_DISP_KEY, "in the packet but carries no marker; suppressing nothing")]
+
+
+def test_witness_d46_both_premises_survive_unrelated_edits():
+    """Blank lines, appended prose, a deleted address (D40: subset, not equality)."""
+    assert false_premises({
+        _G004_02_FIND_KEY: "\n" * 20 + _G004_02_FIND_MEMBER,
+        _G004_02_DISP_KEY: _G004_02_DISP_MEMBER + "\n" + ("Ordinary prose. " * 30) + "\n",
+    }) == []
+
+    trimmed = "\n".join(line for line in _G004_02_DISP_MEMBER.splitlines()
+                        if "Eleven shipped mastery-ledger" not in line)
+    assert false_premises({_G004_02_DISP_KEY: trimmed}) == []
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
     """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
     assert len(DIRECTOR_ADDRESSED_MARKERS) == 13

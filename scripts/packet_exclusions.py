@@ -590,6 +590,52 @@ _LEDGER_TEMPLATE_KNOWN_ADDRESSES = (
     "Leave as `TODO (director)` until done -- do not fabricate.",
 )
 
+#: `OTB-G004`'s round-2 findings file. Three addressed lines, and the middle one
+#: (110) is visible only to ``finditer`` -- the fourth member in which that gap has
+#: appeared, and the third to have produced a false premise if built from ``search``.
+#:
+#: **Keyed on the REPORT'S OWN FRAMING, never on the sentence it quotes.** Two of these
+#: lines exist because Sol quoted a Director-addressed sentence as evidence; a key taken
+#: from the quotation would be satisfied by any future record quoting the same sentence,
+#: and by the sentence itself appearing anywhere. So the keys carry the report's prose
+#: around the quotation -- ``is itself a``, ``both fires``, ``requests for explanations``
+#: -- which is this document writing about the finding rather than the finding's words.
+_G004_02_FINDINGS_KNOWN_ADDRESSES = (
+    'registry allowlist key "it is a finding for director disposition" is itself a',
+    'not a repair this build owns" both fires',
+    "requests for explanations and director-authored derivations",
+)
+
+#: `OTB-G004`'s round-2 disposition record. Three addressed lines; line 99 is visible
+#: only to ``finditer``.
+#:
+#: **Line 60 is a QUOTATION OF A DIRECTOR RULING and there is nothing else on it.** The
+#: whole line is D43's selected option behind a ``> D43, selected:`` label, so every
+#: candidate key is his wording. The key below pins WHICH ruling by carrying the ruling's
+#: own opening clause, and carries the record's ``> D43, selected:`` label with it. The
+#: residual hazard is stated rather than engineered away: any future record quoting D43
+#: the same way satisfies this key. That is not a NEW address about a different subject
+#: -- it is the same ruling, quoted -- so it is not the weak-key shape Sol's finding is
+#: about; but the key does not distinguish this record from another quoting D43, and a
+#: reader should know that.
+#:
+#: **Lines 89 and 99 are paragraph-length (525 and 461 characters) and these keys are
+#: NOT reflow-robust.** Measured across five widths, and the trade is deliberate: the
+#: weakest possible keying -- the matched text itself -- survives four widths of five and
+#: is flagged by :func:`weak_keys`; every keying strong enough to pass the screen fails
+#: at four widths or five. The frontier is real and I took strength.
+#:
+#: A weak key fails SILENTLY: a fresh Director-addressed line enters the packet and the
+#: build stays green, which is F-03 and the whole reason this mechanism exists. A
+#: reflow-broken key fails LOUDLY: ``false_premises`` names the member, the build stops,
+#: and someone re-keys. Loud beats silent. And these are gate records deposited into a
+#: packet, not living documents -- nothing reflows them.
+_G004_02_DISPOSITIONED_KNOWN_ADDRESSES = (
+    "> D43, selected: A `TODO (director)` pattern is added to",
+    "is itself a plausible reusable issue phrase",
+    "Eleven shipped mastery-ledger entries still contain live assignments",
+)
+
 
 QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
     "SETTLED_DECISIONS.md": _Exemption(
@@ -741,6 +787,32 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="its only Director-addressed line is the placeholder-convention guidance",
         holds=_addresses_only(_LEDGER_TEMPLATE_KNOWN_ADDRESSES),
+    ),
+    # --- added under D46: round 2's own records, which quote what they ruled on -----
+    # Gate records, not repository files: they exist only inside a packet, so these two
+    # premises are exercised only when the packet directory is supplied.
+    "findings-OTB-G004-02.yaml": _Exemption(
+        reason=(
+            "the round-2 findings file. Two of its three addressed lines are Sol's F-03 "
+            "evidence QUOTING the registry allowlist key -- the finding is that the key "
+            "is reusable, and stating it requires reproducing it -- and the third "
+            "summarises the `TODO (director)` requests F-04 is about. A findings file "
+            "that could not quote what it found could not report it. Same basis as "
+            "`findings-OTB-G004.yaml`, already exempted."
+        ),
+        premise="every Director-addressed line in it is one of the three known sentences",
+        holds=_addresses_only(_G004_02_FINDINGS_KNOWN_ADDRESSES),
+    ),
+    "OTB-G004-02_dispositioned.md": _Exemption(
+        reason=(
+            "the round-2 disposition record. It quotes D43's selected option back "
+            "verbatim -- the Director's own ruling, which a record of rulings must be "
+            "able to state -- and restates both findings' text in order to disposition "
+            "them. Same basis as `OTB-G003_dispositioned.md` and "
+            "`OTB-G004_dispositioned.md`, already exempted."
+        ),
+        premise="every Director-addressed line in it is one of the three known sentences",
+        holds=_addresses_only(_G004_02_DISPOSITIONED_KNOWN_ADDRESSES),
     ),
 }
 
