@@ -606,34 +606,64 @@ _G004_02_FINDINGS_KNOWN_ADDRESSES = (
     "requests for explanations and director-authored derivations",
 )
 
-#: `OTB-G004`'s round-2 disposition record. Three addressed lines; line 99 is visible
-#: only to ``finditer``.
+#: `OTB-G004`'s round-2 disposition record. **SEVEN addressed lines, and D46 keyed three.**
 #:
-#: **Line 60 is a QUOTATION OF A DIRECTOR RULING and there is nothing else on it.** The
-#: whole line is D43's selected option behind a ``> D43, selected:`` label, so every
-#: candidate key is his wording. The key below pins WHICH ruling by carrying the ruling's
-#: own opening clause, and carries the record's ``> D43, selected:`` label with it. The
-#: residual hazard is stated rather than engineered away: any future record quoting D43
-#: the same way satisfies this key. That is not a NEW address about a different subject
-#: -- it is the same ruling, quoted -- so it is not the weak-key shape Sol's finding is
-#: about; but the key does not distinguish this record from another quoting D43, and a
-#: reader should know that.
+#: **D48, and the reason it exists is that D46's own reasoning was wrong on a fact.** The
+#: D46 note here ended *"these are gate records deposited into a packet, not living
+#: documents -- nothing reflows them."* Nothing did. But the D47 three-zone seam repair
+#: **amended** the record: ``option_presented:`` must carry the exact option text the
+#: Director was shown, so the F-04 question (140), the option he CHOSE (141) and an option
+#: he did NOT choose (142) entered as addressed lines, and the ``action`` field describing
+#: the built marker entered as a fourth (201). An amended gate record gains addressed
+#: lines exactly the way a reflowed one loses keys. The premise failed in
+#: :func:`false_premises` before the freeze, which is the D40 subset rule working.
 #:
-#: **Lines 89 and 99 are paragraph-length (525 and 461 characters) and these keys are
-#: NOT reflow-robust.** Measured across five widths, and the trade is deliberate: the
-#: weakest possible keying -- the matched text itself -- survives four widths of five and
-#: is flagged by :func:`weak_keys`; every keying strong enough to pass the screen fails
-#: at four widths or five. The frontier is real and I took strength.
+#: **And the D46 key for the selection line did not survive the re-render, which the
+#: handoff's own table did not catch.** That key was
+#: ``> D43, selected: A `TODO (director)` pattern is added to`` -- it carried the record's
+#: ``> `` blockquote prefix and its ``D43, `` label. The repair moved the label to a
+#: ``--- DIRECTOR SELECTION ---`` header line, dropped the blockquote, and hard-wrapped
+#: the text at ~105 columns. **The key matches nothing in the shipped file.** Line 135 was
+#: reported as previously keyed and was in fact a fourth broken line. The lesson is keyed
+#: into every fragment below: key on what the sentence SAYS, never on how the renderer
+#: decorated it. A ``> `` prefix and a ``D43, `` label are render, not content.
 #:
-#: A weak key fails SILENTLY: a fresh Director-addressed line enters the packet and the
-#: build stays green, which is F-03 and the whole reason this mechanism exists. A
-#: reflow-broken key fails LOUDLY: ``false_premises`` names the member, the build stops,
-#: and someone re-keys. Loud beats silent. And these are gate records deposited into a
-#: packet, not living documents -- nothing reflows them.
+#: **Line 183's D46 key was weak and is replaced.** It was
+#: ``is itself a plausible reusable issue phrase`` -- F-03's own vocabulary, which passes
+#: :func:`weak_keys` and fails the reading the screen is only a floor for. Measured: a new
+#: finding about a DIFFERENT reusable key -- *"The `STATE.md` allowlist key is itself a
+#: plausible reusable issue phrase: a new row awaiting the Director's closure contains it
+#: verbatim"* -- fires ``awaiting`` and slips past it. The replacement names the registry
+#: allowlist key it is actually about, and catches that attack.
+#:
+#: **Three of these seven are verbatim option text and cannot be worded away.** 140 is the
+#: question, 141 the option he chose, 142 an option he rejected; D36 forbids editing a
+#: record to quiet a detector, and the Director was offered "drop the verbatim option text"
+#: at D48 and declined it. So the residual is stated instead: **any future record that
+#: replays this same question and option set contains these fragments.** That is not the
+#: weak-key shape -- it is the same option set, re-recorded, not a new address about a
+#: different subject -- but the keys do not distinguish this record from that one, and 141
+#: in particular is a key cut from the Director's recorded CHOICE. Each is pinned as tightly
+#: to F-04's subject as its line allows: the counts (``22``, ``twelve``, ``twenty-two``),
+#: the cross-reference (``D38 handled the six the case-blind change``), the named symbol.
+#:
+#: **NOTHING here is reflow-robust, and unlike D46 that is not a trade.** :func:`_addresses_only`
+#: requires the key on the SAME LINE as the marker match, and five of these seven lines run
+#: 327-525 characters. Three keyings were measured at 72/80/88/100/120 under two reflow
+#: implementations: these keys, a deliberately shortened set, and a marker-hugging set whose
+#: every key contains its own marker match. **All three fail at all five widths under both.**
+#: Line 183 alone carries TWO marker matches, so no single key on it can cover both once a
+#: wrap separates them. Weakening buys nothing measurable and costs real attacks -- the short
+#: set leaks the ``STATE.md`` probe, the marker-hugging set leaks three. At D46 the frontier
+#: was real and strength was bought at a price; here there is no frontier and strength is free.
 _G004_02_DISPOSITIONED_KNOWN_ADDRESSES = (
-    "> D43, selected: A `TODO (director)` pattern is added to",
-    "is itself a plausible reusable issue phrase",
+    "A `TODO (director)` pattern is added to `DIRECTOR_ADDRESSED_MARKERS`",
+    "12 shipped mastery-ledger members carry 22 `TODO (director)` lines that no marker sees",
+    "exactly as D38 handled the six the case-blind change surfaced",
+    "the next member carrying a `TODO (director)` line ships silently",
+    'registry allowlist key "it is a finding for director disposition" is itself a',
     "Eleven shipped mastery-ledger entries still contain live assignments",
+    "it fired and surfaced twelve members / twenty-two lines",
 )
 
 
@@ -808,10 +838,13 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
             "the round-2 disposition record. It quotes D43's selected option back "
             "verbatim -- the Director's own ruling, which a record of rulings must be "
             "able to state -- and restates both findings' text in order to disposition "
-            "them. Same basis as `OTB-G003_dispositioned.md` and "
-            "`OTB-G004_dispositioned.md`, already exempted."
+            "them. Since the D47 seam repair it also carries the `option_presented:` "
+            "field, whose contract is the EXACT question and option text he was shown, "
+            "so the question, his choice and a rejected option are quoted verbatim too. "
+            "Same basis as `OTB-G003_dispositioned.md` and `OTB-G004_dispositioned.md`, "
+            "already exempted."
         ),
-        premise="every Director-addressed line in it is one of the three known sentences",
+        premise="every Director-addressed line in it is one of the seven known sentences",
         holds=_addresses_only(_G004_02_DISPOSITIONED_KNOWN_ADDRESSES),
     ),
 }
@@ -853,6 +886,50 @@ def unknown_exclusions(paths: list[str]) -> list[str]:
     reports a rotted anchor as a failure instead of skipping it.
     """
     return sorted(set(DIRECTOR_ADDRESSED_MEMBERS) - set(paths))
+
+
+#: How a round's own two gate records are named. Kept beside the check that uses it so
+#: the coupling this check rests on is visible rather than buried in an f-string.
+_ROUND_RECORD_NAMES: tuple[tuple[str, str], ...] = (
+    ("findings-{record_id}.yaml", "findings file"),
+    ("{record_id}_dispositioned.md", "disposition record"),
+)
+
+
+def missing_round_records(record_id: str, paths: list[str]) -> list[str]:
+    """The round's OWN records, missing from the set it is about to ship. **Fatal.**
+
+    **D50.** :func:`unknown_exclusions` catches an entry naming a member that is not
+    shipping. This is its mirror and nothing checked it: a member that must be shipping
+    and is not. Round 2's entire record went missing under a freeze that passed, because
+    the freeze checks bytes, the certificate and authority containment, and had no
+    statement about which records a packet must contain at all.
+
+    One comparison per name against the set :func:`unknown_exclusions` is already given.
+    No traversal, no new mechanism, nothing read.
+
+    **The residual, stated rather than engineered away, because it is the shape this
+    project counts.** This keys "the record exists" on a NAMING CONVENTION. It therefore
+    tests the shape imagined rather than the property needed: a record present under a
+    different name reads as absent, and a correctly-named empty file reads as present.
+    That objection was put to the Director at D50 as the argument against building it and
+    he outweighed it -- *"a loud wrong-name failure still beats a silent absence, and it
+    is disclosed either way"* -- so the failure message below says so in the words a
+    reader gets, not only here.
+
+    **It closes ONE INSTANCE, not the class.** It does not detect a ledger that exists but
+    is empty, a ledger missing findings, or a ``STATE.md`` derived from a partial set. The
+    completeness gap this instance came from is still open.
+    """
+    present = set(paths)
+    return [
+        f"{name}: the {label} for {record_id} is not in the member set. "
+        f"(This check matches by NAME: a record shipping under a different name "
+        f"reports here as absent, and an empty file of the right name reports as present.)"
+        for template, label in _ROUND_RECORD_NAMES
+        for name in (template.format(record_id=record_id),)
+        if name not in present
+    ]
 
 
 def discover_director_addressed(

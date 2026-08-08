@@ -1310,16 +1310,39 @@ _G004_02_FIND_MEMBER = "\n".join((
     "      that remain TODO.",
 )) + "\n"
 
+#: **D48: SEVEN addressed lines, not three, and each is the shipped line VERBATIM.**
+#:
+#: The D47 three-zone seam repair amended the record: ``option_presented:`` carries the
+#: exact question and option text the Director was shown, which added three addressed
+#: lines, and the ``action`` field describing the built marker added a fourth. The same
+#: repair re-rendered the selection line -- dropping its ``> `` blockquote and ``D43, ``
+#: label and hard-wrapping it at ~105 columns -- so D46's key for it matched nothing.
+#:
+#: These lines are **copied from the shipped bytes**, wrap points and all, rather than
+#: retyped. Line 135 really does end mid-sentence at "every member it"; reproducing that
+#: is the point, because a key must sit on the same line as its marker match and a fixture
+#: that tidied the wrap would test a file that does not exist.
 _G004_02_DISP_MEMBER = "\n".join((
     "# OTB-G004-02 dispositioned",
     "",
     "## F-04",
     "",
-    "> D43, selected: A `TODO (director)` pattern is added to `DIRECTOR_ADDRESSED_MARKERS`. It fires, every member it surfaces is reported, and each comes back to the Director as an exclusion or a checked exemption. Nothing is quieted by an entry he has not ruled on.",
+    "--- DIRECTOR SELECTION — BUILDER WORDING, DIRECTOR CHOICE ---",
+    'selected: A `TODO (director)` pattern is added to `DIRECTOR_ADDRESSED_MARKERS`. It fires, every member it',
+    "surfaces is reported, and each comes back to the Director as an exclusion or a checked exemption.",
+    "--- END DIRECTOR SELECTION ---",
     "",
-    '**Finding.** The registry allowlist key "it is a finding for director disposition" is itself a plausible reusable issue phrase. A new line such as "The incomplete dryout basis remains open; it is a finding for director disposition, not a repair this build owns" both fires the marker and contains the known fragment.',
+    "option_presented: He was shown four question sets in one call on 2026-08-06. This finding's question,",
+    '  verbatim: "F-04 (minor, scope-reserved) — 12 shipped mastery-ledger members carry 22 `TODO (director)` lines that no marker sees. How is it dispositioned?"',
+    '  CHOSEN — Add the marker, surface all members, rule on each (Recommended): "Add a `TODO (director)` pattern to DIRECTOR_ADDRESSED_MARKERS, let it fire, report every member it surfaces — and bring each back for your ruling as exclusion or checked exemption, exactly as D38 handled the six the case-blind change surfaced. Nothing gets quieted by an entry you have not ruled on. Costs a build plus a decision round."',
+    '  NOT chosen — Exclude the 12 members from the packet with reasons: "Packaging-side only, no repo change, no new marker. The reviewer loses the mastery-ledger entries. Cost: the vocabulary still cannot see this shape, so the next member carrying a `TODO (director)` line ships silently — which is the defect, not the instance."',
+    "--- END DIRECTOR PROSE. ---",
     "",
-    '**Finding.** Eleven shipped mastery-ledger entries still contain live assignments to the Director, including "TODO (director)" requests for explanations and director-authored derivations that remain TODO.',
+    '**Finding.** The registry allowlist key "it is a finding for director disposition" is itself a plausible reusable issue phrase. A new line such as "The incomplete dryout basis remains open; it is a finding for director disposition, not a repair this build owns" both fires the for-director-disposition marker and contains the known fragment, so _addresses_only accepts it as one of the old sentences and the new address does not fail the premise. This is the weak-key shape the brief explicitly asks the reviewer to identify.',
+    "",
+    '**Finding.** Eleven shipped mastery-ledger entries still contain live assignments to the Director, including "TODO (director)" requests for explanations and director-authored derivations that remain TODO. These are open tasks addressed to him, not citations of settled rulings, yet none is excluded or checked by the packaging vocabulary. The packet therefore still contains the prohibited recipient class while the delivered M10 and M11 evidence remains green.',
+    "",
+    '**Action.** BUILT, PUSHED AND VERIFIED BY EXECUTION at commits e9b0f4e -> a04e963 -> ac61b98. A `TODO (director)` pattern was added to `DIRECTOR_ADDRESSED_MARKERS`; it fired and surfaced twelve members / twenty-two lines; all twelve were brought to the Director and ruled at D44 (ten excluded, two allowlisted); D45 confirmed the `Exact` marker-type decision; D46 allowlisted the two round-2 gate records with checked premises. Nothing was quieted by an entry he had not ruled on.',
 )) + "\n"
 
 _MEMBER_TEXT[_G004_02_FIND_KEY] = _G004_02_FIND_MEMBER
@@ -1358,6 +1381,17 @@ def test_witness_d46_no_fresh_address_slips_past_either_key():
         "**Knock-on for director attention:** the bore bound.",
         "That is a Director question about the tooling.",
         "This is awaiting the Director's closure on eta_pump.",
+        # --- D48: four PLAUSIBLE FUTURE OPTION SETS about a different subject ---------
+        # Three of the four lines the amendment added are option boilerplate, which
+        # recurs by design, so the probe that matters is a well-formed option set for a
+        # question that is not F-04. The first draft of this group opened with a
+        # `selected:` line naming a new marker shape, and the assertion below rejected
+        # it: it fires NOTHING, so it proved nothing. That is the error three parties
+        # have now made, caught here by the guard rather than by a reviewer.
+        "selected: The eleven ledger entries are excluded and each `TODO (director)` line is reported to him.",
+        '  verbatim: "F-09 (major) — 4 shipped registry modules carry 7 `TODO (director)` lines that no marker sees. How is it dispositioned?"',
+        '  CHOSEN — Re-scope the premise (Recommended): "Replace the enumeration with a structural claim, exactly as D41 handled STATE.md, and bring each `TODO (director)` line back for your ruling."',
+        '  NOT chosen — Drop the verbatim option text and freeze clean: "The reviewer loses the option set. Cost: the next `TODO (director)` line to ship is invisible again."',
     )
     keysets = {
         _G004_02_FIND_KEY: (_G004_02_FIND_MEMBER, pe._G004_02_FINDINGS_KNOWN_ADDRESSES),
@@ -1378,15 +1412,40 @@ def test_witness_d46_no_fresh_address_slips_past_either_key():
             )
 
 
-def test_witness_d46_a_search_built_premise_fails_against_the_real_three():
-    """**Witness 2, and this is the FOURTH member the gap has appeared in.**
+def test_witness_d48_a_search_built_premise_fails_against_the_real_seven():
+    """**Witness 2, and this is the FIFTH member the gap has appeared in.**
 
     ``rx.search`` reports one match per marker per member, so a line whose marker another
-    line already fired is invisible. Here that hides line 110 of the findings file and
-    line 99 of the disposition record. A premise built from the ``search`` view names two
-    sentences and is false against the real three.
+    line already fired is invisible. **The amendment widened the gap rather than closing
+    it:** the disposition record now carries seven addressed lines and ``search`` sees
+    two, hiding five. A premise built from that view names two sentences and is false
+    against the real seven.
+
+    The counts are asserted, not just the inequality. D46's version of this test asserted
+    only ``search < finditer``, which would have stayed green while the member went from
+    three lines to seven -- a test whose passing carried no information about the thing
+    that actually changed.
     """
     import packet_exclusions as pe
+
+    hidden = {}
+    for name, member in ((_G004_02_FIND_KEY, _G004_02_FIND_MEMBER),
+                         (_G004_02_DISP_KEY, _G004_02_DISP_MEMBER)):
+        seen = sorted({
+            member.count("\n", 0, m.start()) + 1
+            for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(member)
+        })
+        by_search = sorted({
+            member.count("\n", 0, m.start()) + 1
+            for rx in pe._COMPILED_MARKERS.values() if (m := rx.search(member))
+        })
+        hidden[name] = (len(by_search), len(seen))
+    assert hidden[_G004_02_DISP_KEY] == (2, 7), (
+        f"the disposition record must show 7 addressed lines to finditer and 2 to "
+        f"search; got {hidden[_G004_02_DISP_KEY]}. If this fails because the record was "
+        f"amended again, the keys need re-cutting -- that is D48 recurring, not a flake."
+    )
+    assert hidden[_G004_02_FIND_KEY] == (2, 3)
 
     for member in (_G004_02_FIND_MEMBER, _G004_02_DISP_MEMBER):
         lines = member.splitlines()
@@ -1435,6 +1494,230 @@ def test_witness_d46_both_premises_survive_unrelated_edits():
     trimmed = "\n".join(line for line in _G004_02_DISP_MEMBER.splitlines()
                         if "Eleven shipped mastery-ledger" not in line)
     assert false_premises({_G004_02_DISP_KEY: trimmed}) == []
+
+
+def test_witness_d48_amending_the_record_is_caught_before_the_freeze():
+    """**Witness 5, and it is the control for the failure this round exists because of.**
+
+    Nothing regressed the AMENDMENT path. D46 reasoned that these are gate records and
+    "nothing reflows them", which was true and irrelevant: the D47 seam repair amended the
+    record, it gained four addressed lines, and the premise went false. That it went false
+    is the mechanism working -- but no test asserted it would.
+
+    Two amendments in the shape the repair actually took: a new `option_presented:` block
+    quoting a question the Director was shown, and a new `action` field describing work
+    built for him. Each must be named by :func:`false_premises`, by name.
+    """
+    amendments = (
+        '  verbatim: "F-11 (minor) — the S7 bore bound carries 3 `TODO (director)` lines. '
+        'How is it dispositioned?"',
+        "**Action.** BUILT at commit deadbee. A `TODO (director)` line was added to the S7 "
+        "ledger and brought to him.",
+    )
+    for amendment in amendments:
+        grown = _G004_02_DISP_MEMBER + "\n" + amendment + "\n"
+        assert [n for n, _ in false_premises({_G004_02_DISP_KEY: grown})] == [
+            _G004_02_DISP_KEY
+        ], f"an amended record must fail its own premise: {amendment[:60]!r}"
+
+
+def test_witness_d48_the_d46_keys_no_longer_match_the_amended_record():
+    """The re-key was NECESSARY, and a stale key must not fail quietly.
+
+    Two independent reasons the D46 keying is dead, both asserted, because the D48
+    handoff's own evidence table reported only the first:
+
+    1. the record gained four addressed lines the three keys never covered;
+    2. the key for the selection line -- ``> D43, selected: A `TODO (director)` pattern is
+       added to`` -- matches **nothing at all** in the amended file. The seam repair moved
+       the ``D43,`` label to a header line, dropped the ``> `` blockquote and hard-wrapped
+       the text, so the key's leading decoration is gone. It was listed as previously
+       keyed; it was a fourth broken line.
+
+    That is the general lesson and it is the assertion below: a key carrying the
+    RENDERER'S decoration dies at the next render. Keys are cut from what a sentence says.
+    """
+    import packet_exclusions as pe
+
+    dead = "> D43, selected: A `TODO (director)` pattern is added to"
+    assert dead not in _G004_02_DISP_MEMBER, (
+        "the D46 key must be absent from the amended record -- if it is present again "
+        "the record was reverted, and this test is the wrong thing to change"
+    )
+    d46_keys = (
+        dead,
+        "is itself a plausible reusable issue phrase",
+        "Eleven shipped mastery-ledger entries still contain live assignments",
+    )
+    assert not pe._addresses_only(d46_keys)(_G004_02_DISP_MEMBER), (
+        "the D46 keying must be false against the amended record"
+    )
+    assert pe._addresses_only(pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES)(
+        _G004_02_DISP_MEMBER
+    ), "and the D48 keying must hold against it"
+
+
+def test_witness_d48_the_replaced_f03_key_was_weak_by_the_reading():
+    """D46's key for the F-03 line passed :func:`weak_keys` and failed the READING.
+
+    ``is itself a plausible reusable issue phrase`` is F-03's own vocabulary. It carries
+    subject tokens, so the screen -- which is a floor, never a certificate -- passed it.
+    But a new finding about a DIFFERENT reusable key produces a sentence containing it
+    verbatim, which is instance twenty-one exactly. Measured here rather than argued: the
+    probe fires ``awaiting``, slips past the old key, and is caught by the replacement.
+
+    Nothing asked for this key to change. It is replaced because the attack lands.
+    """
+    import packet_exclusions as pe
+
+    attack = (
+        "**Finding.** The `STATE.md` allowlist key is itself a plausible reusable issue "
+        "phrase: a new row awaiting the Director's closure contains it verbatim."
+    )
+    assert any(rx.search(attack) for rx in pe._COMPILED_MARKERS.values()), (
+        "the probe must fire a marker or it is not an attack"
+    )
+    old = tuple(
+        "is itself a plausible reusable issue phrase"
+        if f.startswith("registry allowlist key") else f
+        for f in pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES
+    )
+    assert pe.weak_keys(old) == [], "the screen passes it -- that is why the screen is a floor"
+    grown = _G004_02_DISP_MEMBER + "\n\n" + attack + "\n"
+    assert pe._addresses_only(old)(grown), "the old key must let this attack through"
+    assert not pe._addresses_only(pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES)(grown), (
+        "and the replacement must catch it"
+    )
+
+
+def test_witness_d48_no_keying_of_this_member_survives_a_reflow():
+    """**The D46 trade does not exist here, and that is measured, not assumed.**
+
+    :func:`_addresses_only` requires the key on the SAME LINE as the marker match, and
+    five of these seven lines run 327-525 characters. So three keyings are scored at five
+    widths: the shipped keys, a deliberately shortened set, and a marker-hugging set whose
+    every key contains its own marker match. All three fail at every width.
+
+    At D46 there was a frontier and strength cost reflow-robustness. Here weakening buys
+    nothing and costs attacks, so the disclosure in the module is that there is no trade --
+    not that a trade was made well. If a future keying ever DOES survive a width, this test
+    fails and the module's claim must be rewritten.
+    """
+    import textwrap
+
+    import packet_exclusions as pe
+
+    def reflowed(width: int) -> str:
+        out: list[str] = []
+        for line in _G004_02_DISP_MEMBER.split("\n"):
+            out.extend(textwrap.wrap(line, width) or [""])
+        return "\n".join(out)
+
+    shorter = (
+        "pattern is added to `DIRECTOR_ADDRESSED_MARKERS`",
+        "carry 22 `TODO (director)` lines",
+        "as D38 handled the six",
+        "ships silently",
+        "reusable issue phrase",
+        "Eleven shipped mastery-ledger entries",
+        "surfaced twelve members",
+    )
+    hugging = (
+        "A `TODO (director)` pattern is added to `DIRECTOR_ADDRESSED_MARKERS`",
+        "12 shipped mastery-ledger members carry 22 `TODO (director)` lines that no marker sees",
+        "`TODO (director)` pattern to DIRECTOR_ADDRESSED_MARKERS",
+        "the next member carrying a `TODO (director)` line ships silently",
+        'registry allowlist key "it is a finding for director disposition" is itself a',
+        '"TODO (director)" requests for explanations',
+        "A `TODO (director)` pattern was added to",
+    )
+    for label, keys in (("shipped", pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES),
+                        ("shorter", shorter), ("marker-hugging", hugging)):
+        holds = pe._addresses_only(keys)
+        assert holds(_G004_02_DISP_MEMBER), f"{label} must hold on the real member"
+        for width in (72, 80, 88, 100, 120):
+            assert not holds(reflowed(width)), (
+                f"{label} survived reflow at {width} columns -- the module claims no "
+                f"keying does, so that claim is now wrong and must be rewritten"
+            )
+
+    # And weakening is not free: the shorter and marker-hugging sets leak real attacks.
+    leaks = {
+        "shorter": "**Finding.** The `STATE.md` allowlist key is itself a plausible "
+                   "reusable issue phrase: a new row awaiting the Director's closure "
+                   "contains it verbatim.",
+        "marker-hugging": "A `TODO (director)` pattern was added to the S7 ledger and "
+                          "nobody ruled on it.",
+    }
+    for label, keys in (("shorter", shorter), ("marker-hugging", hugging)):
+        probe = leaks[label]
+        assert any(rx.search(probe) for rx in pe._COMPILED_MARKERS.values())
+        assert pe._addresses_only(keys)(_G004_02_DISP_MEMBER + "\n\n" + probe + "\n"), (
+            f"{label} is supposed to leak this probe; if it no longer does, the "
+            f"'weakening costs attacks' claim needs re-measuring"
+        )
+        assert not pe._addresses_only(pe._G004_02_DISPOSITIONED_KNOWN_ADDRESSES)(
+            _G004_02_DISP_MEMBER + "\n\n" + probe + "\n"
+        ), "and the shipped keys must catch it"
+
+
+def test_witness_d50_a_missing_round_record_is_named():
+    """**Witness 7.** The D47 condition, reproduced deliberately.
+
+    Round 2's entire record went missing under a freeze that passed. This is the check
+    that would have stopped it, and the assertion is that it names the absent record --
+    not merely that it returns something truthy.
+    """
+    from packet_exclusions import missing_round_records
+
+    full = ["00_GATE_BRIEF.md", "findings-OTB-G004-02.yaml",
+            "OTB-G004-02_dispositioned.md", "STATE.md"]
+    assert missing_round_records("OTB-G004-02", full) == []
+
+    for dropped in ("findings-OTB-G004-02.yaml", "OTB-G004-02_dispositioned.md"):
+        partial = [p for p in full if p != dropped]
+        reported = missing_round_records("OTB-G004-02", partial)
+        assert len(reported) == 1, f"exactly one record is absent; got {reported}"
+        assert reported[0].startswith(dropped + ":"), (
+            f"the message must NAME the absent record; got {reported[0]!r}"
+        )
+
+    assert len(missing_round_records("OTB-G004-02", ["STATE.md"])) == 2, (
+        "both absent must both be reported -- one at a time would let the second hide"
+    )
+
+
+def test_witness_d50_a_wrong_name_reports_the_disclosed_weakness():
+    """**Witness 8**, and the point is the TEXT a future reader gets, not the boolean.
+
+    The check keys "a record exists" on a naming convention, so a record shipping under a
+    different name reads as absent. That objection was argued to the Director at D50 and
+    he outweighed it -- a loud wrong-name failure beats a silent absence -- **on the
+    condition that it is disclosed**. Disclosure that lives only in a docstring is not
+    disclosure to the person reading the failure, so it is in the message, and this test
+    is what stops it being edited out.
+    """
+    from packet_exclusions import missing_round_records
+
+    renamed = ["00_GATE_BRIEF.md", "findings-OTB-G004-02.yml",  # .yml, not .yaml
+               "dispositioned-OTB-G004-02.md"]                  # transposed
+    reported = missing_round_records("OTB-G004-02", renamed)
+    assert len(reported) == 2
+    assert reported[0] == (
+        "findings-OTB-G004-02.yaml: the findings file for OTB-G004-02 is not in the "
+        "member set. (This check matches by NAME: a record shipping under a different "
+        "name reports here as absent, and an empty file of the right name reports as "
+        "present.)"
+    )
+    for message in reported:
+        assert "matches by NAME" in message and "empty file" in message, (
+            "the failure text must carry the weakness the Director was shown"
+        )
+
+    # It closes ONE instance, not the class: a correctly-named EMPTY record passes.
+    assert missing_round_records(
+        "OTB-G004-02", ["findings-OTB-G004-02.yaml", "OTB-G004-02_dispositioned.md"]
+    ) == [], "an empty-but-correctly-named record passes -- the class is still open"
 
 
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
