@@ -1757,6 +1757,188 @@ def test_witness_d50_the_check_belongs_to_the_refreeze_not_the_review_freeze():
     )
 
 
+_DEBTS_KEY = "DEBTS.md"
+
+#: D-15 as it ships, with both addressed lines VERBATIM and at their real wrap points.
+#: Line 646 really does end at "Run against"; line 653 really does end at "**The module
+#: itself". Tidying either would test a file that does not exist -- the fixture-wrap bug
+#: this module has been bitten by four times.
+_DEBTS_MEMBER = "\n".join((
+    "# DEBTS",
+    "",
+    "## D-15 · The `visual_api.py` allowlist key is a reusable policy sentence",
+    "",
+    "**The exposure, confirmed by execution rather than by reading.** The key is the standing-policy sentence",
+    '*"independent external validation. Public documentation requires project-director approval"*. Run against',
+    "the shipped module, the line",
+    "",
+    '> *"Release notes still await independent external validation. Public documentation requires',
+    '> project-director approval."*',
+    "",
+    "**fires the `needs-his-action` marker AND contains the shipped key in full**, so `_addresses_only`",
+    "classifies a genuinely new request for the Director's approval as already known. **The module itself",
+    "concedes the key is semantically reusable and that the mechanical screen passes it.**",
+)) + "\n"
+
+_MEMBER_TEXT[_DEBTS_KEY] = _DEBTS_MEMBER
+
+
+def test_witness_d62_the_debts_premise_holds_and_fails_on_one_more_address():
+    """Holds on the shipped register; fails the moment it gains an address (D40)."""
+    assert false_premises({_DEBTS_KEY: _DEBTS_MEMBER}) == []
+
+    grown = _DEBTS_MEMBER + "\n\nA new item is pending director disposition before S7.\n"
+    assert [n for n, _ in false_premises({_DEBTS_KEY: grown})] == [_DEBTS_KEY]
+
+
+def test_witness_d62_the_obvious_key_would_inherit_the_very_defect_d15_records():
+    """**The hazard that decided this build, measured rather than warned about.**
+
+    Line 646 is almost entirely the quoted `visual_api.py` key. D-15 PRINTS the sentence
+    that defeats that key, so a `DEBTS.md` premise cut from the quotation is satisfied by
+    D-15's own attack -- `DEBTS.md` would inherit F-04, inside the entry recording F-04.
+    """
+    import packet_exclusions as pe
+
+    attack = (
+        "Release notes still await independent external validation. Public documentation "
+        "requires project-director approval."
+    )
+    assert any(rx.search(attack) for rx in pe._COMPILED_MARKERS.values()), (
+        "the probe must fire a marker or it is not an attack"
+    )
+    quotation_key = ("Public documentation requires project-director approval",
+                     pe._DEBTS_KNOWN_ADDRESSES[1])
+    assert pe.weak_keys(quotation_key) == [], "the screen passes it -- it is a floor"
+    grown = _DEBTS_MEMBER + "\n\n" + attack + "\n"
+    assert pe._addresses_only(quotation_key)(grown), (
+        "the quotation key must let D-15's own printed attack through"
+    )
+    assert not pe._addresses_only(pe._DEBTS_KNOWN_ADDRESSES)(grown), (
+        "and the shipped key must catch it"
+    )
+
+
+def test_witness_d62_a_decoration_free_key_leaks_the_house_style():
+    """**Why line 646's key carries markdown decoration, which D48 says dies at re-render.**
+
+    The only non-quotation text on line 646 is ``. Run against``. It rejects D-15's own
+    attack -- and is satisfied by a future debt entry written in D-15's house style about
+    a DIFFERENT key, because "Run against the shipped module" IS the house style. So
+    decoration-free and strong are not both available on this line. The trade is recorded
+    in the module; this is the measurement behind it, and it fails if that stops being
+    true.
+    """
+    import packet_exclusions as pe
+
+    house_style = (
+        '*"the bare token `TODO (director)` and nothing else on the line"*. Run against '
+        "the shipped module, the line"
+    )
+    assert any(rx.search(house_style) for rx in pe._COMPILED_MARKERS.values())
+
+    bare = (". Run against", pe._DEBTS_KNOWN_ADDRESSES[1])
+    grown = _DEBTS_MEMBER + "\n\n" + house_style + "\n"
+    assert pe._addresses_only(bare)(grown), (
+        "the decoration-free fragment is supposed to leak the house style; if it no "
+        "longer does, the module's trade needs re-measuring"
+    )
+    assert not pe._addresses_only(pe._DEBTS_KNOWN_ADDRESSES)(grown), (
+        "and the shipped keys must catch it"
+    )
+
+    # Line 653's short variants leak the same way, which is why it carries its whole
+    # sentence: the defect-class clause recurs in any debt about any weak key.
+    clause = (pe._DEBTS_KNOWN_ADDRESSES[0],
+              "classifies a genuinely new request for the Director's approval as already known")
+    future_debt = (
+        "**The exposure.** The `STATE.md` key is a template row, so `_addresses_only` "
+        "classifies a genuinely new request for the Director's approval as already known."
+    )
+    assert any(rx.search(future_debt) for rx in pe._COMPILED_MARKERS.values())
+    assert pe._addresses_only(clause)(_DEBTS_MEMBER + "\n\n" + future_debt + "\n")
+    assert not pe._addresses_only(pe._DEBTS_KNOWN_ADDRESSES)(
+        _DEBTS_MEMBER + "\n\n" + future_debt + "\n")
+
+
+def test_witness_d62_no_fresh_address_slips_past_the_debts_keys():
+    """Probes that fire a marker and quote no fragment, including debt-shaped ones."""
+    import packet_exclusions as pe
+
+    probes = (
+        "**D-17.** The bore-bound derivation is still pending director disposition.",
+        "`TODO (director)`: plain-language explanation of the CHF gate.",
+        "**Knock-on for director attention:** the dryout basis.",
+        "Two findings need a director ruling before the freeze.",
+        "That is a Director question about the tooling.",
+        "- [ ] Director disposition of D-18",
+        "**Retirement condition.** The premise is rewritten and awaiting the Director.",
+    )
+    for probe in probes:
+        assert any(rx.search(probe) for rx in pe._COMPILED_MARKERS.values()), (
+            f"probe fires no marker, so it is not an attack: {probe!r}"
+        )
+        assert not any(f.lower() in probe.lower() for f in pe._DEBTS_KNOWN_ADDRESSES), (
+            f"probe quotes a key fragment, which makes it prove nothing: {probe!r}"
+        )
+        grown = _DEBTS_MEMBER + "\n\n" + probe + "\n"
+        assert [n for n, _ in false_premises({_DEBTS_KEY: grown})] == [_DEBTS_KEY], (
+            f"a fresh address slipped past the DEBTS.md keys: {probe!r}"
+        )
+
+
+def test_witness_d62_the_next_marker_bearing_debt_entry_falsifies_this_premise():
+    """**Stated as a property, because it is predictable and it is not hidden.**
+
+    The premise enumerates, so writing down the NEXT debt about a marker-bearing defect
+    falsifies it -- exactly as D-15 falsified the absence of an entry. That is the
+    enumerated-premise question from D48 §2.4, unruled by the Director. This test asserts
+    the behaviour is loud and lands before a freeze, so nobody discovers it as a surprise.
+    """
+    d16 = (
+        "## D-16 · The `STATE.md` closure rows are keyed on a template\n\n"
+        "**The exposure.** A row reading `awaiting the Director's approval` is classified "
+        "as a generated row and ships unseen.\n"
+    )
+    grown = _DEBTS_MEMBER + "\n" + d16
+    reported = false_premises({_DEBTS_KEY: grown})
+    assert [n for n, _ in reported] == [_DEBTS_KEY]
+    assert reported[0][1] == (
+        "stated premise is false for this packet: every Director-addressed line in it "
+        "is one of the two known sentences"
+    ), "the failure must name the premise, so the next builder knows what to re-cut"
+
+
+def test_witness_d62_the_two_conditions_stay_distinguishable_for_debts():
+    """A false premise reports while `inert_allowlist` stays silent, and vice versa."""
+    grown = _DEBTS_MEMBER + "\n\nA new item is pending director disposition.\n"
+    assert [n for n, _ in false_premises({_DEBTS_KEY: grown})] == [_DEBTS_KEY]
+    assert [p for p in inert_allowlist({_DEBTS_KEY: grown}) if p[0] == _DEBTS_KEY] == []
+
+    quiet = "# DEBTS\n\nNothing outstanding.\n"
+    assert false_premises({_DEBTS_KEY: quiet}) == []
+    assert [p for p in inert_allowlist({_DEBTS_KEY: quiet}) if p[0] == _DEBTS_KEY] == [
+        (_DEBTS_KEY, "in the packet but carries no marker; suppressing nothing")]
+
+    # And before D-15 existed the register carried nothing, so the entry would have been
+    # inert rather than wrong -- which is why it did not exist until now.
+    before = "\n".join(x for x in _DEBTS_MEMBER.splitlines() if "D-15" not in x
+                       and "project-director approval" not in x
+                       and "Director's approval" not in x) + "\n"
+    assert [p for p in inert_allowlist({_DEBTS_KEY: before}) if p[0] == _DEBTS_KEY] == [
+        (_DEBTS_KEY, "in the packet but carries no marker; suppressing nothing")]
+
+
+def test_witness_d62_the_debts_premise_survives_unrelated_edits():
+    """Blank lines, appended prose, a deleted address (D40: subset, not equality)."""
+    assert false_premises({_DEBTS_KEY: "\n" * 20 + _DEBTS_MEMBER}) == []
+    assert false_premises({
+        _DEBTS_KEY: _DEBTS_MEMBER + "\n" + ("Ordinary prose. " * 30) + "\n"}) == []
+    trimmed = "\n".join(line for line in _DEBTS_MEMBER.splitlines()
+                        if "Run against" not in line)
+    assert false_premises({_DEBTS_KEY: trimmed}) == []
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
     """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
     assert len(DIRECTOR_ADDRESSED_MARKERS) == 13

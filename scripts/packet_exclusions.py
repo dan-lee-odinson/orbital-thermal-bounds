@@ -676,6 +676,48 @@ _G004_02_DISPOSITIONED_KNOWN_ADDRESSES = (
 )
 
 
+#: ``DEBTS.md``'s two addressed lines, and **both exist because D-15 was written down.**
+#:
+#: **D62, and it is D48's shape a third time.** Sol's F-04 found that ``visual_api.py``'s
+#: allowlist key is a reusable policy sentence; the Director took it as ``debt`` /
+#: ``accepted_risk`` at D56; the builder raised it as ``DEBTS.md`` D-15. **Recording the
+#: debt made the record carry the marker the debt is about** -- D-15 must print the
+#: reusable sentence or it does not say what the exposure is. ``DEBTS.md`` carried ZERO
+#: addressed lines before D-15 and therefore had no entry at all; this is its first.
+#:
+#: **Line 646 is almost entirely the quoted `visual_api.py` key, and keying on that
+#: quotation would give ``DEBTS.md`` the exact defect D-15 documents.** That is not a
+#: worry, it is measured: D-15 prints its own attack sentence -- *"Release notes still
+#: await independent external validation. Public documentation requires project-director
+#: approval."* -- and a key cut from the quotation is satisfied by it. So the key carries
+#: the boundary where the quotation ends and D-15's own sentence resumes.
+#:
+#: **That boundary is where the markdown decoration sits, and there is nowhere else to
+#: cut.** The only non-quotation text on line 646 is ``. Run against``. Measured: that
+#: decoration-free fragment rejects D-15's printed attack but is satisfied by a future
+#: debt written in D-15's own house style -- ``*"<some other quoted key>"*. Run against
+#: the shipped module, the line`` -- because "Run against the shipped module" IS the house
+#: style. ``approval"*. Run against`` rejects both. **Decoration-free and strong are not
+#: both available here**, and D48 taught that decoration dies at the next re-render, so
+#: this key is the one to re-cut first if ``DEBTS.md`` is ever reformatted.
+#:
+#: **Line 653 is keyed on its whole sentence for the same reason.** The defect-class
+#: clause alone -- *"classifies a genuinely new request for the Director's approval as
+#: already known"* -- is satisfied by a future debt about a DIFFERENT weak key, measured.
+#: Carrying D-15's own continuation pins it to this entry.
+#:
+#: **This premise ENUMERATES, so the next marker-bearing debt entry will falsify it.**
+#: That is not a defect of these keys and it is not hidden: it is the enumerated-premise
+#: question raised at D48 §2.4, which the Director has not ruled on. Until he does, the
+#: failure is loud and lands in :func:`false_premises` before a freeze, which is the
+#: behaviour every other entry here has.
+_DEBTS_KNOWN_ADDRESSES = (
+    'approval"*. Run against',
+    "classifies a genuinely new request for the Director's approval as already known. "
+    "**The module itself",
+)
+
+
 QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
     "SETTLED_DECISIONS.md": _Exemption(
         reason=(
@@ -855,6 +897,23 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="every Director-addressed line in it is one of the seven known sentences",
         holds=_addresses_only(_G004_02_DISPOSITIONED_KNOWN_ADDRESSES),
+    ),
+    # --- added under D62: the debt register, which now documents a marker ------------
+    "DEBTS.md": _Exemption(
+        reason=(
+            "the debt register. Its only Director-addressed lines are both inside D-15, "
+            "the entry recording Sol's F-04 -- that `visual_api.py`'s allowlist key is a "
+            "reusable policy sentence -- which the Director accepted as `accepted_risk` "
+            "at D56. D-15 must PRINT that sentence and the new line that defeats it, or "
+            "it does not say what was accepted; a debt register that cannot quote the "
+            "defect cannot record one. Same basis as `OTB-G003_dispositioned.md`, and the "
+            "same shape as D48: a record that documents an addressed line becomes a "
+            "record containing an addressed line. NOT a repository file -- it is copied "
+            "into the packet by the assembler, so this premise is checked against the "
+            "shipped bytes and is exercised only when that copy is supplied."
+        ),
+        premise="every Director-addressed line in it is one of the two known sentences",
+        holds=_addresses_only(_DEBTS_KNOWN_ADDRESSES),
     ),
 }
 
