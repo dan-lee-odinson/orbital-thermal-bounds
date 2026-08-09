@@ -1939,6 +1939,265 @@ def test_witness_d62_the_debts_premise_survives_unrelated_edits():
     assert false_premises({_DEBTS_KEY: trimmed}) == []
 
 
+_D05_KEY = "OTB-G004-05_dispositioned.md"
+_D06_KEY = "OTB-G004-06_dispositioned.md"
+_F05_KEY = "findings-OTB-G004-05.yaml"
+
+#: The three records D66 finally ships, with their addressed lines VERBATIM and at their
+#: real wrap points. The `.md` lines are single lines of 500+ characters; the YAML lines
+#: are block-scalar wraps and are reproduced with their leading indent, because that
+#: indent is what the equality keys strip.
+_D05_MEMBER = "\n".join((
+    "# OTB-G004-05 dispositioned",
+    "",
+    "### F-04 · minor · `accepted_risk`",
+    "",
+    '**Finding.** The visual-api allowlist key remains a generic policy sentence that a plausible new address can reuse. A new line reading "Release notes still await independent external validation. Public documentation requires project-director approval." fires the approval marker and contains the shipped key in full, so _addresses_only classifies it as already known.',
+    "",
+    '**Evidence.** `src~orbital_thermal~visual_api.py:874 carries the original sentence. scripts~packet_exclusions.py:337-340 defines the key as "independent external validation. Public documentation requires project-director approval"; lines 427-430 explicitly identify that policy sentence as semantically reusable.`',
+)) + "\n"
+
+_D06_MEMBER = "\n".join((
+    "# OTB-G004-06 dispositioned",
+    "",
+    "### F-06 · minor · `accepted_risk`",
+    "",
+    # Verbatim, curly quotes and all. The first draft of this fixture paraphrased the
+    # quoted example away -- and the line then fired NO marker, so the member carried no
+    # address and two tests failed. A fixture that drops the marker text tests nothing,
+    # which is the reason this module's own tests are allowlisted.
+    "**Finding.** The first DEBTS.md key is generic approval wording plus the register's markdown house style. A plausible fresh line such as “The release exception needs the Director's approval” followed on the same line by the existing italic-quote close and “Run against” both fires the needs-his-action marker and contains the shipped key fragment approval followed by the quote, emphasis close, and Run against. The new address is therefore classified as one of D-15's two old lines and the premise remains green.",
+)) + "\n"
+
+_F05_MEMBER = "\n".join((
+    "review:",
+    "  gate: OTB-G004-05",
+    "findings:",
+    "  - id: F-04",
+    "    finding: >-",
+    "      The visual-api allowlist key remains a generic policy sentence that a plausible new",
+    '      address can reuse. A new line reading "Release notes still await independent external',
+    '      validation. Public documentation requires project-director approval." fires the',
+    "      approval marker and contains the shipped key in full.",
+    "    evidence: >-",
+    "      src~orbital_thermal~visual_api.py:874 carries the original sentence.",
+    '      scripts~packet_exclusions.py:337-340 defines the key as "independent external',
+    '      validation. Public documentation requires project-director approval"; lines 427-430',
+    "      explicitly identify that policy sentence as semantically reusable.",
+)) + "\n"
+
+_MEMBER_TEXT[_D05_KEY] = _D05_MEMBER
+_MEMBER_TEXT[_D06_KEY] = _D06_MEMBER
+_MEMBER_TEXT[_F05_KEY] = _F05_MEMBER
+
+_D66_MEMBERS = {_D05_KEY: _D05_MEMBER, _D06_KEY: _D06_MEMBER, _F05_KEY: _F05_MEMBER}
+
+
+def test_witness_d66_each_premise_holds_and_fails_on_one_more_address():
+    """Each must name itself, and only itself, when its own member grows (D40)."""
+    assert false_premises(_D66_MEMBERS) == []
+
+    for key, member in _D66_MEMBERS.items():
+        grown = dict(_D66_MEMBERS)
+        grown[key] = member + "\n\nA new item is pending director disposition before S7.\n"
+        assert [n for n, _ in false_premises(grown)] == [key], (
+            f"{key} gained an address and must be the only member reported"
+        )
+
+
+def test_witness_d66_keying_on_the_quoted_policy_sentence_inherits_d15():
+    """**The hazard that decided four of the five keys, measured rather than warned about.**
+
+    Four of the five addressed lines quote `visual_api.py`'s policy sentence -- the string
+    Sol's F-04 and the Director's D56 already accept as reusable, as debt D-15. These
+    records print it BECAUSE the finding is that it is reusable. A key cut from it is
+    satisfied by D-15's own printed attack, so the record documenting the defect would
+    carry the defect.
+    """
+    import packet_exclusions as pe
+
+    attack = (
+        "Release notes still await independent external validation. Public documentation "
+        "requires project-director approval."
+    )
+    assert any(rx.search(attack) for rx in pe._COMPILED_MARKERS.values()), (
+        "the probe must fire a marker or it is not an attack"
+    )
+    forbidden = (pe._VISUAL_API_KNOWN_ADDRESSES[0],
+                 pe._G004_05_DISPOSITIONED_KNOWN_ADDRESSES[1])
+    assert pe.weak_keys(forbidden) == [], "the screen passes it -- it is a floor"
+    assert pe._addresses_only(forbidden)(_D05_MEMBER), "and it holds on the member"
+    assert pe._addresses_only(forbidden)(_D05_MEMBER + "\n\n" + attack + "\n"), (
+        "keying on the policy sentence must let D-15's own printed attack through"
+    )
+    assert not pe._addresses_only(pe._G004_05_DISPOSITIONED_KNOWN_ADDRESSES)(
+        _D05_MEMBER + "\n\n" + attack + "\n"
+    ), "and the shipped keys, cut from Sol's own framing, must catch it"
+
+
+def test_witness_d66_containment_cannot_distinguish_the_yaml_wraps():
+    """**Why the findings file is keyed by EQUALITY -- forced, not chosen.**
+
+    The two YAML lines are block-scalar wraps whose entire content is the policy sentence
+    plus three or four words of Sol's. Even the MAXIMAL containment key -- the whole
+    wrapped line -- is satisfied by a future ``**Evidence.**`` line citing the same module
+    lines, because that citation reproduces the fragment verbatim. There is no containment
+    key on that line that distinguishes it. :class:`Exact` forecloses it.
+    """
+    import packet_exclusions as pe
+
+    reused = (
+        "**Evidence.** `src~orbital_thermal~registry~two_phase.py:296 carries the original "
+        'sentence. scripts~packet_exclusions.py:337-340 defines the key as "independent '
+        'external validation. Public documentation requires project-director approval"; '
+        "lines 427-430 explicitly identify it.`"
+    )
+    assert any(rx.search(reused) for rx in pe._COMPILED_MARKERS.values())
+
+    whole_line = tuple(f.text for f in pe._G004_05_FINDINGS_KNOWN_ADDRESSES)
+    assert pe._addresses_only(whole_line)(_F05_MEMBER), "containment holds on the member"
+    assert pe._addresses_only(whole_line)(_F05_MEMBER + "\n" + reused + "\n"), (
+        "the maximal containment key is supposed to be defeated by this reuse; if it no "
+        "longer is, the module's reason for using Exact needs re-measuring"
+    )
+    assert not pe._addresses_only(pe._G004_05_FINDINGS_KNOWN_ADDRESSES)(
+        _F05_MEMBER + "\n" + reused + "\n"
+    ), "and the equality keys must catch it"
+
+    # Equality still accepts the member unchanged, and still fails on a fresh address.
+    assert pe._addresses_only(pe._G004_05_FINDINGS_KNOWN_ADDRESSES)(_F05_MEMBER)
+
+
+def test_witness_d66_sol_f06_reproduces_against_the_shipped_debts_key():
+    """**Sol's F-06 is a finding against this module's own D62 key, and it is CORRECT.**
+
+    Reproduced rather than taken on trust: a line reading "The release exception needs the
+    Director's approval" followed by the italic-quote close and "Run against" fires
+    `needs-his-action`, contains ``approval"*. Run against`` in full, and leaves the
+    `DEBTS.md` premise GREEN. That is the D62 residual landing exactly where it was
+    disclosed.
+
+    The Director dispositioned it `accepted_risk`, so the key is NOT repaired here -- a
+    disposition of accepted_risk is a decision not to fix, and applying a repair over it
+    is the D51 shape. This test records the reproduction, and asserts that the stronger
+    key which WOULD close it exists, so reopening is a one-line change rather than a
+    re-derivation.
+    """
+    import packet_exclusions as pe
+
+    attack = (
+        "The release exception needs the Director's approval\"*. Run against the shipped "
+        "module, the line"
+    )
+    assert any(rx.search(attack) for rx in pe._COMPILED_MARKERS.values())
+    assert any(f.lower() in attack.lower() for f in pe._DEBTS_KNOWN_ADDRESSES), (
+        "F-06's point is that the attack CONTAINS the shipped key"
+    )
+    debts = _MEMBER_TEXT["DEBTS.md"]
+    assert pe._addresses_only(pe._DEBTS_KNOWN_ADDRESSES)(debts + "\n\n" + attack + "\n"), (
+        "F-06 must reproduce: the premise stays green with the attack appended"
+    )
+
+    # The available repair, measured but NOT applied -- accepted_risk is the Director's.
+    stronger = ('documentation requires project-director approval"*. Run against',
+                pe._DEBTS_KNOWN_ADDRESSES[1])
+    assert stronger[0] in debts, "the stronger key must be present in the real register"
+    assert not pe._addresses_only(stronger)(debts + "\n\n" + attack + "\n"), (
+        "the stronger key closes F-06"
+    )
+    d15_attack = (
+        "Release notes still await independent external validation. Public documentation "
+        "requires project-director approval."
+    )
+    assert not pe._addresses_only(stronger)(debts + "\n\n" + d15_attack + "\n"), (
+        "and still closes D-15's printed attack, which is why it is the candidate"
+    )
+
+
+def test_witness_d66_no_fresh_address_slips_past_any_of_the_three():
+    """Probes that fire a marker and quote no fragment, against all three members."""
+    import packet_exclusions as pe
+
+    probes = (
+        "**D-19.** The bore-bound derivation is still pending director disposition.",
+        "`TODO (director)`: plain-language explanation of the CHF gate.",
+        "**Knock-on for director attention:** the dryout basis.",
+        "Two findings need a director ruling before the freeze.",
+        "- [ ] Director disposition of F-09",
+        "That is a Director question about the tooling.",
+        "This is awaiting the Director's closure on eta_pump.",
+        # A fresh finding about a DIFFERENT key, in Sol's own house style (hazard 3).
+        "**Finding.** The STATE.md allowlist key remains a generic template row that a "
+        "plausible new address can reuse, and it needs the Director's approval to change.",
+    )
+    keysets = {
+        _D05_KEY: (_D05_MEMBER, pe._G004_05_DISPOSITIONED_KNOWN_ADDRESSES),
+        _D06_KEY: (_D06_MEMBER, pe._G004_06_DISPOSITIONED_KNOWN_ADDRESSES),
+        _F05_KEY: (_F05_MEMBER, pe._G004_05_FINDINGS_KNOWN_ADDRESSES),
+    }
+    for probe in probes:
+        assert any(rx.search(probe) for rx in pe._COMPILED_MARKERS.values()), (
+            f"probe fires no marker, so it is not an attack: {probe!r}"
+        )
+        for key, (member, fragments) in keysets.items():
+            texts = [pe._fragment_text(f) for f in fragments]
+            assert not any(t.lower() in probe.lower() for t in texts), (
+                f"probe quotes a key fragment, which makes it prove nothing: {probe!r}"
+            )
+            grown = member + "\n\n" + probe + "\n"
+            assert [n for n, _ in false_premises({key: grown})] == [key], (
+                f"{key}: a fresh address slipped past the key: {probe!r}"
+            )
+
+
+def test_witness_d66_a_search_built_premise_fails_against_the_real_five():
+    """**Witness 2, and this is the SIXTH member set the gap has appeared in.**
+
+    Discovery reports THREE unaccounted lines because ``rx.search`` returns one match per
+    marker per member. ``finditer`` finds FIVE: `-05`'s Evidence line and the findings
+    file's second wrap are each behind a match their own marker already made. A premise
+    built from the discovery report alone would name three sentences and be false against
+    two members.
+    """
+    import packet_exclusions as pe
+
+    for name, member, expected in ((_D05_KEY, _D05_MEMBER, (1, 2)),
+                                   (_D06_KEY, _D06_MEMBER, (1, 1)),
+                                   (_F05_KEY, _F05_MEMBER, (1, 2))):
+        by_search = sorted({
+            member.count("\n", 0, m.start()) + 1
+            for rx in pe._COMPILED_MARKERS.values() if (m := rx.search(member))
+        })
+        by_finditer = sorted({
+            member.count("\n", 0, m.start()) + 1
+            for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(member)
+        })
+        assert (len(by_search), len(by_finditer)) == expected, (
+            f"{name}: expected {expected} (search, finditer); got "
+            f"{(len(by_search), len(by_finditer))}"
+        )
+        lines = member.splitlines()
+        search_premise = pe._addresses_only(
+            tuple(lines[i - 1].strip() for i in by_search))
+        if len(by_search) < len(by_finditer):
+            assert not search_premise(member), (
+                f"{name}: a premise built from the search view MUST be false"
+            )
+
+
+def test_witness_d66_the_three_premises_survive_unrelated_edits():
+    """Blank lines, appended prose, a deleted address (D40: subset, not equality)."""
+    assert false_premises({
+        _D05_KEY: "\n" * 20 + _D05_MEMBER,
+        _D06_KEY: _D06_MEMBER + "\n" + ("Ordinary prose. " * 30) + "\n",
+        _F05_KEY: "\n" * 5 + _F05_MEMBER,
+    }) == []
+
+    trimmed = "\n".join(line for line in _D05_MEMBER.splitlines()
+                        if "visual_api.py:874" not in line)
+    assert false_premises({_D05_KEY: trimmed}) == []
+
+
 def test_the_marker_set_is_narrow_and_each_shape_is_reachable():
     """Twelve shapes, each traceable to a case. A marker nothing triggers is not a check."""
     assert len(DIRECTOR_ADDRESSED_MARKERS) == 13

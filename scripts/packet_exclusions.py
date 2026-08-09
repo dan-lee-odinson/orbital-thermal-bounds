@@ -718,6 +718,65 @@ _DEBTS_KNOWN_ADDRESSES = (
 )
 
 
+#: The `-05` and `-06` gate records, which ship for the first time at D66.
+#:
+#: **They are not new text; they are text that was always claimed and never shipped.**
+#: Sol's F-02 (blocker) was that the `-05` records were absent from the packet while the
+#: ledger said they were present -- the assembler named records as literals and left the
+#: rest behind. D66 derives the set from ``dispositions/`` instead, so four rounds of
+#: records now actually ship, and three of them carry addresses.
+#:
+#: **FOUR OF THE FIVE ADDRESSED LINES QUOTE THE ONE SENTENCE THIS MODULE ALREADY KNOWS
+#: IS UNSOUND.** Sol's F-04 and the Director's D56 accepted, as debt D-15, that
+#: ``visual_api.py``'s key is a reusable policy sentence. These records exist to STATE
+#: that finding, so they print the sentence. Keying on it would hand these three members
+#: the exact defect they are recording -- measured, not feared: with the policy sentence
+#: as the key, D-15's own printed attack satisfies the premise. So every key below is cut
+#: from the RECORD'S OWN framing -- Sol naming which key he is attacking, and which file
+#: and line carries the original -- never from the quotation in the middle of the line.
+#:
+#: **The two YAML lines are keyed by EQUALITY, and that is forced rather than chosen.**
+#: They are block-scalar wraps: everything before ``approval`` is the unsound sentence
+#: and everything after is three or four words of Sol's. Measured, the maximal containment
+#: key -- the whole wrapped line -- is still satisfied by a future ``**Evidence.**`` line
+#: citing the same module lines, because that citation reproduces the whole fragment
+#: verbatim. **No containment key on line 156 can distinguish it**; the line's entire
+#: content is a citation any finding about any key would reproduce. :class:`Exact`
+#: forecloses it for the reason D44 gives: only a byte-identical line satisfies equality,
+#: and a byte-identical citation re-recorded is the same content, not a new claim on his
+#: time.
+_G004_05_DISPOSITIONED_KNOWN_ADDRESSES = (
+    "visual-api allowlist key remains a generic policy sentence that a plausible new "
+    "address can reuse",
+    "visual_api.py:874 carries the original sentence",
+)
+
+#: `-06`'s single address is **Sol's F-06, which is a finding against the D62 key in this
+#: module** -- that ``DEBTS.md``'s first key is generic approval wording plus markdown
+#: house style. **He is right; it reproduces.** A line reading *"The release exception
+#: needs the Director's approval"* followed by the italic-quote close and *"Run against"*
+#: fires ``needs-his-action``, contains ``approval"*. Run against`` in full, and leaves the
+#: ``DEBTS.md`` premise green. The Director dispositioned it ``accepted_risk`` at D66, so
+#: it is a debt and not a repair this build owns -- the key is NOT changed here. What is
+#: recorded is that the finding was reproduced rather than taken on trust, and that a
+#: strictly stronger key exists if he ever reopens it: keying line 646 on
+#: ``documentation requires project-director approval"*. Run against`` defeats this attack,
+#: D-15's printed attack, and the house-style attack together, at the cost of length.
+_G004_06_DISPOSITIONED_KNOWN_ADDRESSES = (
+    "first DEBTS.md key is generic approval wording plus the register's markdown house style",
+)
+
+#: Sol's own findings file. **Its wording is the reviewer's, not this project's**, so a
+#: premise keyed to it is coupled to another party's drafting: if he re-wraps his block
+#: scalars these keys fail. That is the right failure -- loud, in :func:`false_premises`,
+#: before a freeze -- but it should be expected rather than discovered, and it is the
+#: reason both keys here are equality keys with no slack in them at all.
+_G004_05_FINDINGS_KNOWN_ADDRESSES = (
+    Exact('validation. Public documentation requires project-director approval." fires the'),
+    Exact('validation. Public documentation requires project-director approval"; lines 427-430'),
+)
+
+
 QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
     "SETTLED_DECISIONS.md": _Exemption(
         reason=(
@@ -914,6 +973,42 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="every Director-addressed line in it is one of the two known sentences",
         holds=_addresses_only(_DEBTS_KNOWN_ADDRESSES),
+    ),
+    # --- added under D66: the records Sol's F-02 repair finally ships ----------------
+    "OTB-G004-05_dispositioned.md": _Exemption(
+        reason=(
+            "round 5's disposition record. Its two addressed lines are F-04's Finding "
+            "and Evidence fields, both of which quote `visual_api.py`'s policy sentence "
+            "because the finding IS that the sentence is reusable. Stating it requires "
+            "reproducing it -- the basis `findings-OTB-G004-02.yaml` is already exempted "
+            "on. A record that could not print the defect could not disposition it."
+        ),
+        premise="every Director-addressed line in it is one of the two known sentences",
+        holds=_addresses_only(_G004_05_DISPOSITIONED_KNOWN_ADDRESSES),
+    ),
+    "OTB-G004-06_dispositioned.md": _Exemption(
+        reason=(
+            "round 6's disposition record. Its single addressed line is F-06's Finding "
+            "field, which quotes the approval wording of this module's own `DEBTS.md` "
+            "key in order to state that the key is defeatable. Same class as "
+            "`scripts/packet_exclusions.py` and its tests, already exempted: a document "
+            "that quotes what the filter detects, in order to rule on it."
+        ),
+        premise="its only Director-addressed line is F-06's finding about the DEBTS key",
+        holds=_addresses_only(_G004_06_DISPOSITIONED_KNOWN_ADDRESSES),
+    ),
+    "findings-OTB-G004-05.yaml": _Exemption(
+        reason=(
+            "Sol's round-5 findings file. Two wrapped lines of F-04's `finding` and "
+            "`evidence` block scalars carry the policy sentence the finding is about, "
+            "and one of them also cites this module's own definition of the key. A "
+            "findings file that could not quote what it found could not report it -- the "
+            "basis `findings-OTB-G004.yaml` and `findings-OTB-G004-02.yaml` are exempted "
+            "on. Keyed by EQUALITY because containment cannot distinguish these lines "
+            "from the same citation in a future finding about a different key."
+        ),
+        premise="every Director-addressed line in it is exactly one of the two known wraps",
+        holds=_addresses_only(_G004_05_FINDINGS_KNOWN_ADDRESSES),
     ),
 }
 
