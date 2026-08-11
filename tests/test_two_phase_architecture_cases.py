@@ -422,9 +422,12 @@ def test_s5_8_a_disposition_must_name_the_measurement_it_acted_on():
         ac.AmmoniaHtcEvaluation(
             disposition="adopt", acted_on="something_unmeasured", rationale="because")
 
+    # A DECLINE, so this stays a test of S5-8 alone: adopting the worse deviation trips
+    # the separate guard added when the Director dispositioned D-6, and a test that had
+    # to satisfy two criteria at once would stop telling you which one it holds.
     ok = ac.AmmoniaHtcEvaluation(
-        disposition="adopt", acted_on="steiner_taborek_1992",
-        rationale="the pooled endorsement outweighs the single-study deviation")
+        disposition="decline_policy", acted_on="steiner_taborek_1992",
+        rationale="the pooled endorsement does not outweigh the single-study deviation")
     assert ok.measurement.deviation_percent == 41.9
 
     with pytest.raises(ValueError, match="not a disposition"):
@@ -489,18 +492,101 @@ def test_s5_10_a_decline_is_a_policy_refusal_not_an_absence_of_knowledge():
     assert ok.disposition == "decline_policy"
 
 
-def test_s5_11_d6_is_open_because_no_disposition_is_recorded():
-    """**S5-11.** Retirement follows a recorded disposition, not the evaluation existing.
+def test_s5_11_d6_retires_because_a_disposition_is_recorded():
+    """**S5-11.** Retirement follows a recorded disposition, and one now exists.
 
-    The mechanism is built and the evidence conflicts. Choosing between 41.9 % and the
-    pooled endorsement is a decision on evidence, which is the Director's -- recording one
-    here would be the D51 shape, a ruling applied before it is made. So the artifact
-    reports D-6 OPEN, by name, rather than letting the presence of code imply otherwise.
+    The Director dispositioned D-6: Steiner-Taborek adopted with scope. Retirement is
+    therefore a state the artifact can show, not an inference from the presence of code --
+    which is the whole point of the criterion, and the reason the previous build reported
+    ``open`` rather than assuming.
     """
-    assert ac.AMMONIA_HTC_DISPOSITION is None
+    d = ac.AMMONIA_HTC_DISPOSITION
+    assert d is not None
+    assert d.disposition == "adopt_with_scope"
+    assert d.acted_on == "steiner_taborek_1992"
+
     state, reason = ac.d6_retirement_state()
-    assert state == "open"
-    assert "no disposition has been recorded" in reason and "S5-11" in reason
+    assert state == "retired"
+    assert "retires at S5" in reason
+
+
+def test_s5_11_the_adoption_cannot_be_read_as_a_choice_on_accuracy():
+    """**The Director's explicit condition on the disposition.**
+
+    Steiner-Taborek is adopted at 41.9 % over Gungor-Winterton (1987)'s 37.2 % and
+    Kattan-Thome-Favrat's 19.5 %. He required that a reader must not be able to mistake
+    this for a choice on accuracy. So the record carries both numbers, and the retirement
+    reason carries them too -- a disclaimer filed somewhere a reader does not look is not
+    a disclaimer.
+    """
+    d = ac.AMMONIA_HTC_DISPOSITION
+    better = [m for m in ac.AMMONIA_HTC_MEASUREMENTS
+              if m.deviation_percent < d.measurement.deviation_percent]
+    assert len(better) == 2, "the adoption must still be over TWO better-scoring records"
+
+    for number in ("41.9", "37.2"):
+        assert number in d.accuracy_disclaimer, (
+            f"the disclaimer must print {number} % so the trade is legible"
+        )
+    assert "NOT because it fits better" in d.accuracy_disclaimer
+
+    _, reason = ac.d6_retirement_state()
+    assert "NOT the best recorded deviation" in reason and "41.9" in reason, (
+        "the retirement reason is what a downstream reader sees; the trade must survive "
+        "into it rather than living only in the record it summarises"
+    )
+
+
+def test_s5_11_ktf_is_rejected_on_structure_and_the_precedent_is_real():
+    """**S5-9 discharged by the ruling, and the cited precedent is verified, not quoted.**
+
+    Kattan-Thome-Favrat scores best and is rejected because its accuracy is earned by
+    resolving gravitational flow-pattern regimes -- absent in orbit. The Director grounded
+    that on an existing decision rather than a new principle: Gungor-Winterton (1986)'s
+    Froude stratification de-rating was already stripped for the same reason. This test
+    reads the registry to confirm the precedent says what the record claims it says.
+    """
+    d = ac.AMMONIA_HTC_DISPOSITION
+    assert "STRUCTURE, not accuracy" in d.structural_rejection
+    assert "kattan" in d.structural_rejection.lower()
+    assert "registry/two_phase.py:379" in d.structural_rejection
+
+    registry = pathlib.Path(ac.__file__).parent / "registry" / "two_phase.py"
+    text = registry.read_text(encoding="utf-8")
+    assert "no microgravity meaning" in text and "Froude" in text, (
+        "the cited precedent must exist in the registry. If this fails the citation has "
+        "rotted and the rejection's ground needs re-stating, not the citation deleting"
+    )
+
+
+def test_s5_11_adopting_a_worse_deviation_without_saying_so_is_refused():
+    """The guard behind the condition, exercised in both directions."""
+    with pytest.raises(ValueError, match="NOT a choice on accuracy"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="adopt_with_scope", acted_on="steiner_taborek_1992",
+            rationale="the pooled endorsement")
+
+    # A disclaimer that omits the numbers is refused too: it can be skimmed past.
+    with pytest.raises(ValueError, match="must print"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="adopt_with_scope", acted_on="steiner_taborek_1992",
+            rationale="the pooled endorsement",
+            accuracy_disclaimer="this is not a choice on accuracy",
+            structural_rejection="KTF rejected on structure")
+
+    # And an adoption over a better score with no structural ground is refused (S5-9).
+    with pytest.raises(ValueError, match="STRUCTURAL ground"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="adopt_with_scope", acted_on="steiner_taborek_1992",
+            rationale="the pooled endorsement",
+            accuracy_disclaimer="adopted at 41.9 % against 37.2 % and 19.5 %")
+
+    # The BEST-scoring correlation needs no disclaimer -- the guard is specific.
+    ok = ac.AmmoniaHtcEvaluation(
+        disposition="adopt_with_scope", acted_on="kattan_thome_favrat",
+        rationale="best fit for a 1-g screening case",
+        gravity_dependence_note="scoped to 1 g; the mechanism is gravitational")
+    assert ok.accuracy_disclaimer == ""
 
 
 # --------------------------------------------------------------------------------------

@@ -392,6 +392,17 @@ class AmmoniaHtcEvaluation:
     #: Required when :attr:`acted_on` names a measurement whose accuracy is
     #: gravity-dependent. Prose, because what must be recorded is a judgement.
     gravity_dependence_note: str = ""
+    #: **Required when the adopted correlation is NOT the best-scoring one.** It must
+    #: print both deviation figures, so a reader cannot mistake the adoption for a choice
+    #: on accuracy. D75's ruling: *"a reader must not be able to mistake this for a choice
+    #: on accuracy."* A disclaimer that does not carry the numbers is a disclaimer a
+    #: reader can skim past, so the numbers are what is checked.
+    accuracy_disclaimer: str = ""
+    #: **Required when a better-scoring candidate exists.** Naming the rejected candidate
+    #: and the STRUCTURAL ground for rejecting it -- S5-9's falsifier is "a comparison
+    #: table that ranks the three by deviation and stops there", and a record that adopts
+    #: the worse number without saying why the better one was refused is that table.
+    structural_rejection: str = ""
 
     def __post_init__(self) -> None:
         if self.disposition not in DISPOSITIONS:
@@ -411,6 +422,31 @@ class AmmoniaHtcEvaluation:
                 "(D-6, D-7). A disposition resting on its accuracy must record that "
                 "(S5-9); accuracy alone is not adoptability."
             )
+        better = [m for m in AMMONIA_HTC_MEASUREMENTS
+                  if m.deviation_percent < measurement.deviation_percent]
+        if better and self.disposition in ("adopt", "adopt_with_scope"):
+            if not self.accuracy_disclaimer:
+                raise ValueError(
+                    f"{self.acted_on} is adopted at {measurement.deviation_percent} % "
+                    f"while {better[0].correlation} is recorded at "
+                    f"{better[0].deviation_percent} %. This is NOT a choice on accuracy "
+                    "and the record must say so in terms a reader cannot skim past."
+                )
+            for number in (measurement.deviation_percent, better[0].deviation_percent):
+                if f"{number}" not in self.accuracy_disclaimer:
+                    raise ValueError(
+                        f"the accuracy disclaimer must print {number} %. A disclaimer "
+                        "without the figures lets a reader assume the adopted "
+                        "correlation scored better, which is the reading it exists to "
+                        "prevent."
+                    )
+            if not self.structural_rejection:
+                raise ValueError(
+                    f"{better[0].correlation} scores better and was not adopted. The "
+                    "STRUCTURAL ground for rejecting it must be recorded (S5-9); "
+                    "otherwise this record is a deviation table that stops at the "
+                    "numbers."
+                )
         if self.disposition == "decline_no_knowledge":
             raise ValueError(
                 "Steiner-Taborek (1992) exists and its basis admits part of this space, "
@@ -424,19 +460,48 @@ class AmmoniaHtcEvaluation:
             m for m in AMMONIA_HTC_MEASUREMENTS if m.correlation == self.acted_on)
 
 
-#: **D-6 IS NOT DISPOSITIONED, AND THAT IS THE STATE THIS BUILD REPORTS.**
+#: **D-6 IS DISPOSITIONED. The Director ruled it, and this is his ruling, not a builder's.**
 #:
-#: The debt says "Retires at S5". S5-11 says retirement follows a recorded DISPOSITION,
-#: not the evaluation having been performed -- and the evidence D-6 records genuinely
-#: conflicts: Steiner-Taborek is measured WORSE (41.9 %) than the correlation ammonia is
-#: already de-ranked through (37.2 %), while a separate pooled study calls it the only
-#: correlation that predicts ammonia. Choosing between those is a decision on evidence,
-#: which is the Director's, and a builder recording one here would be the D51 shape --
-#: applying a ruling before it is made.
+#: Steiner-Taborek (1992) is adopted with scope. **This adopts the WORSE recorded
+#: deviation** -- 41.9 % against Gungor-Winterton (1987)'s 37.2 % on the same ammonia data
+#: -- on the strength of Taboas (2006)'s pooled endorsement across five datasets, and NOT
+#: on a deviation figure. The record is built so that a reader cannot mistake it for a
+#: choice on accuracy: :class:`AmmoniaHtcEvaluation` refuses to construct an adoption over
+#: a better-scoring candidate unless the disclaimer prints both numbers.
 #:
-#: So the mechanism is built, the evidence is enumerated and checkable, and this is
-#: ``None``. :func:`d6_retirement_state` reports it as open, by name.
-AMMONIA_HTC_DISPOSITION: AmmoniaHtcEvaluation | None = None
+#: **Kattan-Thome-Favrat is rejected on STRUCTURE, not on accuracy**, and its 19.5 % is
+#: the best of the three. Its accuracy is earned by resolving gravitational flow-pattern
+#: regimes -- the mechanism that does not exist in orbit -- so adopting a 1-g fit whose
+#: accuracy mechanism vanishes is not adoption. **This is not a new principle here.** The
+#: same ground already stripped Gungor-Winterton (1986)'s Froude stratification de-rating
+#: at ``registry/two_phase.py:379``: *"stratification is a 1g horizontal-channel effect
+#: with no microgravity meaning, and applying a gravity-driven de-rating in a microgravity
+#: screening model would be a silent physical assumption."* D-6 applies that reasoning one
+#: level out -- from a single gravity-driven TERM to a whole correlation whose accuracy
+#: mechanism is gravity-driven.
+AMMONIA_HTC_DISPOSITION: AmmoniaHtcEvaluation | None = AmmoniaHtcEvaluation(
+    disposition="adopt_with_scope",
+    acted_on="steiner_taborek_1992",
+    rationale=(
+        "Let's go with Steiner-Taborek, cite Taboas' work pooling the five datasets and "
+        "calling it the only correlation that predicts ammonia."
+    ),
+    accuracy_disclaimer=(
+        "ADOPTED ON THE WORSE DEVIATION. Steiner-Taborek is recorded at 41.9 % against "
+        "Gungor-Winterton (1987)'s 37.2 % on the same Zurcher ammonia data, and against "
+        "Kattan-Thome-Favrat's 19.5 %. It is adopted on Taboas (2006)'s pooled "
+        "endorsement across five ammonia datasets -- the only correlation that predicts "
+        "ammonia -- NOT because it fits better. Any reading of this adoption as a choice "
+        "on accuracy is wrong."
+    ),
+    structural_rejection=(
+        "Kattan-Thome-Favrat (19.5 %) is rejected on STRUCTURE, not accuracy: its "
+        "accuracy is earned by resolving gravitational flow-pattern regimes, the "
+        "mechanism absent in orbit. Adopting a 1-g fit whose accuracy mechanism vanishes "
+        "is not adoption. Same ground as the Gungor-Winterton (1986) Froude "
+        "stratification de-rating already stripped at registry/two_phase.py:379."
+    ),
+)
 
 
 def d6_retirement_state() -> tuple[str, str]:
@@ -453,9 +518,10 @@ def d6_retirement_state() -> tuple[str, str]:
             "(41.9 % vs 37.2 %, against Taboas's endorsement); no disposition has been "
             "recorded, so D-6 does not retire. S5-11.",
         )
+    d = AMMONIA_HTC_DISPOSITION
     return (
         "retired",
-        f"dispositioned {AMMONIA_HTC_DISPOSITION.disposition} on "
-        f"{AMMONIA_HTC_DISPOSITION.acted_on} "
-        f"({AMMONIA_HTC_DISPOSITION.measurement.deviation_percent} %).",
+        f"D-6 retires at S5 as its own text says. Dispositioned {d.disposition} on "
+        f"{d.acted_on} at {d.measurement.deviation_percent} % -- which is NOT the best "
+        f"recorded deviation. {d.accuracy_disclaimer} {d.structural_rejection}",
     )
