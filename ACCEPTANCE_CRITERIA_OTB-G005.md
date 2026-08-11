@@ -29,6 +29,28 @@ the Director's:**
 terrestrial."* `D-6` and `D-7` are **debt-register** entries and are easy to swap, so the
 subject, not the number, is what each criterion below is written against.
 
+### The S5 / S6 line, because the CHF obligation is split across both
+
+D-10 — retired into ruling **D6** and kept as its evidence trail — states the ruling verbatim:
+*"CHF-dependent ranking may not claim microgravity validity under any 1-g-derived CHF
+correlation — binding now, **enforced in code at S5/S6**, amending A5 and sharpening C7."* It
+closes: *"The remaining work is **mechanical enforcement at S5/S6**, tracked against D6."*
+Debt **D-7** is the qualifying evidence for the same constraint and assigns its own follow-on
+explicitly: *"**Sharpen at S6**, where ranked outputs carry it."*
+
+So each criterion below carries a marker, and **no criterion in this file is due at S6**:
+
+- **`[D6 · due at S5]`** — mechanical enforcement that must exist before anything can rank.
+  S5 builds the carry; it is checkable here because it is a property of the record, not of a
+  ranking.
+- **`[D-7 · S6, anticipated only]`** — named so the boundary is explicit and so S6's work is
+  not smuggled into S5's scope. Where such a marker appears, the criterion constrains what S5
+  may **not** claim; it does not require S5 to perform the sharpening.
+- unmarked criteria belong to S5's own deliverable or to D-6 / D-14.
+
+**The sharpened C7 ranking-scope wording is S6's and is not drafted here.** S5-5 exists so that
+S6 *can* write it against a record that still carries the basis.
+
 **The central hazard this set exists to catch.** S5 decides **eligibility**; S6 emits the
 **rankings**. Everything S5 records is consumed later by a milestone that publishes ordered
 results, and the project's standing position is that no ranking is microgravity-validated. The
@@ -67,14 +89,18 @@ milestone whose subject matter makes ranking the obvious next line of code.)*
 
 ### D6 / D-7 — a CHF-dependent ranking cannot claim microgravity validity
 
-**S5-4. An eligibility record that depends on CHF carries the gravity basis of the CHF correlation
+*D6 is enforced in code across S5 and S6. S5-4 … S5-6 are S5's half — the record-level
+carry, buildable and checkable without any ranking existing. S5-7 is a prohibition on S5,
+not a delivery of D-7's sharpening.*
+
+**S5-4. `[D6 · due at S5]` An eligibility record that depends on CHF carries the gravity basis of the CHF correlation
 that produced it, and cannot be constructed without one.** The basis travels as a field on the
 record, populated from the adopted correlation's `reference_gravity_m_s2` and `gravity_basis`, not
 from a caller's argument. **Falsifiable by:** a CHF-dependent eligibility record constructible with
 an absent, empty, or defaulted gravity basis; a basis suppliable or overridable by a caller; or a
 basis carried only in a docstring, a comment, a variable name, or rendered prose.
 
-**S5-5. The basis survives the hand-off to the consumer that ranks.**
+**S5-5. `[D6 · due at S5]` The basis survives the hand-off to the consumer that ranks.**
 Whatever S5 hands forward is such that a downstream ranking cannot emit a CHF-dependent ordering
 having lost the gravity basis — the record cannot be reduced to a bare eligibility flag without the
 reduction failing. **Falsifiable by:** any projection, serialisation, export, or convenience
@@ -83,14 +109,15 @@ accessor that yields CHF-dependent eligibility without its basis and still valid
 present; only S5-5 makes it non-droppable, and the obligation is about what a **later** milestone
 can claim.)*
 
-**S5-6. Evaluating CHF-dependent eligibility away from the correlation's reference gravity
+**S5-6. `[D6 · due at S5]` Evaluating CHF-dependent eligibility away from the correlation's reference gravity
 de-ranks; it does not return a number with a caveat.** The existing `Axis.ORIENTATION` /
 `Consequence.DE_RANK` mechanism is the enforcement, extended to the eligibility path rather than
 re-implemented beside it. **Falsifiable by:** a CHF-dependent eligibility returned as `True` at a
 gravity outside `reference_gravity_m_s2 ± gravity_rel_tol`; a caveat string substituted for the
 de-rank; or a second, parallel gravity check that can disagree with the registry's.
 
-**S5-7. No S5 output asserts a *direction* for CHF error in microgravity.**
+**S5-7. `[D-7 · S6, anticipated only]` No S5 output asserts a *direction* for CHF error in
+microgravity.**
 D-7's own refinement is explicit: the "known direction" is Hammer (2021) and is about the
 **heat-transfer coefficient**; for **CHF**, Kharangate, Konishi & Mudawar (2015) place microgravity
 predictions *between* the Earth-gravity orientation extremes, so the sign depends on which
@@ -100,6 +127,11 @@ are non-conservative in microgravity; or any text that carries the HTC direction
 *(This criterion can only be falsified by text, which normally makes it administrative. It is not:
 the conflation it forbids is already written into D-7's own title, and the debt says so. A wrong
 claim here is the most likely single error at this milestone.)*
+
+*(**Scope line.** D-7 says "Sharpen at S6, where ranked outputs carry it." S5 therefore owes the
+**prohibition** and not the **sharpening**: S5 must not state a direction, and S5 is not required
+to state the qualified one either. Writing the sharpened C7 wording here would be S6 work landing
+in S5, and a reviewer finding it in this milestone should read it as scope creep, not thoroughness.)*
 
 ### D-6 — the Steiner–Taborek (1992) evaluation
 
