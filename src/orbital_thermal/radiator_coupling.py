@@ -65,6 +65,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import NamedTuple
 
 from . import coupled_loop as _cl
 from . import fluids as _fluids
@@ -181,27 +182,113 @@ def couple(
     )
 
 
-@dataclass(frozen=True)
-class CoupledSolution:
-    """A coupled operating point, with the condensing state that produced it."""
+#: **D87. The demonstration this module produces is WIDER than the one S4 produced, and
+#: that has to be said by the module that widened it.**
+#:
+#: ``coupled_loop``'s own disclosure contrasts a near-atmospheric demonstration with a
+#: 20 bar device. It never states the demonstration's pressure, so nothing in it became
+#: false and S4-2 is strictly satisfied -- its three falsifiers are a rendered output
+#: missing the disclosure, a constructor argument that suppresses it, and an empty
+#: disclosure that validates, and none applies. But S4-2 tests presence and suppression,
+#: not whether a disclosure still DISCRIMINATES, and this one discriminates less than it
+#: did. The S4 demonstration ran at 1.2 bar. Coupled, it condenses between 4.6 and
+#: 9.7 bar -- roughly 45 % of the way to the device it was chosen to be unlike.
+#:
+#: So this is a second disclosure rather than an edit to the first. Two modules making two
+#: different claims carry two disclosures; that is more to read and it is the honest shape.
+DEMONSTRATION_DISCLOSURE = (
+    "MACHINERY DEMONSTRATION -- NOT A STATEMENT ABOUT THIS PROJECT'S DEVICE. "
+    "The coupled demonstration condenses between 4.586 bar and 9.690 bar across the "
+    "three sink temperatures (150 K, 250 K, 320 K), against the 1.2 bar at which the S4 "
+    "demonstration ran. THE EARLIER 'near-atmospheric demonstration versus 20 bar "
+    "device' CONTRAST MUST NOT BE CARRIED FORWARD UNCHANGED: this demonstration has "
+    "closed roughly 45 % of the pressure gap it was chosen to be unlike. "
+    "WHY IT MOVED: saturated vapour density carries the coupling -- pressure does not, "
+    "and was measured not to move the root inside the correlation's declared domain -- "
+    "and the condensing pressure must stay inside that correlation's declared "
+    "[1, 20] bar domain, so the radiator area (0.8 m2) and emissivity (0.85) are STATED "
+    "INPUTS chosen to keep it there, not a sized radiator. "
+    "The device remains single-component ammonia, non-horizontal, at 20 bar, and three "
+    "of its four physical legs still refuse to produce a number at all."
+)
 
+
+class DisclosedCoupledResult(NamedTuple):
+    """The coupled numbers **and** the disclosure, which leave together or not at all."""
+
+    disclosure: str
     case: _cl.LoopCase
     operating_points: tuple[_cl.OperatingPoint, ...]
     condensing_temperature_K: float
     saturation_pressure_Pa: float
     rejected_W: float
+
+
+@dataclass(frozen=True)
+class CoupledSolution:
+    """A coupled operating point, with the condensing state that produced it.
+
+    **The numbers are reachable only through :meth:`disclosed` or :meth:`render`, and
+    both carry :data:`DEMONSTRATION_DISCLOSURE`.** On S4-2's pattern the disclosure is a
+    module constant rather than a field or a constructor argument, so no caller can blank
+    it, shorten it, or pass a friendlier one -- there is no parameter to pass.
+
+    **The residual, stated because the last one was not.** The underscore-prefixed fields
+    still exist and Python cannot prevent reaching for them. ``sol._saturation_pressure_Pa``
+    yields a number with no disclosure attached, exactly as ``LegEligibility.eligible``
+    does for the gravity basis (debt D-18). What the design buys is that every PUBLIC way
+    out carries the disclosure, so a bypass is a deliberate reach for a private name --
+    visible in a diff and greppable -- rather than the ordinary way to use the object.
+    Claiming more than that here would repeat the mistake this module already had to
+    retract once.
+    """
+
+    _case: _cl.LoopCase
+    _operating_points: tuple[_cl.OperatingPoint, ...]
+    _condensing_temperature_K: float
+    _saturation_pressure_Pa: float
+    _rejected_W: float
     iterations: int
     converged: bool
 
+    def disclosed(self) -> DisclosedCoupledResult:
+        """Every coupled quantity, bundled with the disclosure. The only public route."""
+        return DisclosedCoupledResult(
+            disclosure=DEMONSTRATION_DISCLOSURE,
+            case=self._case,
+            operating_points=self._operating_points,
+            condensing_temperature_K=self._condensing_temperature_K,
+            saturation_pressure_Pa=self._saturation_pressure_Pa,
+            rejected_W=self._rejected_W,
+        )
+
+    def render(self) -> str:
+        """A rendered report. The disclosure is first, and there is no way to omit it."""
+        roots = ", ".join(
+            f"{p.mass_flow_kg_s:.12f} kg/s" for p in self._operating_points)
+        return (
+            f"{DEMONSTRATION_DISCLOSURE}\n\n"
+            f"sink {self._case.sink_temperature_K:.0f} K -> condensing "
+            f"{self._condensing_temperature_K:.2f} K at "
+            f"{self._saturation_pressure_Pa / 1e5:.3f} bar; rejected "
+            f"{self._rejected_W:.1f} W; root(s) {roots}"
+        )
+
     @property
     def root_kg_s(self) -> float:
-        """The single root, or a refusal. Non-uniqueness is S4-5's business, not a pick."""
-        if len(self.operating_points) != 1:
+        """The single root, or a refusal. Non-uniqueness is S4-5's business, not a pick.
+
+        This returns a bare number, so it is deliberately NOT how a consumer obtains the
+        condensing state: it answers one question -- "which flow?" -- and the disclosure
+        travels with the state, through :meth:`disclosed`. A caller that wants the numbers
+        that produced this root has to take them disclosed.
+        """
+        if len(self._operating_points) != 1:
             raise ValueError(
-                f"{len(self.operating_points)} operating points; S4-5 forbids selecting "
-                "one. Read .operating_points and report them all."
+                f"{len(self._operating_points)} operating points; S4-5 forbids selecting "
+                "one. Read .disclosed().operating_points and report them all."
             )
-        return self.operating_points[0].mass_flow_kg_s
+        return self._operating_points[0].mass_flow_kg_s
 
 
 def solve_coupled(
@@ -260,11 +347,11 @@ def solve_coupled(
         load = closure.rejected_W
 
     return CoupledSolution(
-        case=coupled,
-        operating_points=points,
-        condensing_temperature_K=t_cond,
-        saturation_pressure_Pa=coupled.pressure_Pa,
-        rejected_W=load,
+        _case=coupled,
+        _operating_points=points,
+        _condensing_temperature_K=t_cond,
+        _saturation_pressure_Pa=coupled.pressure_Pa,
+        _rejected_W=load,
         iterations=iterations,
         converged=converged,
     )

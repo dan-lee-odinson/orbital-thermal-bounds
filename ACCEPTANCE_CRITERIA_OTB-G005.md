@@ -49,7 +49,9 @@ So each criterion below carries a marker, and **no criterion in this file is due
 - unmarked criteria belong to S5's own deliverable or to D-6 / D-14.
 
 **The sharpened C7 ranking-scope wording is S6's and is not drafted here.** S5-5 exists so that
-S6 *can* write it against a record that still carries the basis.
+S6 *can* write it against a record that still carries the basis — **for every accessor the
+guard covers.** The public `.eligible` field is the one it does not, so S6 inherits that gap as
+**D-18** rather than a closed question. See S5-5's status note.
 
 **The central hazard this set exists to catch.** S5 decides **eligibility**; S6 emits the
 **rankings**. Everything S5 records is consumed later by a milestone that publishes ordered
@@ -100,14 +102,30 @@ from a caller's argument. **Falsifiable by:** a CHF-dependent eligibility record
 an absent, empty, or defaulted gravity basis; a basis suppliable or overridable by a caller; or a
 basis carried only in a docstring, a comment, a variable name, or rendered prose.
 
-**S5-5. `[D6 · due at S5]` The basis survives the hand-off to the consumer that ranks.**
+**S5-5. `[D6 · due at S5]` `PARTIALLY DISCHARGED` The basis survives the hand-off to the
+consumer that ranks.**
 Whatever S5 hands forward is such that a downstream ranking cannot emit a CHF-dependent ordering
 having lost the gravity basis — the record cannot be reduced to a bare eligibility flag without the
 reduction failing. **Falsifiable by:** any projection, serialisation, export, or convenience
 accessor that yields CHF-dependent eligibility without its basis and still validates.
-*(This is the criterion that actually discharges D6's obligation at S5. S5-4 makes the basis
-present; only S5-5 makes it non-droppable, and the obligation is about what a **later** milestone
-can claim.)*
+
+> **STATUS: PARTIALLY DISCHARGED, and the criterion above is NOT reworded to fit what was
+> built.** `bool(chf_leg)` raises and `as_record()` carries the basis, so every accessor the
+> guard covers is closed. **`LegEligibility.eligible` is a public field and is not covered:**
+> one attribute access yields a bare boolean with no gravity basis, which is exactly the
+> shape this criterion's own falsifier names. The guard therefore buys **visibility, not
+> impossibility** — taking the bare flag means writing `.eligible`, a deliberate act that
+> shows in a diff, where `if leg:` would have read as ordinary code.
+>
+> Carried as **DEBTS D-18**, raised under D83, with the Director's ruling that it closes at
+> **S6**: S6 cannot pass while a CHF-dependent eligibility can be reduced to a bare boolean
+> without its gravity basis, unless the residual is formally re-accepted at S6 with a stated
+> reason. `tests/test_two_phase_architecture_cases.py` pins the hole and both retracted
+> overclaims, so the guarantee cannot re-inflate.
+>
+> **The criterion stays as written.** Rewording it to match the build is the move this
+> apparatus exists to catch — S5-12's third clause already names it a falsification when done
+> to S4-3, and it would be no better done here.
 
 **S5-6. `[D6 · due at S5]` Evaluating CHF-dependent eligibility away from the correlation's reference gravity
 de-ranks; it does not return a number with a caveat.** The existing `Axis.ORIENTATION` /
@@ -218,4 +236,7 @@ S5-10, which fail on numbers.)*
   additionally forbids claiming a *direction* for CHF error — including a claim that would flatter
   the artifact by calling it conservative.
 - **They do not extend to ranked output.** S6 owns rankings and the §7 ranking-scope limitation on
-  every one of them. S5-5 exists precisely so that S6 cannot lose what S5 established.
+  every one of them. S5-5 exists so that S6 cannot lose what S5 established **through any accessor
+  the guard covers** — which is not all of them: the public `.eligible` field remains a bypass,
+  carried as **D-18** and closing at S6. What S5 hands S6 is a record that is hard to strip by
+  accident and still possible to strip on purpose.

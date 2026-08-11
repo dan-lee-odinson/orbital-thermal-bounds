@@ -129,14 +129,14 @@ def test_the_condensing_state_is_what_carries_the_coupling():
     Asserted because the mechanism is the claim. A root that moved for some other reason
     would satisfy the discharge test and mean nothing.
     """
-    seen = [(T, solve(T)) for T in SINKS_K]
-    temps = [s.condensing_temperature_K for _, s in seen]
-    rho_g = [s.case.rho_g for _, s in seen]
+    seen = [(T, solve(T).disclosed()) for T in SINKS_K]
+    temps = [d.condensing_temperature_K for _, d in seen]
+    rho_g = [d.case.rho_g for _, d in seen]
 
     assert temps == sorted(temps), f"T_cond must rise with the sink: {temps}"
     assert rho_g == sorted(rho_g), f"vapour density must rise with T_cond: {rho_g}"
-    for T, s in seen:
-        assert s.condensing_temperature_K > T, (
+    for T, d in seen:
+        assert d.condensing_temperature_K > T, (
             "the loop must condense ABOVE its sink -- second law, not a modelling choice"
         )
 
@@ -193,7 +193,8 @@ def test_the_fixed_point_converges_and_reports_on_the_quantity_it_iterates():
     s = solve(250.0)
     assert s.converged, "the coupled solve must converge"
     assert 1 < s.iterations <= 40
-    assert s.rejected_W > s.case.duty_W, (
+    d = s.disclosed()
+    assert d.rejected_W > d.case.duty_W, (
         "the radiator rejects the duty PLUS the pump heat; if they are equal the pump "
         "term has dropped out of the loop closure"
     )
@@ -404,12 +405,12 @@ def test_s5_12_s4_3_itself_is_untouched():
 
 def test_non_uniqueness_is_never_resolved_by_picking():
     """S4-5 still governs: a multi-root solution refuses to hand back one number."""
-    s = solve(250.0)
+    d = solve(250.0).disclosed()
     doubled = RC.CoupledSolution(
-        case=s.case, operating_points=s.operating_points * 2,
-        condensing_temperature_K=s.condensing_temperature_K,
-        saturation_pressure_Pa=s.saturation_pressure_Pa,
-        rejected_W=s.rejected_W, iterations=s.iterations, converged=s.converged)
+        _case=d.case, _operating_points=d.operating_points * 2,
+        _condensing_temperature_K=d.condensing_temperature_K,
+        _saturation_pressure_Pa=d.saturation_pressure_Pa,
+        _rejected_W=d.rejected_W, iterations=1, converged=True)
     with pytest.raises(ValueError, match="forbids selecting"):
         _ = doubled.root_kg_s
 
@@ -420,3 +421,137 @@ def test_the_radiator_boundary_refuses_unphysical_inputs():
         with pytest.raises(ValueError):
             RC.RadiatorBoundary(**{
                 "area_m2": 0.8, "emissivity": 0.85, "sink_temperature_K": 250.0, **bad})
+
+
+# --------------------------------------------------------------------------------------
+# D87 ITEM 1 — the module that widened the demonstration discloses the widening
+# --------------------------------------------------------------------------------------
+
+def test_d87_the_disclosure_states_the_widening_and_why():
+    """**The four things D87 requires it to say**, each asserted separately.
+
+    S4-2 is strictly satisfied by ``coupled_loop``'s disclosure -- it never stated the
+    demonstration's pressure, so nothing in it became false. But S4-2 tests presence and
+    suppression, not whether a disclosure still DISCRIMINATES, and the coupling moved the
+    demonstration from 1.2 bar to 4.6-9.7 bar. That is this module's doing, so the
+    disclosure belongs to this module.
+    """
+    d = RC.DEMONSTRATION_DISCLOSURE
+
+    # 1. the demonstration's own condensing range
+    assert "4.586 bar" in d and "9.690 bar" in d, "the condensing range must be stated"
+    assert "150 K, 250 K, 320 K" in d
+
+    # 2. that it is a widening, and the old contrast must not be carried forward
+    assert "1.2 bar" in d, "the S4 demonstration's pressure must be there to contrast"
+    assert "MUST NOT BE CARRIED FORWARD UNCHANGED" in d
+    assert "45 %" in d
+
+    # 3. why: density carries the coupling, and the declared domain forces the inputs
+    assert "vapour density carries the coupling" in d
+    assert "[1, 20] bar" in d
+    assert "0.8 m2" in d and "0.85" in d and "STATED" in d and "not a sized radiator" in d
+
+    # 4. still not a statement about the device
+    assert "NOT A STATEMENT ABOUT THIS PROJECT'S DEVICE" in d
+    assert "20 bar" in d and "three of its four physical legs" in d
+
+
+def test_d87_the_disclosure_is_a_module_constant_no_caller_can_replace():
+    """**S4-2's pattern, mechanically.** Not a field, not a constructor argument.
+
+    There is no parameter to pass, so there is nothing to blank, shorten, or make
+    friendlier. The falsifier S4-2 names -- "a constructor argument that suppresses it" --
+    cannot be built here because no such argument exists.
+    """
+    import dataclasses
+    import inspect
+
+    fields = {f.name for f in dataclasses.fields(RC.CoupledSolution)}
+    assert not any("disclos" in f for f in fields), (
+        "the disclosure must not be a field; a field is a thing a constructor can set"
+    )
+    for fn in (RC.solve_coupled, RC.couple, RC.CoupledSolution.render,
+               RC.CoupledSolution.disclosed):
+        params = set(inspect.signature(fn).parameters)
+        assert not any("disclos" in p for p in params), (
+            f"{fn.__name__} takes a disclosure argument, which is a way to replace it"
+        )
+
+
+def test_d87_the_numbers_cannot_leave_without_the_disclosure():
+    """**They leave together.** Every public route out carries it.
+
+    A consumer must not be able to obtain the roots, the condensing temperature or the
+    saturation pressure from a ``CoupledSolution`` without the disclosure travelling with
+    them. ``disclosed()`` bundles them; ``render()`` puts the disclosure first; and no
+    public attribute yields the condensing state at all.
+    """
+    s = solve(250.0)
+
+    bundle = s.disclosed()
+    assert bundle.disclosure == RC.DEMONSTRATION_DISCLOSURE
+    assert bundle.saturation_pressure_Pa > 0 and bundle.condensing_temperature_K > 0
+
+    rendered = s.render()
+    assert rendered.startswith(RC.DEMONSTRATION_DISCLOSURE)
+    assert "condensing" in rendered and "root(s)" in rendered
+
+    # No PUBLIC attribute hands back the condensing state on its own.
+    public = {n for n in dir(s) if not n.startswith("_")}
+    leaks = public & {"condensing_temperature_K", "saturation_pressure_Pa",
+                      "operating_points", "case", "rejected_W"}
+    assert not leaks, f"these hand back the coupled state with no disclosure: {leaks}"
+
+    # THE RESIDUAL, asserted rather than claimed away: the private fields are still
+    # reachable, exactly as LegEligibility.eligible is (D-18). What the design buys is
+    # that a bypass is a deliberate reach for a private name, not the ordinary route.
+    assert isinstance(s._saturation_pressure_Pa, float)
+    assert "residual" in (RC.CoupledSolution.__doc__ or "").lower(), (
+        "the module must disclose that the private fields remain reachable; claiming "
+        "more than the design delivers is what this module already had to retract once"
+    )
+
+
+def test_d87_the_witness_goes_red_against_a_blanked_disclosure(monkeypatch):
+    """**The falsifier for this item.** Blank the constant and the checks must fail.
+
+    If they pass against a blanked constant the disclosure is decorative and D87's item 1
+    has not landed. Both the content check and the travels-with-the-numbers check are
+    exercised, because a disclosure that is present but empty satisfies neither.
+    """
+    monkeypatch.setattr(RC, "DEMONSTRATION_DISCLOSURE", "")
+
+    with pytest.raises(AssertionError):
+        test_d87_the_disclosure_states_the_widening_and_why()
+
+    # And an emptied disclosure must not still validate on the rendered route: the
+    # rendered report would then carry the numbers with nothing attached.
+    s = solve(250.0)
+    assert s.disclosed().disclosure == "", "monkeypatch must reach the bundle"
+    rendered = s.render()
+    assert not rendered.startswith("MACHINERY DEMONSTRATION"), (
+        "with the constant blanked the rendered output must lose its disclosure -- if it "
+        "does not, the render is carrying a copy and the constant is not the source"
+    )
+
+
+def test_d87_coupled_loop_is_not_touched_by_this_item():
+    """**The property item 1 is constrained by.** Its disclosure is not ours to edit.
+
+    D87 rules the third route: two modules making two different claims carry two
+    disclosures. If ``coupled_loop``'s own disclosure were edited to mention the coupling,
+    S5-12's guarantee -- that S4-3's module is byte-identical to main -- would be gone,
+    and the milestone that discharges S4-3 would have edited the module S4-3 lives in.
+    """
+    text = C._DEMONSTRATION_DISCLOSURE
+    # A first draft of this test carried `assert ... or True`, which is true whatever the
+    # left side says. The repository's own F-06 guard caught it -- a check that cannot
+    # fail is the shape this project counts, and it was in the test written to protect a
+    # byte-identity guarantee. Removed rather than repaired: the assertion below is the
+    # one that carries the property, and the tautology was carrying nothing.
+    for ours in ("4.586 bar", "9.690 bar", "45 %", "vapour density carries the coupling"):
+        assert ours not in text, (
+            f"{ours!r} has been added to coupled_loop's disclosure; that module must "
+            "stay byte-identical to main (S5-12)"
+        )
