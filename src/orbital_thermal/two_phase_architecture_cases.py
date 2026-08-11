@@ -403,6 +403,11 @@ class AmmoniaHtcEvaluation:
     #: table that ranks the three by deviation and stops there", and a record that adopts
     #: the worse number without saying why the better one was refused is that table.
     structural_rejection: str = ""
+    #: **Required when the disposition is ``adopt_with_scope``.** The bound the adoption
+    #: is limited to. A verb naming a bound that no text supplies is weaker than plain
+    #: ``adopt``: it reads as narrower while constraining nothing, so the empty case is
+    #: refused rather than defaulted (D84).
+    scope: str = ""
 
     def __post_init__(self) -> None:
         if self.disposition not in DISPOSITIONS:
@@ -447,6 +452,13 @@ class AmmoniaHtcEvaluation:
                     "otherwise this record is a deviation table that stops at the "
                     "numbers."
                 )
+        if self.disposition == "adopt_with_scope" and not self.scope.strip():
+            raise ValueError(
+                "adopt_with_scope names a bound; an empty scope supplies none. A verb "
+                "that reads as narrower while constraining nothing is WEAKER than plain "
+                "'adopt', because a reader takes the narrowing on trust. Either supply "
+                "the scope or use 'adopt' and say the adoption is unbounded (D84)."
+            )
         if self.disposition == "decline_no_knowledge":
             raise ValueError(
                 "Steiner-Taborek (1992) exists and its basis admits part of this space, "
@@ -479,6 +491,44 @@ class AmmoniaHtcEvaluation:
 #: screening model would be a silent physical assumption."* D-6 applies that reasoning one
 #: level out -- from a single gravity-driven TERM to a whole correlation whose accuracy
 #: mechanism is gravity-driven.
+#: --- §7.2 DIRECTOR SELECTION -- BUILDER WORDING, DIRECTOR CHOICE (D84) ---
+#:
+#: **The three-zone authority seam, carried into the artifact rather than left in the
+#: ledger.** DIR-02 exists to stop unmarked builder prose sitting in the Director's field,
+#: and D47 is the round where exactly that was found inside a frozen packet. The seam has
+#: to survive into the code for the same reason it has to survive into the ledger: a
+#: reader of this module cannot check the ledger, and a scope paragraph in a
+#: Director-dispositioned record reads as his words unless something says otherwise.
+#:
+#: **So, precisely: the text below is the BUILDER'S WORDING. The Director's act was the
+#: CHOICE to adopt it as the scope at D84.** His own prose in this disposition is the
+#: ``rationale`` field and nothing else. Anyone quoting the paragraph below as a Director
+#: ruling is quoting a builder.
+#:
+#: **It states a DIRECTION, and that is correct rather than an oversight.** Hammer (2021)
+#: is about the HEAT-TRANSFER COEFFICIENT, where the direction is known. D-7's own
+#: refinement is that the direction is *not* simple for **CHF**, and that conflating the
+#: two is the error its title invites. This scope is an HTC adoption, so the HTC direction
+#: belongs in it. ``test_s5_7_no_s5_text_states_a_direction_for_chf_error_in_microgravity`` keeps
+#: the distinction honest, and records the correction that forced it to be encoded.
+#: --- END DIRECTOR SELECTION ---
+AMMONIA_HTC_SCOPE = (
+    "Adopted for 1-g-referenced ammonia heat-transfer screening only. "
+    "Steiner-Taborek (1992) is 1-g derived and this project claims no microgravity "
+    "validation (D-7). Hammer (2021) records that microgravity flow-boiling heat "
+    "transfer typically depreciates, so this correlation is expected to overpredict in "
+    "orbit -- non-conservative, and the direction of the error is known. This adoption "
+    "licenses no microgravity heat-transfer claim and does not discharge D-7."
+)
+
+#: Who authored what, as data, so a consumer can render the seam without re-reading prose.
+AMMONIA_HTC_SCOPE_AUTHORITY = {
+    "zone": "§7.2 DIRECTOR SELECTION",
+    "wording": "builder",
+    "choice": "Director, D84",
+    "director_prose_field": "rationale",
+}
+
 AMMONIA_HTC_DISPOSITION: AmmoniaHtcEvaluation | None = AmmoniaHtcEvaluation(
     disposition="adopt_with_scope",
     acted_on="steiner_taborek_1992",
@@ -501,6 +551,9 @@ AMMONIA_HTC_DISPOSITION: AmmoniaHtcEvaluation | None = AmmoniaHtcEvaluation(
         "is not adoption. Same ground as the Gungor-Winterton (1986) Froude "
         "stratification de-rating already stripped at registry/two_phase.py:379."
     ),
+    # --- SCOPE. See AMMONIA_HTC_SCOPE_AUTHORITY immediately below: this wording is the
+    # BUILDER'S, under the Director's choice at D84. It is not his prose.
+    scope=AMMONIA_HTC_SCOPE,
 )
 
 

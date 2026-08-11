@@ -383,12 +383,37 @@ def test_s5_7_no_s5_text_states_a_direction_for_chf_error_in_microgravity():
     #
     # What is left is the instrument that CAN be trusted: the artifact's own text, which
     # has no reason to name the prohibition and every opportunity to assert the claim.
+    # THE DISTINCTION, AND THE CORRECTION THAT FORCED IT INTO THIS CHECK.
+    #
+    # The first version flagged every directional word. It then fired on the D84 scope --
+    # "Hammer (2021) records that microgravity flow-boiling heat transfer typically
+    # depreciates, so this correlation is expected to overpredict in orbit" -- which is
+    # CORRECT. Hammer is about the HEAT-TRANSFER COEFFICIENT, where the direction IS
+    # known; D-7's refinement is that the direction is not simple for CHF, and that
+    # conflating the two is the error its own title invites. A check that forbids the HTC
+    # direction forbids a true statement and pushes the artifact toward saying less than
+    # it knows -- which is the opposite of what D-7 asks for.
+    #
+    # So the distinction is encoded rather than the scope exempted: a directional claim is
+    # permitted where its surrounding text is about heat transfer and NOT about CHF.
+    # Exempting the scope by name would have made this check pass without encoding
+    # anything, which is the shape this milestone has now caught three times.
     source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
-    offenders = [
-        f"two_phase_architecture_cases.py:{n}: {line.strip()[:110]}"
-        for n, line in enumerate(source.splitlines(), 1)
-        if directional.search(line)
-    ]
+    chf_terms = re.compile(r"\bCHF\b|critical heat flux", re.I)
+    htc_terms = re.compile(r"heat[- ]transfer|\bHTC\b", re.I)
+
+    offenders = []
+    for match in directional.finditer(source):
+        window = source[max(0, match.start() - 320): match.end() + 320]
+        line_no = source.count("\n", 0, match.start()) + 1
+        about_chf = bool(chf_terms.search(window))
+        about_htc = bool(htc_terms.search(window))
+        if about_htc and not about_chf:
+            continue  # a known HTC direction, which D-7 supports
+        offenders.append(
+            f"two_phase_architecture_cases.py:{line_no}: {match.group(0)!r} "
+            f"(chf_context={about_chf}, htc_context={about_htc})"
+        )
     assert not offenders, (
         "the S5 module asserts a direction for CHF error in microgravity, which D-7's "
         "own refinement forbids:\n  " + "\n  ".join(offenders)
@@ -475,7 +500,8 @@ def test_s5_9_a_gravity_dependent_accuracy_cannot_carry_a_disposition_silently()
         rationale="best available fit for a 1-g screening case",
         gravity_dependence_note=(
             "its accuracy comes from resolving gravitational flow-pattern regimes, which "
-            "do not exist in orbit; scoped to 1-g screening only"))
+            "do not exist in orbit; scoped to 1-g screening only"),
+        scope="1-g screening only")
     assert allowed.gravity_dependence_note
 
 
@@ -585,7 +611,8 @@ def test_s5_11_adopting_a_worse_deviation_without_saying_so_is_refused():
     ok = ac.AmmoniaHtcEvaluation(
         disposition="adopt_with_scope", acted_on="kattan_thome_favrat",
         rationale="best fit for a 1-g screening case",
-        gravity_dependence_note="scoped to 1 g; the mechanism is gravitational")
+        gravity_dependence_note="scoped to 1 g; the mechanism is gravitational",
+        scope="1-g screening only")
     assert ok.accuracy_disclaimer == ""
 
 
@@ -659,3 +686,119 @@ def test_s5_14_s5_declares_no_new_enforced_bound():
     module = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
     assert "Applicability(" not in module, "S5 must not declare a new applicability box"
     assert "Domain(" not in module
+
+
+# --------------------------------------------------------------------------------------
+# D84 — the scope, its guard, and the authority seam
+# --------------------------------------------------------------------------------------
+
+def test_d84_adopt_with_scope_refuses_an_empty_scope():
+    """**A verb naming a bound that no text supplies is weaker than plain ``adopt``.**
+
+    ``adopt_with_scope`` reads as narrower than ``adopt``, so a reader takes the narrowing
+    on trust. If no scope text exists, that reader has been given a limit that constrains
+    nothing -- worse than an unbounded adoption honestly labelled. Same shape as the
+    ``gravity_dependence_note`` guard: the qualifier is required by the verb that promises
+    it, not defaulted.
+    """
+    for empty in ("", "   ", "\n"):
+        with pytest.raises(ValueError, match="empty scope supplies none"):
+            ac.AmmoniaHtcEvaluation(
+                disposition="adopt_with_scope", acted_on="steiner_taborek_1992",
+                rationale="the pooled endorsement",
+                accuracy_disclaimer="adopted at 41.9 % against 37.2 %",
+                structural_rejection="KTF rejected on structure",
+                scope=empty)
+
+    # A plain `adopt` needs no scope -- the guard belongs to the verb that promises one.
+    ok = ac.AmmoniaHtcEvaluation(
+        disposition="adopt", acted_on="steiner_taborek_1992",
+        rationale="unbounded, and said so",
+        accuracy_disclaimer="adopted at 41.9 % against 37.2 %",
+        structural_rejection="KTF rejected on structure")
+    assert ok.scope == ""
+
+
+def test_d84_the_shipped_scope_is_present_and_says_what_it_bounds():
+    """The scope the Director approved, carried on the record he dispositioned."""
+    d = ac.AMMONIA_HTC_DISPOSITION
+    assert d.disposition == "adopt_with_scope"
+    assert d.scope.strip(), "the shipped disposition must carry its scope"
+    for clause in (
+        "1-g-referenced ammonia heat-transfer screening only",
+        "claims no microgravity validation",
+        "licenses no microgravity heat-transfer claim",
+        "does not discharge D-7",
+    ):
+        assert clause in d.scope, f"the scope must still say: {clause!r}"
+
+
+def test_d84_the_authority_seam_survives_into_the_artifact():
+    """**DIR-02's three-zone seam, carried into the code and not left in the ledger.**
+
+    A scope paragraph sitting in a Director-dispositioned record reads as his words unless
+    something says otherwise, and a reader of this module cannot check the ledger. D47 is
+    the round where unmarked builder prose was found inside the Director's field in a
+    frozen packet, so the distinction is asserted here rather than trusted to prose.
+
+    The Director's own prose in this disposition is the ``rationale`` and nothing else.
+    """
+    authority = ac.AMMONIA_HTC_SCOPE_AUTHORITY
+    assert authority["wording"] == "builder"
+    assert authority["choice"] == "Director, D84"
+    assert authority["director_prose_field"] == "rationale"
+
+    source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    assert "DIRECTOR SELECTION -- BUILDER WORDING, DIRECTOR CHOICE" in source, (
+        "the seam header must be in the module text, not only in this test"
+    )
+    assert "END DIRECTOR SELECTION" in source, "the zone must be closed"
+
+    # And the Director's verbatim rationale must not have been absorbed into the scope.
+    assert "Let's go with Steiner-Taborek" in ac.AMMONIA_HTC_DISPOSITION.rationale
+    assert "Let's go with" not in ac.AMMONIA_HTC_SCOPE, (
+        "his prose belongs in the rationale; merging it into builder-worded scope text "
+        "is the exact blurring the seam exists to prevent"
+    )
+
+
+def test_s5_7_still_catches_a_chf_direction_after_the_htc_carve_out():
+    """**The refinement must not have gutted the guard.**
+
+    S5-7's check now permits a directional claim whose surrounding text is about heat
+    transfer and not about CHF -- because the D84 scope makes exactly that claim, and
+    Hammer (2021) supports it for the HTC. A carve-out that also let a CHF direction
+    through would have traded a false negative for the defect the criterion exists to
+    catch, which is the D37 lesson about case-blindness.
+
+    So the classifier is exercised on both sides here rather than only on the artifact.
+    """
+    directional = re.compile(
+        r"(over[- ]?predict\w*|under[- ]?predict\w*|non-?conservative|conservative|"
+        r"depreciat\w*|optimistic|pessimistic)", re.I)
+    chf_terms = re.compile(r"\bCHF\b|critical heat flux", re.I)
+    htc_terms = re.compile(r"heat[- ]transfer|\bHTC\b", re.I)
+
+    def verdict(text: str) -> str:
+        m = directional.search(text)
+        if m is None:
+            return "no directional claim"
+        window = text[max(0, m.start() - 320): m.end() + 320]
+        if htc_terms.search(window) and not chf_terms.search(window):
+            return "permitted"
+        return "offender"
+
+    assert verdict(ac.AMMONIA_HTC_SCOPE) == "permitted", (
+        "the D84 scope is an HTC direction, which D-7 supports"
+    )
+    assert verdict(
+        "1-g CHF correlations are non-conservative in microgravity."
+    ) == "offender", "a bare CHF direction must still be caught"
+    assert verdict(
+        "Microgravity flow-boiling heat transfer depreciates, so the CHF correlation "
+        "overpredicts in orbit."
+    ) == "offender", (
+        "carrying the HTC direction ACROSS to CHF is the conflation D-7's own title "
+        "invites, and the carve-out must not license it"
+    )
+    assert verdict("Eligibility is derived from the registry.") == "no directional claim"
