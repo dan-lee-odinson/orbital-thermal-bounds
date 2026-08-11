@@ -300,21 +300,109 @@ class _Unevaluable:
 UNEVALUABLE = _Unevaluable()
 
 
-def s4_3_state(kind: _cl.RunKind) -> tuple[str, object, str]:
+#: S4-3's falsifier, from D-14 verbatim: "sink 150 K, 250 K and 320 K all return the
+#: identical 0.043654969267 kg/s root."
+S4_3_FALSIFIER_SINKS_K: tuple[float, ...] = (150.0, 250.0, 320.0)
+
+#: The solver's OWN flow tolerance, read from it rather than restated here. A separation
+#: is only a separation if it exceeds the bracket the root was found to.
+SOLVER_FLOW_TOLERANCE_KG_S: float = _cl._FLOW_BRACKET_TOL_KG_S
+
+
+def s4_3_state(
+    kind: _cl.RunKind,
+    *,
+    case: _cl.LoopCase | None = None,
+    pump: _cl.PumpCharacteristic | None = None,
+    radiator_area_m2: float | None = None,
+    emissivity: float | None = None,
+    working_fluid: str | None = None,
+    flow_min_kg_s: float | None = None,
+    flow_max_kg_s: float | None = None,
+    sinks_K: tuple[float, ...] = S4_3_FALSIFIER_SINKS_K,
+    tolerance_kg_s: float = SOLVER_FLOW_TOLERANCE_KG_S,
+) -> tuple[str, object, str]:
     """``(label, verdict, reason)`` for S4-3 on a given run kind.
 
-    The verdict is ``True`` where the falsifier can be and has been run, and
-    :data:`UNEVALUABLE` where it cannot be run at all. There is deliberately no path that
-    returns ``False`` for the device: a criterion that was never evaluated has not failed,
-    and reporting it as failed would be as wrong as reporting it as passed.
+    **THE DEMONSTRATION VERDICT IS MEASURED HERE, NOT ASSERTED HERE, AND THE FIRST
+    VERSION OF THIS FUNCTION ASSERTED IT.** It returned ``("discharged", True, ...)`` from
+    a string literal: it called nothing, computed nothing, and went on returning ``True``
+    with :func:`couple` sabotaged to raise on every call. The measurement existed only in
+    the tests, so a consumer asking this function "is S4-3 discharged?" would have kept
+    hearing yes after the coupling broke.
+
+    The asymmetry was the tell. The *unevaluable* branch was derived -- a regression
+    re-derives the 240-of-240 refusal from the solver -- while the *discharged* branch,
+    which is the stronger claim, was a sentence. The weaker claim was checked harder than
+    the stronger one.
+
+    So the demonstration branch now runs S4-3's own falsifier: three sink temperatures
+    through the coupled solver, three roots, the smallest pairwise gap against the
+    solver's own tolerance. ``True`` only if that holds, ``False`` if it does not, and
+    the reason carries the roots so a reader sees the evidence rather than a verdict.
+
+    **The inputs are required rather than defaulted.** A verdict is a measurement and a
+    measurement needs a case; inventing a demonstration here so the signature could stay
+    convenient would rebuild the defect one level down.
+
+    The device branch is UNCHANGED. There is still no path returning ``False`` for it: a
+    criterion that was never evaluated has not failed.
     """
     if kind is _cl.RunKind.MACHINERY_DEMONSTRATION:
+        required = {
+            "case": case, "pump": pump, "radiator_area_m2": radiator_area_m2,
+            "emissivity": emissivity, "working_fluid": working_fluid,
+            "flow_min_kg_s": flow_min_kg_s, "flow_max_kg_s": flow_max_kg_s,
+        }
+        missing = sorted(name for name, value in required.items() if value is None)
+        if missing:
+            raise ValueError(
+                "the demonstration verdict is MEASURED, so it needs something to measure: "
+                f"missing {missing}. This function used to answer without them, from a "
+                "string literal, and kept answering 'discharged' after the coupling was "
+                "sabotaged."
+            )
+        if len(sinks_K) < 2:
+            raise ValueError("S4-3's falsifier needs at least two sink temperatures")
+
+        roots: list[float] = []
+        for sink in sinks_K:
+            boundary = RadiatorBoundary(
+                area_m2=radiator_area_m2,  # type: ignore[arg-type]
+                emissivity=emissivity,     # type: ignore[arg-type]
+                sink_temperature_K=sink,
+            )
+            solution = solve_coupled(
+                case, pump, boundary,           # type: ignore[arg-type]
+                working_fluid=working_fluid,    # type: ignore[arg-type]
+                flow_min_kg_s=flow_min_kg_s,    # type: ignore[arg-type]
+                flow_max_kg_s=flow_max_kg_s,    # type: ignore[arg-type]
+            )
+            roots.append(solution.root_kg_s)
+
+        gaps = [abs(a - b) for i, a in enumerate(roots) for b in roots[i + 1:]]
+        smallest = min(gaps)
+        distinct = len({round(r, 12) for r in roots}) == len(sinks_K)
+        holds = distinct and smallest > tolerance_kg_s
+        measured = ", ".join(
+            f"{sink:.0f} K -> {root:.12f} kg/s"
+            for sink, root in zip(sinks_K, roots, strict=True)
+        )
+        if holds:
+            return (
+                "discharged",
+                True,
+                f"measured by S4-3's own falsifier: {measured}. Smallest pairwise "
+                f"separation {smallest:.3e} kg/s, above the solver's own tolerance "
+                f"{tolerance_kg_s:.1e} kg/s.",
+            )
         return (
-            "discharged",
-            True,
-            "three sink temperatures produce three roots differing by far more than the "
-            "solver's convergence tolerance, measured on the demonstration by S4-3's own "
-            "falsifier.",
+            "not_discharged",
+            False,
+            f"S4-3's falsifier does not pass: {measured}. Smallest pairwise separation "
+            f"{smallest:.3e} kg/s against a tolerance of {tolerance_kg_s:.1e} kg/s; "
+            f"{len({round(r, 12) for r in roots})} distinct roots from {len(sinks_K)} "
+            "sinks. Roots that do not separate are not a discharge.",
         )
     return (
         "unevaluable",

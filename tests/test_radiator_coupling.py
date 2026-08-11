@@ -218,8 +218,130 @@ def test_the_device_leg_is_unevaluable_and_cannot_be_read_as_a_boolean():
 
     # The demonstration leg IS a boolean, so the third state is specific rather than
     # blanket -- a module where everything refuses to answer answers nothing.
-    label, verdict, _ = RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION)
+    label, verdict, _ = demonstration_state()
     assert label == "discharged" and verdict is True
+
+
+# --------------------------------------------------------------------------------------
+# The demonstration verdict is MEASURED. It used not to be.
+# --------------------------------------------------------------------------------------
+
+def demonstration_state(**over):
+    """Ask ``s4_3_state`` for the demonstration verdict, supplying what it measures."""
+    kwargs = dict(
+        case=demo_case(), pump=PUMP, radiator_area_m2=AREA_M2, emissivity=EMISSIVITY,
+        working_fluid=WORKING_FLUID, **FLOWS)
+    kwargs.update(over)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION, **kwargs)
+
+
+def test_the_demonstration_verdict_is_derived_not_asserted():
+    """**The verdict must come from a measurement, and carry it.**
+
+    The first version of ``s4_3_state`` returned ``("discharged", True, ...)`` from a
+    string literal. An AST walk over the function body is what makes that impossible to
+    reintroduce quietly: a verdict function that calls nothing cannot have measured
+    anything.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(RC.s4_3_state)))
+    called = {
+        node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+        for node in ast.walk(tree) if isinstance(node, ast.Call)
+    }
+    assert "solve_coupled" in called, (
+        "s4_3_state must actually solve to answer; if it does not, the discharge is a "
+        "sentence and will keep being returned after the coupling breaks"
+    )
+
+    label, verdict, reason = demonstration_state()
+    assert label == "discharged" and verdict is True
+    # The evidence travels with the verdict rather than living only in this file.
+    for sink in SINKS_K:
+        assert f"{sink:.0f} K ->" in reason, f"the reason must carry the {sink} K root"
+    assert "above the solver's own tolerance" in reason
+
+    # The tolerance is the SOLVER'S, read from it rather than restated. A mutation
+    # loosening it does not change today's verdict -- these roots separate by five orders
+    # more than any plausible tolerance -- so behaviour cannot witness it and identity
+    # must. Without this, the bound could drift to something nothing could fail and the
+    # suite would stay green until a case arrived that needed it.
+    assert RC.SOLVER_FLOW_TOLERANCE_KG_S == C._FLOW_BRACKET_TOL_KG_S
+    assert RC.SOLVER_FLOW_TOLERANCE_KG_S > 0.0, (
+        "a non-positive tolerance makes the separation test vacuous"
+    )
+    assert RC.S4_3_FALSIFIER_SINKS_K == SINKS_K, (
+        "the falsifier's sinks are D-14's, not this module's to choose"
+    )
+
+
+def test_sabotaging_the_coupling_changes_the_verdict(monkeypatch):
+    """**The witness the first version could not pass.**
+
+    With ``couple`` broken, the old function still answered ``discharged``/``True``. Now
+    the failure must reach the verdict -- either by propagating, or by returning
+    ``not_discharged``. What it must never do is keep saying yes.
+    """
+    def broken(*_a, **_k):
+        raise RuntimeError("coupling sabotaged")
+
+    monkeypatch.setattr(RC, "couple", broken)
+    with pytest.raises(RuntimeError, match="sabotaged"):
+        demonstration_state()
+
+
+def test_a_coupling_that_runs_but_does_not_separate_is_not_discharged(monkeypatch):
+    """The subtler sabotage: the coupling runs, and moves nothing.
+
+    A broken coupling that RAISES is the easy case. The one that matters is a coupling
+    that returns a case whose condensing state ignores the sink -- exactly the collapse
+    S4-3 describes. The verdict must then be ``not_discharged``, with the roots shown.
+    """
+    real_couple = RC.couple
+
+    def sink_blind(case, boundary, *, working_fluid, rejected_W=None):
+        fixed = RC.RadiatorBoundary(
+            area_m2=boundary.area_m2, emissivity=boundary.emissivity,
+            sink_temperature_K=250.0)  # every sink answers as if it were 250 K
+        return real_couple(
+            case, fixed, working_fluid=working_fluid, rejected_W=rejected_W)
+
+    monkeypatch.setattr(RC, "couple", sink_blind)
+    label, verdict, reason = demonstration_state()
+    assert label == "not_discharged" and verdict is False, (
+        "a coupling that runs and moves nothing must not report as discharged"
+    )
+    assert "do not separate are not a discharge" in reason
+    assert "1 distinct roots" in reason or "distinct roots" in reason
+
+
+def test_the_demonstration_branch_refuses_to_answer_without_something_to_measure():
+    """A verdict is a measurement, so it needs a case. Refusing beats defaulting.
+
+    Inventing a demonstration inside the function so the signature stayed convenient
+    would rebuild the asserted-verdict defect one level down.
+    """
+    with pytest.raises(ValueError, match="needs something to measure"):
+        RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION)
+    with pytest.raises(ValueError, match="missing"):
+        RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION, case=demo_case(), pump=PUMP)
+
+
+def test_the_device_branch_still_needs_nothing_and_is_unchanged():
+    """The unevaluable branch is untouched: it answers with no inputs, and never False."""
+    label, verdict, _ = RC.s4_3_state(C.RunKind.REFERENCE_CASE)
+    assert label == "unevaluable" and verdict is RC.UNEVALUABLE
+    # Supplying a demonstration's inputs must not turn the device into an evaluable case.
+    label2, verdict2, _ = RC.s4_3_state(
+        C.RunKind.REFERENCE_CASE, case=demo_case(), pump=PUMP,
+        radiator_area_m2=AREA_M2, emissivity=EMISSIVITY,
+        working_fluid=WORKING_FLUID, **FLOWS)
+    assert label2 == "unevaluable" and verdict2 is RC.UNEVALUABLE
 
 
 def test_the_device_really_does_refuse_upstream():
