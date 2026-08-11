@@ -1,7 +1,14 @@
 """S5 two-phase architecture cases — one witness per acceptance criterion it holds.
 
-Criteria file: ``ACCEPTANCE_CRITERIA_OTB-G005.md``. Only S5-1 … S5-7 are implemented at
-this point; S5-8 … S5-14 have no code to witness yet and no test here pretends otherwise.
+Criteria file: ``ACCEPTANCE_CRITERIA_OTB-G005.md``. All fourteen criteria have a witness.
+
+**Two of them are honest about being weaker than they look, and that is deliberate.**
+S5-5 is only PARTIALLY discharged -- ``LegEligibility.eligible`` is a public field, so the
+gravity basis can be dropped in one attribute access; the guard buys visibility, not
+impossibility, and ``test_s5_5_the_residual_public_eligible_field_is_recorded`` pins that
+so the claim cannot re-inflate. S5-13 is VACUOUS: it binds only if S5 builds the S4
+coupling, which it has not, and the test says so rather than reporting green on a
+condition never evaluated.
 
 **Every test below is named for the criterion it holds and fails when that criterion's own
 falsifier is introduced.** `OTB-G002` criterion 8 — every new check has been witnessed
@@ -239,6 +246,55 @@ def test_s5_5_no_projection_yields_chf_eligibility_without_its_basis():
             assert rec.get("gravity_basis"), "a CHF record reached a consumer basis-less"
 
 
+def test_s5_5_the_residual_public_eligible_field_is_recorded():
+    """**S5-5 is NOT fully discharged, and this test exists so nobody can say it is.**
+
+    ``LegEligibility.eligible`` is a public field: ``chf_leg.eligible`` yields a bare
+    boolean with no gravity basis, in one attribute access. S5-5's falsifier names *"any
+    convenience accessor that yields CHF-dependent eligibility without its basis"*, and a
+    public attribute is one. The guard on ``__bool__`` therefore buys **visibility, not
+    impossibility**: a consumer that wants the bare flag must write ``.eligible``, which
+    is a deliberate act a reviewer can see in a diff, where ``if leg:`` reads as ordinary
+    code.
+
+    This test asserts the hole is real and that the module's own text still says so. It is
+    the anti-drift check: the first version of that docstring claimed the basis was
+    "non-droppable" and that the module "cannot produce that shape", and both were false
+    while this field was public. A claim about a guarantee is exactly the kind of thing
+    that re-inflates during a later edit, so it is pinned rather than trusted.
+    """
+    chf = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+
+    # The hole, demonstrated rather than described.
+    bare = chf.eligible
+    assert isinstance(bare, bool), (
+        "if .eligible has stopped being a bare bool the residual may be closed -- "
+        "re-read the module docstring and update it before deleting this test"
+    )
+
+    # The module must keep DISCLOSING it, in these words or better.
+    source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    assert "RESIDUAL" in source.upper(), "the residual must stay disclosed in the module"
+    assert "public field" in source, "the disclosure must name the mechanism"
+    assert "VISIBLE, not impossible" in source, (
+        "the module must state what the guard actually buys"
+    )
+
+    # The two sentences that were WRONG must not come back. Checked as whole claims and
+    # not as substrings: the first draft of this check banned the token "non-droppable",
+    # which fired on the disclaimer "this module does NOT make the basis non-droppable"
+    # -- a check tripping on the statement of the rule instead of on a breach of it, the
+    # same error as scanning the criteria document for the words it forbids. Three times
+    # now in this milestone, which is itself the finding.
+    for overclaim in (
+        "That is what makes the basis non-droppable",
+        "only projection this module offers, and it cannot produce that shape",
+    ):
+        assert overclaim not in source, (
+            f"the retracted claim {overclaim!r} has returned while .eligible is public"
+        )
+
+
 # --------------------------------------------------------------------------------------
 # S5-6 — enforcement is the registry's path, not a second one   [D6 · due at S5]
 # --------------------------------------------------------------------------------------
@@ -354,3 +410,166 @@ def test_s5_7_s5_does_not_deliver_d7s_sharpening_either():
         "the ranking-scope limitation string belongs to S6's ranked outputs; an S5 "
         "eligibility module carrying it is scope creep, not thoroughness"
     )
+
+
+# --------------------------------------------------------------------------------------
+# S5-8 … S5-11 — the Steiner-Taborek evaluation (debt D-6)
+# --------------------------------------------------------------------------------------
+
+def test_s5_8_a_disposition_must_name_the_measurement_it_acted_on():
+    """**S5-8.** Falsifier: "a disposition citing no measurement"."""
+    with pytest.raises(ValueError, match="name the measurement it acted on"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="adopt", acted_on="something_unmeasured", rationale="because")
+
+    ok = ac.AmmoniaHtcEvaluation(
+        disposition="adopt", acted_on="steiner_taborek_1992",
+        rationale="the pooled endorsement outweighs the single-study deviation")
+    assert ok.measurement.deviation_percent == 41.9
+
+    with pytest.raises(ValueError, match="not a disposition"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="probably", acted_on="steiner_taborek_1992", rationale="x")
+
+
+def test_s5_8_the_recorded_measurements_actually_conflict():
+    """The premise S5-8 rests on: the evidence disagrees, so "which one" is a real question.
+
+    If these ever stop disagreeing, the criterion is easier than it was written for, and
+    that should be noticed rather than inherited.
+    """
+    by_name = {m.correlation: m for m in ac.AMMONIA_HTC_MEASUREMENTS}
+    assert (by_name["steiner_taborek_1992"].deviation_percent
+            > by_name["gungor_winterton_1987"].deviation_percent), (
+        "Steiner-Taborek is recorded WORSE than the correlation ammonia is already "
+        "de-ranked through -- that conflict is why a disposition must name its evidence"
+    )
+    assert "only correlation that predicts ammonia" in ac.TABOAS_2006_ENDORSEMENT, (
+        "the evidence pointing the other way must be recorded too"
+    )
+
+
+def test_s5_9_a_gravity_dependent_accuracy_cannot_carry_a_disposition_silently():
+    """**S5-9**, and Kattan-Thome-Favrat is the named case.
+
+    It scores best (19.5 %) BECAUSE it resolves gravitational flow-pattern regimes -- the
+    mechanism that does not exist in orbit. Falsifier: "an adoption or preference for KTF
+    resting on the 19.5 % figure with no recorded treatment of its gravity dependence".
+    """
+    ktf = next(m for m in ac.AMMONIA_HTC_MEASUREMENTS
+               if m.correlation == "kattan_thome_favrat")
+    assert ktf.accuracy_is_gravity_dependent, "the trap must be marked in the data"
+    assert ktf.deviation_percent < 20.0, "and it must still be the best score"
+
+    with pytest.raises(ValueError, match="flow-pattern regimes"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="adopt", acted_on="kattan_thome_favrat",
+            rationale="it scores best at 19.5 %")
+
+    # Recording the judgement is what makes it available -- not a keyword that waives it.
+    allowed = ac.AmmoniaHtcEvaluation(
+        disposition="adopt_with_scope", acted_on="kattan_thome_favrat",
+        rationale="best available fit for a 1-g screening case",
+        gravity_dependence_note=(
+            "its accuracy comes from resolving gravitational flow-pattern regimes, which "
+            "do not exist in orbit; scoped to 1-g screening only"))
+    assert allowed.gravity_dependence_note
+
+
+def test_s5_10_a_decline_is_a_policy_refusal_not_an_absence_of_knowledge():
+    """**S5-10**, resting on S4-8. Falsifier: "a decline reported as absence"."""
+    with pytest.raises(ValueError, match="POLICY refusal, not an absence"):
+        ac.AmmoniaHtcEvaluation(
+            disposition="decline_no_knowledge", acted_on="steiner_taborek_1992",
+            rationale="nothing covers ammonia")
+
+    ok = ac.AmmoniaHtcEvaluation(
+        disposition="decline_policy", acted_on="steiner_taborek_1992",
+        rationale="41.9 % is worse than the 37.2 % ammonia is already de-ranked through")
+    assert ok.disposition == "decline_policy"
+
+
+def test_s5_11_d6_is_open_because_no_disposition_is_recorded():
+    """**S5-11.** Retirement follows a recorded disposition, not the evaluation existing.
+
+    The mechanism is built and the evidence conflicts. Choosing between 41.9 % and the
+    pooled endorsement is a decision on evidence, which is the Director's -- recording one
+    here would be the D51 shape, a ruling applied before it is made. So the artifact
+    reports D-6 OPEN, by name, rather than letting the presence of code imply otherwise.
+    """
+    assert ac.AMMONIA_HTC_DISPOSITION is None
+    state, reason = ac.d6_retirement_state()
+    assert state == "open"
+    assert "no disposition has been recorded" in reason and "S5-11" in reason
+
+
+# --------------------------------------------------------------------------------------
+# S5-12 / S5-13 — debt D-14, whose gate is S8
+# --------------------------------------------------------------------------------------
+
+def test_s5_12_s5_does_not_weaken_s4_3():
+    """**S5-12**, and the third clause is the one that matters.
+
+    The cheapest way to discharge D-14 is to reword the criterion it fails. So this
+    asserts that S4-3's declared failure is still declared -- the artifact's own D28
+    statement -- and that the criteria document still carries the measured falsifier.
+    """
+    from orbital_thermal import coupled_loop as C
+
+    (conflict,) = C.sink_collapse_conflicts()
+    assert conflict.phenomenon == "sink_temperature_coupling", (
+        "S4-3's declared failure must still be declared. If the coupling was built, this "
+        "is D-14's discharge and S5-13 governs it -- do not simply delete this assertion"
+    )
+    assert "S4-3" in C.sink_disclosure_text()
+
+    root = pathlib.Path(ac.__file__).parents[2]
+    s5 = (root / "ACCEPTANCE_CRITERIA_OTB-G005.md").read_text(encoding="utf-8")
+    assert "0.043654969267" in s5 and "150 K, 250 K and 320 K" in s5, (
+        "S5-12 names the measured falsifier; a criteria file that has lost it can no "
+        "longer tell whether the coupling was built or the criterion was reworded"
+    )
+    module = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    for claim in ("coupling is built", "S4-3 passes", "milestone is discharged"):
+        assert claim not in module
+
+
+def test_s5_13_is_vacuous_and_says_so():
+    """**S5-13** binds only if S5 builds the coupling. It has not, and this records that.
+
+    D-14 permits S5, S6 or S7 to build it early and requires none of them to. A test that
+    PRETENDED to exercise a discharge would be worse than none: it would report green on a
+    condition that has never been evaluated.
+    """
+    from orbital_thermal import coupled_loop as C
+
+    assert C.sink_collapse_conflicts(), (
+        "the coupling appears to have been built. S5-13 then applies: the discharge is "
+        "measured on S4-3's own falsifier -- three sink temperatures producing three "
+        "roots differing by more than the solver tolerance -- and D-14's retirement "
+        "condition must be re-measured rather than asserted."
+    )
+
+
+# --------------------------------------------------------------------------------------
+# S5-14 — traceability
+# --------------------------------------------------------------------------------------
+
+def test_s5_14_every_number_s5_introduces_cites_a_source():
+    """**S5-14.** Each recorded deviation carries who measured it."""
+    assert ac.AMMONIA_HTC_MEASUREMENTS, "the evidence set must not be empty"
+    for m in ac.AMMONIA_HTC_MEASUREMENTS:
+        assert m.source.strip(), f"{m.correlation} carries no source"
+        assert isinstance(m.deviation_percent, float)
+
+
+def test_s5_14_s5_declares_no_new_enforced_bound():
+    """**S5-14**, discharged by absence -- and the absence is asserted, not assumed.
+
+    Every number this milestone introduces is a recorded DEVIATION with a named source,
+    not an enforced bound. The bounds it consumes are the registry's, already traceable,
+    and S5 adding one would put an unsourced limit into the enforcement path.
+    """
+    module = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    assert "Applicability(" not in module, "S5 must not declare a new applicability box"
+    assert "Domain(" not in module
