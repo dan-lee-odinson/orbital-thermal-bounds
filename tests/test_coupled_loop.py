@@ -1483,6 +1483,32 @@ def _returns_two_siblings() -> _TwoSiblings:
     return _TwoSiblings()
 
 
+def _returns_unresolvable() -> _NoSuchTypeAnywhere:  # noqa: F821
+    """**D75 fixture.** Its return annotation names a type that does not exist, so
+    ``typing.get_type_hints`` raises ``NameError``.
+
+    Before D75 this export was dropped from the membership set by a bare ``continue`` and
+    the rule reported green. It is deliberately annotated with a name that CANNOT be
+    resolved rather than a mocked failure, so the witness exercises the real path.
+    """
+    return None
+
+
+def _returns_points_blinded_by_a_parameter(x: _NoSuchParamType) -> C.OperatingPoint:  # noqa: F821
+    """**D75 fixture — the reviewer's sharpest case, and it is worse than the other one.**
+
+    This hands an ``OperatingPoint`` back DIRECTLY and carries no narrowing. It should have
+    been caught by the oldest half of the rule. It was not, because ``get_type_hints``
+    resolves EVERY annotation on the object, parameters included -- so one unresolvable
+    PARAMETER name raised, the bare ``continue`` swallowed it, and the export vanished from
+    the membership set entirely.
+
+    Sol's words in ``OTB-G003-FIXES-02`` F-02: *"an unrelated unresolved annotation can
+    blind even a direct OperatingPoint return."* Measured, not paraphrased.
+    """
+    return None
+
+
 def _module_with(**exports) -> types.SimpleNamespace:
     """A stand-in module exposing ``__all__``, so the rule can be run against anything."""
     return types.SimpleNamespace(__all__=sorted(exports), **exports)
@@ -1493,6 +1519,33 @@ _RESOLUTION_NARROWING = "this search can resolve"
 
 #: The disclosure a CONTAINING type must render. Same property, different carrier.
 _RESOLUTION_DISCLOSURE = "ROOT SEARCH RESOLUTION -- COMPLETENESS IS BOUNDED"
+
+
+class _UnresolvedAnnotation:
+    """**D75: the third outcome.** Neither "is a member" nor "is not a member" -- *unknown*.
+
+    ``_resolution_surface`` used to ``continue`` when ``get_type_hints`` raised, which made
+    an export whose annotation cannot be resolved indistinguishable from an export that
+    genuinely hands back no operating points. Sol's ``OTB-G003-FIXES-02`` F-02 named this as
+    the SECOND state collapsed into one absence; the depth bound was the first, deleted at
+    D34. **An unrelated unresolved annotation could blind even a direct OperatingPoint
+    return** -- the rule failed open on a name it could not look up.
+
+    The Director ruled D34's branch for the depth half (delete the bound) and D75 for this
+    half: complete the build. So this is not a bound to be tuned. It is a value that CANNOT
+    be read as absence, because it is not an ``int`` and every consumer must say what it
+    does with it.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostic only
+        return "<UNRESOLVED ANNOTATION>"
+
+
+#: The single instance. Identity-compared (``is``), never equality-compared, so no
+#: accidental ``== 0`` can quietly re-collapse it into the direct-carrier branch.
+_UNRESOLVED = _UnresolvedAnnotation()
 
 #: **D34: there is no depth bound anywhere in this rule, and that is the fix.**
 #:
@@ -1590,12 +1643,18 @@ def _resolution_surface(module) -> list[tuple[str, object, int]]:
             continue
         try:
             ann = typing.get_type_hints(obj).get("return")
-        except Exception:  # pragma: no cover - unresolvable annotation
+        except Exception as exc:
+            # D75: NOT a skip. An annotation that cannot be resolved is UNKNOWN, and
+            # unknown joins the surface so the disclosure rule has to answer for it.
+            # `continue` here was the second half of OTB-G003-FIXES-02 F-02.
+            found.append((name, exc, _UNRESOLVED))
             continue
         hops = _operating_point_hops(ann)
         if hops is not None:
             found.append((name, ann, hops))
-    return sorted(found)
+    # Sorted by NAME explicitly: the third element is now heterogeneous (int or the
+    # sentinel) and tuple ordering must never be asked to compare the two.
+    return sorted(found, key=lambda entry: entry[0])
 
 
 def _carrier_types(tp) -> list[type]:
@@ -1689,6 +1748,15 @@ def _resolution_violations(module) -> list[str]:
     violations = []
     for name, ann, hops in _resolution_surface(module):
         obj = getattr(module, name)
+        if hops is _UNRESOLVED:
+            # D75. Checked BEFORE any comparison against 0: the sentinel is not an int,
+            # and a rule that fails open on the types it cannot read is not a rule.
+            violations.append(
+                f"{name}: its return annotation could not be resolved "
+                f"({type(ann).__name__}: {ann}), so whether it hands operating points to "
+                "the caller is UNKNOWN. Unknown is a violation, not an absence."
+            )
+            continue
         if hops == 0:
             if _RESOLUTION_NARROWING not in (obj.__doc__ or ""):
                 violations.append(
@@ -1740,7 +1808,11 @@ def test_f02_d32_one_rule_governs_everything_that_reaches_the_caller():
         "the containing returns must be in the SAME membership set as the direct ones; "
         "if they are not, the seam is still there"
     )
-    assert any(h == 0 for _, _, h in surface) and any(h > 0 for _, _, h in surface)
+    _numeric = [h for _, _, h in surface if h is not _UNRESOLVED]
+    assert any(h == 0 for h in _numeric) and any(h > 0 for h in _numeric)
+    assert all(h is not _UNRESOLVED for _, _, h in surface), (
+        "the real module must not carry an export whose annotation cannot be resolved"
+    )
 
     assert _resolution_violations(C) == []
 
@@ -1846,6 +1918,62 @@ def test_f02_d34_a_carrier_beyond_the_old_depth_bound_is_a_member_and_is_checked
     )
 
     ok = _module_with(returns_deep_disclosing=_returns_deep_disclosing)
+    assert _resolution_violations(ok) == []
+
+
+def test_f02_d75_an_unresolvable_annotation_is_a_violation_not_a_silent_absence():
+    """**D75: the second state the old rule collapsed into "not a member".**
+
+    ``OTB-G003-FIXES-02`` F-02 named TWO indeterminate outcomes encoded as the same
+    ``None`` that means "no OperatingPoint": exceeding the depth limit, and failing to
+    resolve an annotation. The Director deleted the depth bound at D34 and ruled the
+    remaining half at D75 -- *complete the build, mechanically verify, and close*.
+
+    The reviewer's sharpest sentence was that **an unrelated unresolved annotation can
+    blind even a direct OperatingPoint return**, because the failure was per-export and
+    silent. Both halves are asserted here: the unresolvable export must JOIN the surface,
+    and it must be CHECKED rather than merely discovered.
+    """
+    blind = _module_with(returns_unresolvable=_returns_unresolvable)
+
+    surface = _resolution_surface(blind)
+    assert [n for n, _, _ in surface] == ["returns_unresolvable"], (
+        "an export whose annotation cannot be resolved must join the membership set -- "
+        "dropping it is the finding"
+    )
+    assert surface[0][2] is _UNRESOLVED, "and it must carry the third outcome, not an int"
+
+    violations = _resolution_violations(blind)
+    assert len(violations) == 1 and "UNKNOWN is a violation" in violations[0].replace(
+        "Unknown is a violation", "UNKNOWN is a violation"
+    ), violations
+
+    # The blinding case the reviewer named: an unresolvable export sitting BESIDE a
+    # legitimate direct carrier must not suppress the check on its neighbour.
+    mixed = _module_with(
+        returns_unresolvable=_returns_unresolvable,
+        returns_points_without_narrowing=_returns_points_without_narrowing,
+    )
+    caught = {v.split(":")[0] for v in _resolution_violations(mixed)}
+    assert caught == {"returns_unresolvable", "returns_points_without_narrowing"}, (
+        "the unresolved neighbour must neither hide itself nor hide the export next to it"
+    )
+
+    # THE REVIEWER'S SHARPEST CASE. A DIRECT carrier, missing its narrowing, blinded by an
+    # unresolvable PARAMETER annotation. The oldest half of the rule should have caught it;
+    # the bare `continue` deleted it from the surface before that half ever ran.
+    blinded = _module_with(
+        returns_points_blinded_by_a_parameter=_returns_points_blinded_by_a_parameter)
+    assert [n for n, _, _ in _resolution_surface(blinded)] == [
+        "returns_points_blinded_by_a_parameter"], (
+        "a DIRECT operating-point return must not be erased by an unresolvable parameter"
+    )
+    assert len(_resolution_violations(blinded)) == 1
+
+    # NEGATIVE CONTROL: the sentinel is not a way to fail everything. A module whose
+    # annotations all resolve carries no unknowns and no violations.
+    ok = _module_with(returns_points_with_narrowing=_returns_points_with_narrowing)
+    assert all(h is not _UNRESOLVED for _, _, h in _resolution_surface(ok))
     assert _resolution_violations(ok) == []
 
 
