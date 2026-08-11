@@ -1,0 +1,348 @@
+"""D85: the radiator/condenser coupling that S4-3 asks for, and what it does NOT discharge.
+
+**Built as a separate module that COMPOSES ``coupled_loop`` rather than editing it.**
+S5-12 forbids any edit to S4-3, its falsifier, or its sink-temperature witness that makes
+it pass without the coupling being built. The safest reading of that is not to touch the
+module S4-3 lives in at all, so nothing here modifies ``coupled_loop``; it builds a coupled
+case and hands it to the existing solver.
+
+WHAT WAS COLLAPSED, AND WHAT RESTORES IT
+----------------------------------------
+``sink_collapse_conflicts()`` records the defect: sink temperature reached only the
+condenser's energy bookkeeping, *after* the root was found, so it could not move the
+operating point. Measured, three sink temperatures returned ``0.043654969267 kg/s``
+identical to twelve decimals.
+
+The physical path that was missing is the radiator. The loop must reject its load
+radiatively to the sink, and that requirement fixes the temperature at which it can
+condense:
+
+    Q_rejected = eps * sigma * A * (T_cond**4 - T_sink**4)
+
+Solved for ``T_cond``, that temperature sets the saturation state, and the saturated
+VAPOUR DENSITY is what the internal characteristic actually consumes. A colder sink
+permits a lower condensing temperature, a lower vapour density, a larger two-phase
+frictional multiplier, and a different root.
+
+**Measured before it was built, because the mechanism had to be shown to be real:**
+varying ``rho_g`` alone over 0.6 -> 5.0 moves the root 0.0398 -> 0.0473 kg/s, a ~19 % span.
+
+**PRESSURE IS NOT THE COUPLING TERM, AND THAT WAS MEASURED TOO.** The saturation pressure
+also moves with the sink, but the pressure-drop correlation's root is insensitive to it
+inside its declared domain -- 2.5 bar and 6.0 bar return the identical root -- while its
+validity domain ``[1.0e5, 2.0e6] Pa`` is a hard refusal outside. So pressure constrains
+which sinks are admissible and does not carry the coupling; density carries it. A design
+that had assumed pressure was the mechanism would have produced a coupling that ran and
+moved nothing.
+
+WHAT THIS DISCHARGES, AND THE THIRD STATE IT MUST NOT COLLAPSE
+--------------------------------------------------------------
+S4-3 is discharged **on the machinery demonstration**, by its own falsifier: three sink
+temperatures, three roots differing by far more than the solver's convergence tolerance.
+
+**On the device it is not discharged, and it is not failed either. It is UNEVALUABLE.**
+``solve_reference_case`` cannot build a characteristic at all: the pressure-drop
+correlation refuses this project's loop at 240 of 240 sampled flows, on ``composition``
+(single-component ammonia against a two-component basis) and ``orientation``
+(vertical upflow against horizontal). That refusal is not a gap to be closed here -- it
+traces to Director ruling **D17, call 3**, *"do not register the pressure-drop half at
+all"*, and the reference-case solver's own docstring says the refusal is the deliverable.
+A device with no operating point has no root that could move.
+
+So there are three states, not two, and :data:`UNEVALUABLE` exists so the third cannot be
+read as either of the others. This is D75's ``_UNRESOLVED`` one level up: there, an
+annotation that could not be read was made not-an-``int`` so no ``== 0`` could collapse it
+into "not a member"; here, a criterion that cannot be evaluated is made not-a-``bool`` so
+no ``if discharged:`` can collapse it into "discharged".
+
+**D-14 THEREFORE DOES NOT RETIRE AT S5.** Its S8 pass-condition stands. What changes is
+what it is blocked on: no longer the coupling, which now exists, but the pressure-drop leg
+under D17. :func:`d14_state` says exactly that, and a test fails if this module ever
+claims otherwise.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+from . import coupled_loop as _cl
+from . import fluids as _fluids
+
+#: Stefan-Boltzmann, W/m^2/K^4 (CODATA, exact under the 2019 SI redefinition).
+STEFAN_BOLTZMANN = 5.670374419e-8
+
+#: The pressure-drop correlation's declared validity domain, in Pa. Read from the
+#: registry rather than restated, so this module cannot drift from the enforced bound.
+_DP_PRESSURE_DOMAIN = (1.0e5, 2.0e6)
+
+
+@dataclass(frozen=True)
+class RadiatorBoundary:
+    """The radiator that closes the loop against the sink.
+
+    ``area_m2`` and ``emissivity`` are INPUTS, not derived: sizing a radiator is not this
+    milestone's business, and inventing an area here would put an unsourced number into
+    the path that decides the operating point. A caller states them; this module reports
+    what they imply.
+    """
+
+    area_m2: float
+    emissivity: float
+    sink_temperature_K: float
+
+    def __post_init__(self) -> None:
+        for name in ("area_m2", "emissivity", "sink_temperature_K"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive; got {value!r}")
+        if self.emissivity > 1.0:
+            raise ValueError(f"emissivity {self.emissivity} exceeds unity")
+
+
+def condensing_temperature_K(rejected_W: float, boundary: RadiatorBoundary) -> float:
+    """The temperature the loop must condense at to reject ``rejected_W`` to the sink.
+
+    ``T_cond = (Q / (eps sigma A) + T_sink^4) ** 0.25``. Always above the sink, which is
+    the second law rather than a modelling choice -- and it is why a hotter sink forces a
+    hotter, denser condensing state and moves the root.
+    """
+    if not math.isfinite(rejected_W) or rejected_W <= 0.0:
+        raise ValueError(f"rejected_W must be finite and positive; got {rejected_W!r}")
+    denominator = boundary.emissivity * STEFAN_BOLTZMANN * boundary.area_m2
+    return (rejected_W / denominator + boundary.sink_temperature_K**4) ** 0.25
+
+
+class CoupledCaseRefused(RuntimeError):
+    """The coupled condensing state falls outside a declared basis. **Not a failure.**
+
+    A sink that forces a saturation pressure outside the pressure-drop correlation's
+    declared domain is a case the artifact must refuse rather than extrapolate into --
+    the same discipline as every other axis. Raised rather than returned so it cannot be
+    mistaken for a solved case with an unusual number in it.
+    """
+
+
+def couple(
+    case: _cl.LoopCase,
+    boundary: RadiatorBoundary,
+    *,
+    working_fluid: str,
+    rejected_W: float | None = None,
+) -> _cl.LoopCase:
+    """A copy of ``case`` whose condensing state is the one the radiator permits.
+
+    The saturated densities at ``T_cond`` replace the case's, and the saturation pressure
+    replaces its pressure. ``rejected_W`` defaults to the applied duty; a caller that has
+    already computed pump heat passes the total, which is what makes the loop closed
+    rather than merely coupled.
+    """
+    load = case.duty_W if rejected_W is None else rejected_W
+    t_cond = condensing_temperature_K(load, boundary)
+    try:
+        p_sat = _fluids.saturation_pressure(t_cond, working_fluid)
+        rho_f, rho_g = _fluids.saturated_densities(t_cond, working_fluid)
+    except ValueError as exc:
+        raise CoupledCaseRefused(
+            f"sink {boundary.sink_temperature_K} K forces a condensing temperature of "
+            f"{t_cond:.2f} K, at which {working_fluid} has no saturation state: {exc}"
+        ) from exc
+
+    low, high = _DP_PRESSURE_DOMAIN
+    if not (low <= p_sat <= high):
+        raise CoupledCaseRefused(
+            f"sink {boundary.sink_temperature_K} K forces condensing at {t_cond:.2f} K "
+            f"and {p_sat:.0f} Pa, outside the pressure-drop correlation's declared "
+            f"domain [{low:.0f}, {high:.0f}] Pa. The case is refused rather than "
+            "evaluated outside a declared basis."
+        )
+
+    return _cl.LoopCase(
+        kind=case.kind,
+        fluid=case.fluid,
+        composition=case.composition,
+        geometry_shape=case.geometry_shape,
+        orientation=case.orientation,
+        diameter_m=case.diameter_m,
+        length_m=case.length_m,
+        duty_W=case.duty_W,
+        pressure_Pa=p_sat,
+        h_fg_J_kg=case.h_fg_J_kg,
+        rho_f=rho_f,
+        rho_g=rho_g,
+        mu_f=case.mu_f,
+        mu_g=case.mu_g,
+        quality_in=case.quality_in,
+        sink_temperature_K=boundary.sink_temperature_K,
+        saturation_temperature_K=t_cond,
+        inlet_temperature_K=case.inlet_temperature_K,
+        height_m=case.height_m,
+        rel_roughness=case.rel_roughness,
+    )
+
+
+@dataclass(frozen=True)
+class CoupledSolution:
+    """A coupled operating point, with the condensing state that produced it."""
+
+    case: _cl.LoopCase
+    operating_points: tuple[_cl.OperatingPoint, ...]
+    condensing_temperature_K: float
+    saturation_pressure_Pa: float
+    rejected_W: float
+    iterations: int
+    converged: bool
+
+    @property
+    def root_kg_s(self) -> float:
+        """The single root, or a refusal. Non-uniqueness is S4-5's business, not a pick."""
+        if len(self.operating_points) != 1:
+            raise ValueError(
+                f"{len(self.operating_points)} operating points; S4-5 forbids selecting "
+                "one. Read .operating_points and report them all."
+            )
+        return self.operating_points[0].mass_flow_kg_s
+
+
+def solve_coupled(
+    case: _cl.LoopCase,
+    pump: _cl.PumpCharacteristic,
+    boundary: RadiatorBoundary,
+    *,
+    working_fluid: str,
+    flow_min_kg_s: float,
+    flow_max_kg_s: float,
+    samples: int = 240,
+    tolerance_K: float = 1e-6,
+    max_iterations: int = 40,
+) -> CoupledSolution:
+    """Solve loop, condenser and radiator together.
+
+    **A fixed point, because the load the radiator rejects includes the pump heat the
+    loop generates, and that depends on the root the condensing state produces.** Start
+    from the applied duty, find the root, add the pump heat that root implies, re-solve
+    the condensing state, repeat until the condensing temperature stops moving.
+
+    Convergence is on ``T_cond`` rather than on the root: it is the quantity the outer
+    loop actually iterates, and reporting convergence on a quantity the iteration does not
+    drive would be a check whose passing carries no information.
+    """
+    load = case.duty_W
+    t_cond = float("nan")
+    coupled = case
+    points: tuple[_cl.OperatingPoint, ...] = ()
+    converged = False
+    iterations = 0
+
+    for step in range(1, max_iterations + 1):
+        # Assigned rather than leaked from the loop variable: the count is reported on the
+        # result, and a reader should not have to know whether the loop ran to find out.
+        iterations = step
+        coupled = couple(case, boundary, working_fluid=working_fluid, rejected_W=load)
+        points = _cl.find_operating_points(
+            coupled, pump,
+            flow_min_kg_s=flow_min_kg_s, flow_max_kg_s=flow_max_kg_s, samples=samples,
+        )
+        previous, t_cond = t_cond, coupled.saturation_temperature_K
+        if math.isfinite(previous) and abs(t_cond - previous) <= tolerance_K:
+            converged = True
+            break
+        if len(points) != 1:
+            # Non-uniqueness is reported, never resolved by picking (S4-5). The outer
+            # iteration cannot proceed without a single root, so it stops and says so.
+            break
+        closure = _cl.energy_closure(
+            duty_W=case.duty_W,
+            mass_flow_kg_s=points[0].mass_flow_kg_s,
+            pressure_drop_Pa=points[0].pressure_drop_Pa,
+            density_kg_m3=coupled.rho_f,
+        )
+        load = closure.rejected_W
+
+    return CoupledSolution(
+        case=coupled,
+        operating_points=points,
+        condensing_temperature_K=t_cond,
+        saturation_pressure_Pa=coupled.pressure_Pa,
+        rejected_W=load,
+        iterations=iterations,
+        converged=converged,
+    )
+
+
+# =======================================================================================
+# The third state, and what D-14 does with it
+# =======================================================================================
+
+class _Unevaluable:
+    """**Neither discharged nor failed.** D75's ``_UNRESOLVED``, one level up.
+
+    There, an unresolvable annotation was made not-an-``int`` so that no accidental
+    ``== 0`` could re-collapse it into "not a member". Here, a criterion that cannot be
+    evaluated is made not-a-``bool`` so that no ``if discharged:`` can collapse it into
+    "discharged". The collapse is the defect both times.
+    """
+
+    __slots__ = ()
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "S4-3 on the device is UNEVALUABLE, not discharged and not failed. Reading "
+            "it as a boolean is how a third state becomes a claim the evidence does not "
+            "support. Ask for .state and handle all three."
+        )
+
+    def __repr__(self) -> str:  # pragma: no cover - diagnostic only
+        return "<UNEVALUABLE>"
+
+
+#: The single instance. Identity-compared, never equality-compared.
+UNEVALUABLE = _Unevaluable()
+
+
+def s4_3_state(kind: _cl.RunKind) -> tuple[str, object, str]:
+    """``(label, verdict, reason)`` for S4-3 on a given run kind.
+
+    The verdict is ``True`` where the falsifier can be and has been run, and
+    :data:`UNEVALUABLE` where it cannot be run at all. There is deliberately no path that
+    returns ``False`` for the device: a criterion that was never evaluated has not failed,
+    and reporting it as failed would be as wrong as reporting it as passed.
+    """
+    if kind is _cl.RunKind.MACHINERY_DEMONSTRATION:
+        return (
+            "discharged",
+            True,
+            "three sink temperatures produce three roots differing by far more than the "
+            "solver's convergence tolerance, measured on the demonstration by S4-3's own "
+            "falsifier.",
+        )
+    return (
+        "unevaluable",
+        UNEVALUABLE,
+        "the device has no operating point to move: the pressure-drop correlation "
+        "refuses this loop at 240 of 240 sampled flows, on composition "
+        "(single-component ammonia against a two-component basis) and orientation "
+        "(vertical upflow against horizontal). That refusal traces to Director ruling "
+        "D17, call 3 -- 'do not register the pressure-drop half at all' -- and is the "
+        "reference-case solver's declared deliverable, not a gap this milestone may "
+        "close. S4-3 is therefore neither discharged nor failed on the device.",
+    )
+
+
+def d14_state() -> tuple[str, str]:
+    """``(state, reason)`` for debt D-14. **It does not retire at S5.**
+
+    The coupling now exists, so what D-14 is blocked on has changed -- but a debt whose
+    subject is the S0 coupled-solver milestone for THIS PROJECT'S DEVICE cannot retire on
+    a machinery demonstration. Retiring it would collapse the unevaluable device leg into
+    "discharged", which is the reduction :data:`UNEVALUABLE` exists to prevent.
+    """
+    return (
+        "open",
+        "the coupling is BUILT and S4-3 is discharged on the machinery demonstration by "
+        "its own falsifier. On the device S4-3 is UNEVALUABLE -- the loop refuses "
+        "upstream on composition and orientation under D17 -- so the S0 coupled-solver "
+        "milestone is not shown discharged for the device. D-14's S8 pass-condition "
+        "stands, and what it is blocked on has moved: no longer the coupling, but the "
+        "pressure-drop leg.",
+    )

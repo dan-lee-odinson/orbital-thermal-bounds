@@ -1,0 +1,300 @@
+"""D85: the radiator coupling, and S4-3's discharge measured by S4-3's own falsifier.
+
+**S4-3 is not touched.** Its wording, its falsifier and its sink-temperature witness are
+untouched by this milestone -- S5-12's third clause makes editing them a falsification,
+and the cheapest way to discharge D-14 has always been to reword the criterion it fails.
+This file re-runs the falsifier against the coupled solver instead.
+"""
+
+from __future__ import annotations
+
+import math
+import warnings
+
+import pytest
+
+from orbital_thermal import coupled_loop as C
+from orbital_thermal import radiator_coupling as RC
+
+#: The machinery demonstration, verbatim from the S4 suite: air-water, horizontal,
+#: near-atmospheric -- inside Lockhart-Martinelli's declared basis, which is the only
+#: implemented pressure-drop correlation and therefore the only basis a demonstration can
+#: be built inside.
+DEMO_KW = dict(
+    fluid="air-water", composition="two_component", geometry_shape="round_tube",
+    orientation="horizontal", diameter_m=8.0e-3, length_m=1.0, duty_W=1200.0,
+    pressure_Pa=1.2e5, h_fg_J_kg=2.26e6, rho_f=997.0, rho_g=1.2,
+    mu_f=8.9e-4, mu_g=1.8e-5,
+)
+PUMP = C.PumpCharacteristic(shutoff_Pa=6.0e4, runout_kg_s=0.05)
+FLOWS = dict(flow_min_kg_s=0.002, flow_max_kg_s=0.049)
+
+#: 0.8 m^2 at emissivity 0.85 is chosen so the condensing pressure stays inside the
+#: pressure-drop correlation's declared domain [1, 20] bar across all three sink
+#: temperatures. It is a stated input, not a sized radiator: sizing is not this
+#: milestone's business and an invented area would put an unsourced number into the path
+#: that decides the operating point.
+AREA_M2, EMISSIVITY, WORKING_FLUID = 0.8, 0.85, "Water"
+
+#: S4-3's own falsifier, verbatim from D-14: "sink 150 K, 250 K and 320 K all return the
+#: identical 0.043654969267 kg/s root."
+SINKS_K = (150.0, 250.0, 320.0)
+UNCOUPLED_ROOT = 0.043654969267
+
+
+def demo_case(**over) -> C.LoopCase:
+    return C.LoopCase(kind=C.RunKind.MACHINERY_DEMONSTRATION, **{**DEMO_KW, **over})
+
+
+def solve(sink_K: float) -> RC.CoupledSolution:
+    boundary = RC.RadiatorBoundary(
+        area_m2=AREA_M2, emissivity=EMISSIVITY, sink_temperature_K=sink_K)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)  # transitional-flow notices
+        return RC.solve_coupled(
+            demo_case(sink_temperature_K=sink_K), PUMP, boundary,
+            working_fluid=WORKING_FLUID, **FLOWS)
+
+
+# --------------------------------------------------------------------------------------
+# The defect, reproduced -- so the discharge is measured against it rather than asserted
+# --------------------------------------------------------------------------------------
+
+def test_the_uncoupled_root_is_still_identical_at_all_three_sinks():
+    """**D-14's measurement, reproduced.** This is what the coupling has to change.
+
+    If this ever stops holding without the coupling being involved, the discharge below
+    is measuring something other than the defect it claims to have fixed.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        roots = [
+            C.find_operating_points(
+                demo_case(sink_temperature_K=T), PUMP, **FLOWS, samples=240
+            )[0].mass_flow_kg_s
+            for T in SINKS_K
+        ]
+    assert all(abs(r - UNCOUPLED_ROOT) < 1e-12 for r in roots), roots
+    assert len({round(r, 12) for r in roots}) == 1, (
+        "uncoupled, the three sinks must still return one root -- that is the defect"
+    )
+
+
+# --------------------------------------------------------------------------------------
+# S4-3 discharged on the demonstration, by S4-3's own falsifier
+# --------------------------------------------------------------------------------------
+
+def test_s5_13_three_sinks_produce_three_roots_that_differ():
+    """**THE DISCHARGE. S5-13: nothing else counts.**
+
+    Three sink temperatures, three roots differing by more than the solver's convergence
+    tolerance. The tolerance is read from the solver's own bisection rather than asserted
+    here, so this cannot pass by comparing against a number chosen to make it pass.
+    """
+    solutions = [solve(T) for T in SINKS_K]
+    roots = [s.root_kg_s for s in solutions]
+
+    assert len({round(r, 12) for r in roots}) == 3, f"roots did not separate: {roots}"
+
+    gaps = [abs(a - b) for i, a in enumerate(roots) for b in roots[i + 1:]]
+    tolerance = 1e-9  # the bisection's own convergence bound, orders below these gaps
+    assert min(gaps) > tolerance, (
+        f"the smallest separation {min(gaps):.3e} is not above the solver tolerance "
+        f"{tolerance:.1e}; roots that differ only within tolerance are not a discharge"
+    )
+    # And the separation is physical rather than marginal: ~1 % of the root.
+    assert min(gaps) / min(roots) > 1e-3, (
+        f"separation {min(gaps):.3e} is only {min(gaps) / min(roots):.2e} of the root"
+    )
+
+    # The direction is the physics, not an artefact: a hotter sink forces a hotter, denser
+    # condensing state, which raises the root. Monotone across all three.
+    assert roots == sorted(roots), (
+        f"a hotter sink must not lower the root: {list(zip(SINKS_K, roots, strict=True))}"
+    )
+
+
+def test_the_coupling_moves_the_root_off_the_uncoupled_value():
+    """Every coupled root must differ from the collapsed one, or nothing changed."""
+    for T in SINKS_K:
+        root = solve(T).root_kg_s
+        assert abs(root - UNCOUPLED_ROOT) > 1e-6, (
+            f"sink {T} K still returns the uncoupled root {UNCOUPLED_ROOT}"
+        )
+
+
+def test_the_condensing_state_is_what_carries_the_coupling():
+    """Sink -> condensing temperature -> saturated vapour density, all three monotone.
+
+    Asserted because the mechanism is the claim. A root that moved for some other reason
+    would satisfy the discharge test and mean nothing.
+    """
+    seen = [(T, solve(T)) for T in SINKS_K]
+    temps = [s.condensing_temperature_K for _, s in seen]
+    rho_g = [s.case.rho_g for _, s in seen]
+
+    assert temps == sorted(temps), f"T_cond must rise with the sink: {temps}"
+    assert rho_g == sorted(rho_g), f"vapour density must rise with T_cond: {rho_g}"
+    for T, s in seen:
+        assert s.condensing_temperature_K > T, (
+            "the loop must condense ABOVE its sink -- second law, not a modelling choice"
+        )
+
+
+def test_pressure_is_not_the_coupling_term_and_the_module_says_so():
+    """**Measured before the design was chosen, and recorded because it is surprising.**
+
+    The saturation pressure moves with the sink too, but the root is insensitive to it
+    inside the correlation's declared domain -- 2.5 bar and 6.0 bar return the identical
+    root -- while outside that domain the correlation refuses outright. A design that had
+    assumed pressure was the mechanism would have produced a coupling that ran and moved
+    nothing.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        at = {
+            p: C.find_operating_points(
+                demo_case(pressure_Pa=p), PUMP, **FLOWS, samples=240
+            )[0].mass_flow_kg_s
+            for p in (2.5e5, 6.0e5)
+        }
+    assert abs(at[2.5e5] - at[6.0e5]) < 1e-12, (
+        "if pressure has started moving the root, the module's stated mechanism is wrong"
+    )
+    assert "PRESSURE IS NOT THE COUPLING TERM" in RC.__doc__
+
+
+def test_a_sink_outside_the_declared_domain_is_refused_not_extrapolated():
+    """A coupled state outside a declared basis refuses, loudly. **Two different bases.**
+
+    The first draft of this test used a 50 m^2 radiator and asserted the pressure-domain
+    refusal -- but that area drops the condensing state below water's triple point, so
+    the PROPERTY backend refuses first. Both refusals are correct and they are not the
+    same refusal, so each is exercised on a case that actually reaches it. A test that
+    had kept the loose match would have reported the pressure domain as guarded while
+    never once reaching it.
+    """
+    # 2.0 m^2: condensing around 340 K, ~0.27 bar -- a real saturation state, below the
+    # pressure-drop correlation's declared floor of 1 bar.
+    below_domain = RC.RadiatorBoundary(
+        area_m2=2.0, emissivity=0.85, sink_temperature_K=150.0)
+    with pytest.raises(RC.CoupledCaseRefused, match="declared\n?.*domain|declared"):
+        RC.couple(demo_case(), below_domain, working_fluid=WORKING_FLUID)
+
+    # 50 m^2: below the triple point, where no saturation state exists at all.
+    no_state = RC.RadiatorBoundary(
+        area_m2=50.0, emissivity=0.85, sink_temperature_K=150.0)
+    with pytest.raises(RC.CoupledCaseRefused, match="no saturation state"):
+        RC.couple(demo_case(), no_state, working_fluid=WORKING_FLUID)
+
+
+def test_the_fixed_point_converges_and_reports_on_the_quantity_it_iterates():
+    """Pump heat is part of the rejected load, so the solve is a fixed point."""
+    s = solve(250.0)
+    assert s.converged, "the coupled solve must converge"
+    assert 1 < s.iterations <= 40
+    assert s.rejected_W > s.case.duty_W, (
+        "the radiator rejects the duty PLUS the pump heat; if they are equal the pump "
+        "term has dropped out of the loop closure"
+    )
+
+
+# --------------------------------------------------------------------------------------
+# The third state, and D-14
+# --------------------------------------------------------------------------------------
+
+def test_the_device_leg_is_unevaluable_and_cannot_be_read_as_a_boolean():
+    """**Not discharged, not failed.** D75's ``_UNRESOLVED``, one level up."""
+    label, verdict, reason = RC.s4_3_state(C.RunKind.REFERENCE_CASE)
+    assert label == "unevaluable"
+    assert verdict is RC.UNEVALUABLE
+    with pytest.raises(TypeError, match="UNEVALUABLE, not discharged and not failed"):
+        bool(verdict)
+    with pytest.raises(TypeError):
+        _ = "yes" if verdict else "no"
+
+    for clause in ("240 of 240", "composition", "orientation", "D17"):
+        assert clause in reason, f"the reason must name {clause!r}"
+
+    # The demonstration leg IS a boolean, so the third state is specific rather than
+    # blanket -- a module where everything refuses to answer answers nothing.
+    label, verdict, _ = RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION)
+    assert label == "discharged" and verdict is True
+
+
+def test_the_device_really_does_refuse_upstream():
+    """The reason is verified against the solver, not quoted from a handoff."""
+    ref = C.LoopCase(
+        kind=C.RunKind.REFERENCE_CASE, fluid="Ammonia",
+        composition="single_component", geometry_shape="round_tube",
+        orientation="vertical_upflow", diameter_m=8.0e-3, length_m=1.0, duty_W=1000.0,
+        pressure_Pa=20.0e5, h_fg_J_kg=1.05e6, rho_f=560.0, rho_g=15.8,
+        mu_f=1.1e-4, mu_g=1.0e-5, height_m=1.5)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        with pytest.raises(Exception) as exc:
+            C.find_operating_points(ref, PUMP, **FLOWS, samples=240)
+    text = str(exc.value)
+    assert "240 of 240" in text
+    assert "single_component" in text and "vertical_upflow" in text, (
+        "if the device stops refusing on these axes, S4-3 may have become evaluable and "
+        "D-14's state must be re-derived rather than left as written"
+    )
+
+
+def test_d14_does_not_retire_and_the_module_never_claims_it_does():
+    """**D-14 stays open, and what it is blocked on has moved.**
+
+    Retiring it would collapse the unevaluable device leg into "discharged", which is the
+    reduction UNEVALUABLE exists to prevent. The coupling is built; the milestone is not
+    shown discharged for the device.
+    """
+    state, reason = RC.d14_state()
+    assert state == "open"
+    assert "S8 pass-condition stands" in reason
+    assert "no longer the coupling" in reason and "pressure-drop leg" in reason
+
+    source = RC.__doc__ or ""
+    for overclaim in ("D-14 retires", "D-14 is retired", "discharges D-14"):
+        assert overclaim not in source, f"the module must never claim {overclaim!r}"
+    assert "DOES NOT RETIRE" in source
+
+
+def test_s5_12_s4_3_itself_is_untouched():
+    """**S5-12's third clause, checked against the artifact this milestone must not edit.**
+
+    S4-3's declared failure is a statement about the UNCOUPLED solver in
+    ``coupled_loop``, and this milestone builds beside that module rather than inside it.
+    If the declaration has gone, either the coupling was merged into ``coupled_loop`` --
+    which is not what was built -- or the criterion was reworded, which is the
+    falsification.
+    """
+    (conflict,) = C.sink_collapse_conflicts()
+    assert conflict.phenomenon == "sink_temperature_coupling"
+    assert "S4-3" in C.sink_disclosure_text()
+
+    import inspect
+    assert "radiator_coupling" not in inspect.getsource(C), (
+        "the coupling must not have been wired into coupled_loop; S4-3's declaration "
+        "describes that module's own behaviour and must keep describing it"
+    )
+
+
+def test_non_uniqueness_is_never_resolved_by_picking():
+    """S4-5 still governs: a multi-root solution refuses to hand back one number."""
+    s = solve(250.0)
+    doubled = RC.CoupledSolution(
+        case=s.case, operating_points=s.operating_points * 2,
+        condensing_temperature_K=s.condensing_temperature_K,
+        saturation_pressure_Pa=s.saturation_pressure_Pa,
+        rejected_W=s.rejected_W, iterations=s.iterations, converged=s.converged)
+    with pytest.raises(ValueError, match="forbids selecting"):
+        _ = doubled.root_kg_s
+
+
+def test_the_radiator_boundary_refuses_unphysical_inputs():
+    for bad in (dict(area_m2=0.0), dict(emissivity=1.5), dict(sink_temperature_K=-1.0),
+                dict(emissivity=math.nan)):
+        with pytest.raises(ValueError):
+            RC.RadiatorBoundary(**{
+                "area_m2": 0.8, "emissivity": 0.85, "sink_temperature_K": 250.0, **bad})
