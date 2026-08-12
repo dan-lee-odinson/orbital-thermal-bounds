@@ -766,6 +766,30 @@ _G004_06_DISPOSITIONED_KNOWN_ADDRESSES = (
     "first DEBTS.md key is generic approval wording plus the register's markdown house style",
 )
 
+#: `OTB-G004-09`'s disposition record. **Two addressed lines, and only one is visible to
+#: ``discover_director_addressed``** -- both fire ``for-his-attention``, so ``rx.search``
+#: reports line 88 and hides line 90. The freeze refused on both counts: the discovery
+#: gate on 88, and the completeness gate on 90 found by the per-line scan and not
+#: reported. Seventh member set in which that gap has appeared.
+#:
+#: **Keyed on Sol's own framing, never on the shape that fires the marker.** D43 re-keyed
+#: thirteen fragments for exactly this: a key that is the marker phrase is a key a fresh
+#: Director-addressed line satisfies. Line 88's marker match is ``for director attention``
+#: and line 90's is ``for the director's attention``; neither appears in the keys below.
+#: What is keyed instead is what Sol wrote *about* the defect -- the fixture truncation on
+#: 88, the D44 premise citation on 90.
+#:
+#: **Both keys are cut from the shipped bytes by index, not transcribed.** The record wraps
+#: mid-word: line 90 reads ``an empty- field placeholder``, with a space inside the word.
+#: A key typed from a rendering would read ``empty-field`` and fail on the first freeze,
+#: which is why the handoff said to derive them by execution and why that instruction was
+#: followed literally.
+_G004_09_DISPOSITIONED_KNOWN_ADDRESSES = (
+    "the test fixture truncates the real member immediately after the reproduction heading",
+    "records D44's selected premise that this member's only Director-addressed line is "
+    "an empty- field placeholder",
+)
+
 #: Sol's own findings file. **Its wording is the reviewer's, not this project's**, so a
 #: premise keyed to it is coupled to another party's drafting: if he re-wraps his block
 #: scalars these keys fail. That is the right failure -- loud, in :func:`false_premises`,
@@ -996,6 +1020,23 @@ QUOTATION_ALLOWLIST: dict[str, _Exemption] = {
         ),
         premise="its only Director-addressed line is F-06's finding about the DEBTS key",
         holds=_addresses_only(_G004_06_DISPOSITIONED_KNOWN_ADDRESSES),
+    ),
+    # --- added under D89: the -09 record, which ships as history with the prior gate ---
+    "OTB-G004-09_dispositioned.md": _Exemption(
+        reason=(
+            "round 9's disposition record, written after the last `OTB-G004` freeze and "
+            "therefore never swept before. Its two addressed lines are Sol's F-02 "
+            "Finding and Evidence fields. THE FINDING IS THAT A MASTERY-LEDGER MEMBER "
+            "ADDRESSES THE DIRECTOR THROUGH A SHAPE THE MARKER CANNOT SEE -- a "
+            "heading-shaped 'Director attention' that the vocabulary's "
+            "'for director attention' misses -- so stating the defect requires "
+            "reproducing the shape that causes it, and the Evidence field must cite the "
+            "premise it falsifies. A record that could not print the defect could not "
+            "disposition it. Identical class to `OTB-G004-05_dispositioned.md` and "
+            "`-06`, allowlisted at D66 on that reasoning."
+        ),
+        premise="every Director-addressed line in it is one of the two known sentences",
+        holds=_addresses_only(_G004_09_DISPOSITIONED_KNOWN_ADDRESSES),
     ),
     "findings-OTB-G004-05.yaml": _Exemption(
         reason=(

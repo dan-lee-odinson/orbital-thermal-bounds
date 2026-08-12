@@ -2254,3 +2254,110 @@ def test_these_tests_read_no_repository():
             f"{path.name} imports {sorted(imported & banned)}; a packet has no "
             "repository and no git, so these tests must read neither"
         )
+
+
+_G004_09_DISP_KEY = "OTB-G004-09_dispositioned.md"
+
+#: **D89.** Round 9's disposition record, which ships with the prior gate as history and
+#: had never been swept: it was written after the last `OTB-G004` freeze. Both addressed
+#: lines are Sol's F-02 Finding and Evidence, VERBATIM from the shipped bytes -- including
+#: line 90's mid-word wrap, ``an empty- field placeholder``, which is why the keys are cut
+#: by index rather than transcribed. A key typed from a rendering reads ``empty-field``
+#: and fails on the first freeze.
+#:
+#: Both fire ``for-his-attention``, so ``rx.search`` sees line 88 and hides line 90 -- the
+#: seventh member set in which that gap has appeared, and the reason the freeze refused
+#: twice: once on discovery, once on the completeness gate.
+_G004_09_DISP_MEMBER = "\n".join((
+    "# OTB-G004-09 dispositioned",
+    "",
+    "### F-02 · major · `accept_with_modification`",
+    "",
+    '**Finding.** The allowlisted two-phase mastery-ledger entry still contains live content addressed to the Director. Under its Open questions / TODO heading it labels a gravity-explicit CHF issue "Director attention" and separately lists a "Director-authored explanation" as unfinished work. D44 allowlisted this member on the stated fact that its only Director-addressed line was the bare empty-field placeholder, so these lines make the selected premise false. They remain invisible because the marker recognises "for director attention" but not the heading-shaped "Director attention", while the test fixture truncates the real member immediately after the reproduction heading and contains neither open item. The packet therefore ships the prohibited recipient class while M11 reports the exemption and its controls green.',
+    "",
+    '**Evidence.** `verification~mastery-ledger~entries~two-phase-flow-boiling-heat-acquisition.md:218-232 places both lines in Open questions / TODO. SETTLED_DECISIONS.md:2838-2867 records D44\'s selected premise that this member\'s only Director-addressed line is an empty- field placeholder. scripts~packet_exclusions.py:254-257 defines only the "for the director\'s attention" shape; lines 577-585 key this member solely on the exact TODO placeholder; lines 908-920 state that it has only that line. tests~test_packet_exclusions.py:88-101 builds the member fixture from the placeholder through the reproduction heading and omits the shipped open-question section; lines 1188-1269 exercise only added TODO forms. MECHANISM_INVENTORY.md:72 and 91-108 nevertheless count the premise and its fresh-address controls as passing.`',
+)) + "\n"
+
+_MEMBER_TEXT[_G004_09_DISP_KEY] = _G004_09_DISP_MEMBER
+
+
+def test_witness_d89_the_g004_09_premise_holds_and_fails_on_one_more_address():
+    """**D89's fresh-address control.** The entry is not landed until this exists.
+
+    ``_addresses_only`` premises are falsifiable by ADDITION (D40: subset, not equality),
+    and the certificate's M11 requires every enumerative premise to be bound by a control
+    that demonstrates it. Five probes, each asserted to fire a marker and to quote no
+    fragment first -- a probe that fires nothing proves nothing, and a probe quoting a
+    key proves less than nothing.
+    """
+    import packet_exclusions as pe
+
+    assert false_premises({_G004_09_DISP_KEY: _G004_09_DISP_MEMBER}) == []
+
+    probes = (
+        "**Knock-on for director attention:** the bore bound.",
+        "Two findings need a director ruling before the freeze.",
+        "This is pending director disposition before S7.",
+        "- [ ] Director disposition of F-09",
+        "`TODO (director)`: plain-language explanation of the CHF gate.",
+    )
+    for probe in probes:
+        assert any(rx.search(probe) for rx in pe._COMPILED_MARKERS.values()), (
+            f"probe fires no marker, so it is not an attack: {probe!r}"
+        )
+        assert not any(
+            f.lower() in probe.lower()
+            for f in pe._G004_09_DISPOSITIONED_KNOWN_ADDRESSES
+        ), f"probe quotes a key fragment, which makes it prove nothing: {probe!r}"
+        grown = _G004_09_DISP_MEMBER + "\n\n" + probe + "\n"
+        assert [n for n, _ in false_premises({_G004_09_DISP_KEY: grown})] == [
+            _G004_09_DISP_KEY
+        ], f"a fresh address slipped past the -09 keys: {probe!r}"
+
+
+def test_witness_d89_both_lines_are_accounted_and_search_hides_one():
+    """The completeness half, which is what the freeze's second gate refused on.
+
+    Line 90 is invisible to ``rx.search`` because line 88 already fired the same marker.
+    A premise built from the discovery report alone would name one sentence and be false.
+    """
+    import packet_exclusions as pe
+
+    text = _G004_09_DISP_MEMBER
+    by_search = sorted({
+        text.count("\n", 0, m.start()) + 1
+        for rx in pe._COMPILED_MARKERS.values() if (m := rx.search(text))
+    })
+    by_finditer = sorted({
+        text.count("\n", 0, m.start()) + 1
+        for rx in pe._COMPILED_MARKERS.values() for m in rx.finditer(text)
+    })
+    assert (len(by_search), len(by_finditer)) == (1, 2), (
+        f"expected search to hide one line; got {(by_search, by_finditer)}"
+    )
+    lines = text.split("\n")
+    for line_no in by_finditer:
+        assert any(
+            f.lower() in lines[line_no - 1].lower()
+            for f in pe._G004_09_DISPOSITIONED_KNOWN_ADDRESSES
+        ), f"line {line_no} is addressed and unaccounted"
+
+
+def test_witness_d89_the_keys_avoid_the_marker_wording():
+    """**D43's rule.** A key that is the marker phrase is one a fresh address satisfies.
+
+    Line 88's match is ``for director attention``; line 90's is
+    ``for the director's attention``. Neither appears in the keys, which carry Sol's
+    framing around the defect instead: the fixture truncation, and the D44 premise cited.
+    """
+    import packet_exclusions as pe
+
+    for fragment in pe._G004_09_DISPOSITIONED_KNOWN_ADDRESSES:
+        lowered = fragment.lower()
+        assert "for director attention" not in lowered
+        assert "for the director's attention" not in lowered
+    assert pe.weak_keys(pe._G004_09_DISPOSITIONED_KNOWN_ADDRESSES) == []
+    # The mid-word wrap is preserved, which is the transcription trap this record sets.
+    assert any(
+        "empty- field" in f for f in pe._G004_09_DISPOSITIONED_KNOWN_ADDRESSES
+    ), "the key must carry the shipped wrap, not a tidied 'empty-field'"
