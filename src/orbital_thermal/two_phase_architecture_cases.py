@@ -133,7 +133,38 @@ class GravityBasis(NamedTuple):
                 "of the correlation's database a sourced boundary; a default invented "
                 "here would not be sourced."
             )
-        return cls(entry.id, float(reference), getattr(spec, "gravity_basis", ""))
+        # Sol's F-04. The basis STRING is evidence, not decoration: D6 makes the gravity a
+        # SOURCED boundary, so a blank basis is a number with nothing standing behind it,
+        # and defaulting it to "" was one of the five shapes S5-4 forbids. Checked AFTER
+        # the reference so an entry missing both still reports the more specific reason.
+        basis_text = (getattr(spec, "gravity_basis", "") or "").strip()
+        if not basis_text:
+            raise ValueError(
+                f"{entry.id}: declares reference gravity {reference} but no "
+                "gravity_basis text. The boundary is sourced under Director ruling D6, "
+                "and a basis string that is blank is a number with no source behind it."
+            )
+        return cls(entry.id, float(reference), basis_text)
+
+
+def _registry_gravity_bases(
+    entries: tuple[CorrelationEntry, ...] | None = None,
+) -> dict[str, GravityBasis]:
+    """Every gravity basis the registry can actually produce, keyed by entry id.
+
+    **The construction boundary F-04 asked for.** A CHF-dependent record is closed around
+    this map rather than around whatever a caller passed, so ``GravityBasis`` staying a
+    public NamedTuple with an ordinary constructor no longer matters: a fabricated one
+    does not appear here and is refused. Entries with no declared reference gravity are
+    simply absent, which is why naming one is refused rather than defaulted.
+    """
+    bases: dict[str, GravityBasis] = {}
+    for entry in (REGISTRY_ENTRIES if entries is None else entries):
+        try:
+            bases[entry.id] = GravityBasis.from_entry(entry)
+        except ValueError:
+            continue
+    return bases
 
 
 @dataclass(frozen=True)
@@ -156,11 +187,46 @@ class LegEligibility:
     gravity_basis: GravityBasis | None = None
 
     def __post_init__(self) -> None:
-        if self.leg in CHF_DEPENDENT_LEGS and self.gravity_basis is None:
+        if self.leg not in CHF_DEPENDENT_LEGS:
+            return
+        # --- Sol's F-04. S5-4 forbids FIVE shapes and __post_init__ rejected one. ------
+        # Absent was refused; empty, defaulted, caller-supplied and caller-overridden all
+        # constructed. A record built around a caller's basis fields is a record whose
+        # evidence the caller invented, so construction is closed around the REGISTRY:
+        # the basis must be one this module could have produced from an adopted entry.
+        basis = self.gravity_basis
+        if basis is None:
             raise ValueError(
                 f"{self.fluid}/{self.leg}: a CHF-dependent eligibility cannot be built "
                 "without the gravity basis of the correlation that produced it "
                 "(Director ruling D6, debt D-7)."
+            )
+        if not str(basis.entry_id).strip() or not str(basis.basis).strip():
+            raise ValueError(
+                f"{self.fluid}/{self.leg}: the gravity basis carries an empty "
+                f"entry_id={basis.entry_id!r} or basis={basis.basis!r}. S5-4 names an "
+                "EMPTY basis as a falsifier alongside an absent one."
+            )
+        reference = basis.reference_gravity_m_s2
+        if reference is None or not isinstance(reference, (int, float)) or reference <= 0:
+            raise ValueError(
+                f"{self.fluid}/{self.leg}: reference_gravity_m_s2={reference!r} is not a "
+                "positive gravity. A fabricated 0.0 is the shape F-04 constructed."
+            )
+        registry = _registry_gravity_bases()
+        if basis.entry_id not in registry:
+            raise ValueError(
+                f"{self.fluid}/{self.leg}: gravity basis names {basis.entry_id!r}, which "
+                "is not a registry entry. The basis must come from the correlation that "
+                "produced the eligibility, not from a caller -- a basis a caller can "
+                f"supply is a basis a caller can get wrong. Known: {sorted(registry)}."
+            )
+        if registry[basis.entry_id] != basis:
+            raise ValueError(
+                f"{self.fluid}/{self.leg}: gravity basis does not match the registry's "
+                f"for {basis.entry_id!r}. Supplied {basis!r}; the registry says "
+                f"{registry[basis.entry_id]!r}. S5-4 names a caller-OVERRIDDEN basis as "
+                "a falsifier, and an overridden one is exactly a mismatched one."
             )
 
     @property

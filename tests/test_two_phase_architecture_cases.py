@@ -802,3 +802,123 @@ def test_s5_7_still_catches_a_chf_direction_after_the_htc_carve_out():
         "invites, and the carve-out must not license it"
     )
     assert verdict("Eligibility is derived from the registry.") == "no directional claim"
+
+
+# --------------------------------------------------------------------------------------
+# D90 / F-04 — the construction boundary, one witness per falsifier
+# --------------------------------------------------------------------------------------
+#
+# S5-4 forbids FIVE shapes: absent, empty, defaulted, caller-supplied, caller-overridden.
+# `__post_init__` rejected ONE. The existing test quoted all five and exercised one; that
+# is the shape Sol named, so each falsifier gets its own witness below rather than one
+# test standing in for the set.
+
+def _real_basis():
+    """The basis the registry actually produces for the adopted CHF entry."""
+    return ac._registry_gravity_bases()[_ADOPTED_CHF.id]
+
+
+def test_f04_a_fabricated_gravity_basis_is_refused():
+    """**Falsifier 1: caller-supplied.** This constructed before, with no refusal at all.
+
+    ``GravityBasis`` is a public NamedTuple with an ordinary constructor, so the record
+    could be closed around a basis the caller invented. Construction is now closed around
+    the REGISTRY: a basis naming no registry entry is refused.
+    """
+    fabricated = ac.GravityBasis(
+        entry_id="MADE-UP", reference_gravity_m_s2=9.80665, basis="invented")
+    with pytest.raises(ValueError, match="not a registry entry"):
+        ac.LegEligibility(fluid="water", leg="chf", entry_id="MADE-UP",
+                          eligible=True, gravity_basis=fabricated)
+
+
+def test_f04_an_empty_gravity_basis_is_refused():
+    """**Falsifier 2: empty.** Blank basis text and a blank entry id both refuse.
+
+    ``from_entry`` used to default a missing basis string to ``""``, so an entry could
+    supply a number with nothing standing behind it. D6 makes the gravity a SOURCED
+    boundary; a blank source is not one.
+    """
+    for bad in (
+        ac.GravityBasis(entry_id="", reference_gravity_m_s2=9.80665, basis="text"),
+        ac.GravityBasis(entry_id=_ADOPTED_CHF.id, reference_gravity_m_s2=9.80665,
+                        basis="   "),
+    ):
+        with pytest.raises(ValueError, match="empty"):
+            ac.LegEligibility(fluid="water", leg="chf", entry_id=_ADOPTED_CHF.id,
+                              eligible=True, gravity_basis=bad)
+
+
+def test_f04_an_overridden_gravity_basis_is_refused():
+    """**Falsifier 3: caller-overridden.** The right entry id with the wrong numbers.
+
+    This is the subtlest of the five: the basis names a real entry, so an id check alone
+    passes it, while the gravity it carries is not the gravity that entry declares. An
+    overridden basis IS a mismatched one, so the whole tuple is compared.
+    """
+    real = _real_basis()
+    overridden = ac.GravityBasis(
+        entry_id=real.entry_id, reference_gravity_m_s2=1.62, basis=real.basis)
+    with pytest.raises(ValueError, match="does not match the registry"):
+        ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
+                          eligible=True, gravity_basis=overridden)
+
+    reworded = ac.GravityBasis(
+        entry_id=real.entry_id,
+        reference_gravity_m_s2=real.reference_gravity_m_s2,
+        basis="a friendlier basis sentence")
+    with pytest.raises(ValueError, match="does not match the registry"):
+        ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
+                          eligible=True, gravity_basis=reworded)
+
+
+def test_f04_a_zero_or_defaulted_reference_gravity_is_refused():
+    """**Falsifier 4: defaulted.** The literal shape Sol constructed: 0.0 with no basis."""
+    with pytest.raises(ValueError, match="not a positive gravity|empty"):
+        ac.LegEligibility(
+            fluid="water", leg="chf", entry_id="MADE-UP", eligible=True,
+            gravity_basis=ac.GravityBasis(
+                entry_id="MADE-UP", reference_gravity_m_s2=0.0, basis=""))
+
+
+def test_f04_the_real_registry_basis_still_constructs():
+    """**The negative control.** The boundary is closed, not sealed shut.
+
+    A guard that refused everything would satisfy the four witnesses above and break the
+    module. The basis the registry actually produces must still build a record.
+    """
+    real = _real_basis()
+    ok = ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
+                           eligible=True, gravity_basis=real)
+    assert ok.gravity_basis == real
+    # `is not None`, NOT a truth test: bool() on a CHF record raises by design (S5-5), and
+    # the first draft of this control tripped that guard. A negative control that cannot
+    # be written without violating another criterion is a control written carelessly.
+    assert ac.assess_leg(
+        "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE) is not None
+
+
+def test_f04_from_entry_refuses_a_reference_gravity_with_no_basis_text():
+    """**Falsifier 5: defaulted basis text**, and it needed a constructed entry.
+
+    No shipped registry entry has a reference gravity with a blank ``gravity_basis``, so
+    the guard added for F-04 had no reachable witness -- a check whose branch nothing
+    exercises, which is the shape this project counts. The entry is built here so the
+    branch is actually taken.
+
+    ``from_entry`` used to end ``getattr(spec, "gravity_basis", "")``, defaulting a
+    missing source to the empty string. D6 makes the gravity a SOURCED boundary; a number
+    with a blank source behind it is not one.
+    """
+    import dataclasses
+
+    spec = _ADOPTED_CHF.applicability_spec
+    blanked = dataclasses.replace(spec, gravity_basis="   ")
+    entry = dataclasses.replace(_ADOPTED_CHF, applicability_spec=blanked)
+
+    with pytest.raises(ValueError, match="gravity_basis text"):
+        ac.GravityBasis.from_entry(entry)
+
+    # And such an entry contributes no basis to the construction boundary, so a record
+    # cannot be closed around it either.
+    assert entry.id not in ac._registry_gravity_bases((entry,))

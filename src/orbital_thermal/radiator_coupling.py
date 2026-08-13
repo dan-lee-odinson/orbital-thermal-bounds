@@ -124,6 +124,59 @@ class CoupledCaseRefused(RuntimeError):
     """
 
 
+#: Case ``fluid`` labels that name the same substance as a CoolProp fluid name. Kept as
+#: data because the check must be a comparison a reader can audit, not a fuzzy match: a
+#: guard against substituting one fluid's properties into another fluid's case cannot
+#: itself guess which two names mean the same thing.
+_FLUID_ALIASES: dict[str, str] = {
+    "water": "water",
+    "h2o": "water",
+    "ammonia": "ammonia",
+    "nh3": "ammonia",
+    "r717": "ammonia",
+}
+
+
+def _refuse_inconsistent_fluid(case: _cl.LoopCase, working_fluid: str) -> None:
+    """**Sol's F-01, and the guard this module never had.**
+
+    Measured on the shipped demonstration at the 250 K sink: the case was admitted to the
+    pressure-drop correlation as ``two_component`` ``air-water``, and then evolved with
+    single-component WATER saturation properties -- ``rho_g`` 1.2 -> 3.218 (saturated
+    steam), ``rho_f`` 997 -> 907.97, pressure 1.2 -> 6.099 bar -- while ``mu_g`` stayed at
+    air's 1.8e-5 against steam's 1.429e-5, 26 % wrong. **The ``rho_g`` that moved the
+    roots, which is the mechanism D87 was built around, was steam density inside a case
+    represented to the applicability guard as air-water.**
+
+    Nothing related ``working_fluid`` to ``case.fluid`` or ``case.composition``, so the
+    case passed the guard on labels the saturation model contradicts. Substituting one
+    fluid's densities into another fluid's case is the defect; this refusal is what makes
+    it unrepeatable.
+
+    **Two conditions, both necessary.** A saturation state exists only for ONE substance,
+    so a ``two_component`` case has no condensing state this coupling could use; and the
+    substance the properties come from must be the substance the case declares.
+    """
+    if case.composition != "single_component":
+        raise CoupledCaseRefused(
+            f"the case declares composition {case.composition!r}, but a condensing "
+            f"state exists only for a single substance. Coupling it to "
+            f"{working_fluid!r}'s saturation curve would put one fluid's densities into "
+            "another fluid's case -- which is exactly Sol's F-01, measured on the "
+            "shipped demonstration."
+        )
+    declared = _FLUID_ALIASES.get(case.fluid.strip().lower())
+    supplied = _FLUID_ALIASES.get(working_fluid.strip().lower())
+    if declared is None or supplied is None or declared != supplied:
+        raise CoupledCaseRefused(
+            f"the case declares fluid {case.fluid!r} and the coupling was asked for "
+            f"{working_fluid!r}'s saturation properties. They must name the same "
+            "substance, and a name this guard does not recognise is refused rather than "
+            "assumed to match: a guard against fluid substitution cannot guess which two "
+            f"names mean the same thing. Recognised: {sorted(set(_FLUID_ALIASES))}."
+        )
+
+
 def couple(
     case: _cl.LoopCase,
     boundary: RadiatorBoundary,
@@ -138,6 +191,7 @@ def couple(
     already computed pump heat passes the total, which is what makes the loop closed
     rather than merely coupled.
     """
+    _refuse_inconsistent_fluid(case, working_fluid)
     load = case.duty_W if rejected_W is None else rejected_W
     t_cond = condensing_temperature_K(load, boundary)
     try:
@@ -396,102 +450,74 @@ S4_3_FALSIFIER_SINKS_K: tuple[float, ...] = (150.0, 250.0, 320.0)
 SOLVER_FLOW_TOLERANCE_KG_S: float = _cl._FLOW_BRACKET_TOL_KG_S
 
 
-def s4_3_state(
-    kind: _cl.RunKind,
-    *,
-    case: _cl.LoopCase | None = None,
-    pump: _cl.PumpCharacteristic | None = None,
-    radiator_area_m2: float | None = None,
-    emissivity: float | None = None,
-    working_fluid: str | None = None,
-    flow_min_kg_s: float | None = None,
-    flow_max_kg_s: float | None = None,
-    sinks_K: tuple[float, ...] = S4_3_FALSIFIER_SINKS_K,
-    tolerance_kg_s: float = SOLVER_FLOW_TOLERANCE_KG_S,
-) -> tuple[str, object, str]:
-    """``(label, verdict, reason)`` for S4-3 on a given run kind.
+class S4_3_Verdict(NamedTuple):
+    """The state of S4-3 for one run kind. **Its own truth test refuses.**
 
-    **THE DEMONSTRATION VERDICT IS MEASURED HERE, NOT ASSERTED HERE, AND THE FIRST
-    VERSION OF THIS FUNCTION ASSERTED IT.** It returned ``("discharged", True, ...)`` from
-    a string literal: it called nothing, computed nothing, and went on returning ``True``
-    with :func:`couple` sabotaged to raise on every call. The measurement existed only in
-    the tests, so a consumer asking this function "is S4-3 discharged?" would have kept
-    hearing yes after the coupling broke.
+    **Sol's F-05.** The sentinel was fine and the wrapper was not: ``s4_3_state`` returned
+    an ordinary non-empty 3-tuple, so ``if s4_3_state(RunKind.REFERENCE_CASE):`` put the
+    UNEVALUABLE device in the true branch without ``_Unevaluable.__bool__`` ever running.
+    A protection that is real at the member and absent at the surface transporting it is
+    no protection -- the same class as F-03.
 
-    The asymmetry was the tell. The *unevaluable* branch was derived -- a regression
-    re-derives the 240-of-240 refusal from the solver -- while the *discharged* branch,
-    which is the stronger claim, was a sentence. The weaker claim was checked harder than
-    the stronger one.
+    Destructuring still works, so ``label, verdict, reason = ...`` is unaffected. What is
+    refused is the collapse: reading the whole result as a boolean.
+    """
 
-    So the demonstration branch now runs S4-3's own falsifier: three sink temperatures
-    through the coupled solver, three roots, the smallest pairwise gap against the
-    solver's own tolerance. ``True`` only if that holds, ``False`` if it does not, and
-    the reason carries the roots so a reader sees the evidence rather than a verdict.
+    label: str
+    verdict: object
+    reason: str
 
-    **The inputs are required rather than defaulted.** A verdict is a measurement and a
-    measurement needs a case; inventing a demonstration here so the signature could stay
-    convenient would rebuild the defect one level down.
+    def __bool__(self) -> bool:
+        raise TypeError(
+            f"S4-3 is {self.label!r} and this result has no bare truth value. Reading it "
+            "as one is how a third state becomes a claim the evidence does not support "
+            "(F-05). Destructure it, or read .label and handle every state."
+        )
 
-    The device branch is UNCHANGED. There is still no path returning ``False`` for it: a
-    criterion that was never evaluated has not failed.
+
+def s4_3_state(kind: _cl.RunKind) -> S4_3_Verdict:
+    """The state of S4-3 for a run kind. **UNEVALUABLE on BOTH legs, and there is no
+    path to True for either.**
+
+    **D90/F-01: the discharge is withdrawn.** The demonstration that produced three
+    separated roots was not one fluid. It was admitted to the pressure-drop correlation as
+    ``two_component`` ``air-water`` and evolved with single-component WATER saturation
+    properties; nothing related ``working_fluid`` to ``case.fluid`` or
+    ``case.composition``, and its ``mu_g`` stayed at air's value while its densities became
+    steam's. Three separated roots from a hybrid case do not discharge S4-3, so the
+    demonstration branch no longer returns ``discharged``.
+
+    **And a consistent demonstration is not available, measured rather than assumed.** The
+    only implemented pressure-drop correlation admits ``two_component`` ONLY -- a
+    ``single_component`` case is de-ranked on the composition axis. The coupling needs a
+    saturation state, which exists only for one substance: ``air-water`` is not a fluid,
+    and ``Air`` has no saturation state above its 132.53 K critical temperature. The
+    correlation demands two components and the coupling demands one condensable substance,
+    so no case satisfies both. **Unevaluable on both legs is the terminal state**, and it
+    is the same structural refusal that makes the device unevaluable -- D17 call 3 left no
+    single-component pressure-drop half registered.
+
+    There is deliberately still no path returning ``False``: a criterion that cannot be
+    evaluated has not failed.
     """
     if kind is _cl.RunKind.MACHINERY_DEMONSTRATION:
-        required = {
-            "case": case, "pump": pump, "radiator_area_m2": radiator_area_m2,
-            "emissivity": emissivity, "working_fluid": working_fluid,
-            "flow_min_kg_s": flow_min_kg_s, "flow_max_kg_s": flow_max_kg_s,
-        }
-        missing = sorted(name for name, value in required.items() if value is None)
-        if missing:
-            raise ValueError(
-                "the demonstration verdict is MEASURED, so it needs something to measure: "
-                f"missing {missing}. This function used to answer without them, from a "
-                "string literal, and kept answering 'discharged' after the coupling was "
-                "sabotaged."
-            )
-        if len(sinks_K) < 2:
-            raise ValueError("S4-3's falsifier needs at least two sink temperatures")
-
-        roots: list[float] = []
-        for sink in sinks_K:
-            boundary = RadiatorBoundary(
-                area_m2=radiator_area_m2,  # type: ignore[arg-type]
-                emissivity=emissivity,     # type: ignore[arg-type]
-                sink_temperature_K=sink,
-            )
-            solution = solve_coupled(
-                case, pump, boundary,           # type: ignore[arg-type]
-                working_fluid=working_fluid,    # type: ignore[arg-type]
-                flow_min_kg_s=flow_min_kg_s,    # type: ignore[arg-type]
-                flow_max_kg_s=flow_max_kg_s,    # type: ignore[arg-type]
-            )
-            roots.append(solution.root_kg_s)
-
-        gaps = [abs(a - b) for i, a in enumerate(roots) for b in roots[i + 1:]]
-        smallest = min(gaps)
-        distinct = len({round(r, 12) for r in roots}) == len(sinks_K)
-        holds = distinct and smallest > tolerance_kg_s
-        measured = ", ".join(
-            f"{sink:.0f} K -> {root:.12f} kg/s"
-            for sink, root in zip(sinks_K, roots, strict=True)
+        return S4_3_Verdict(
+            "unevaluable",
+            UNEVALUABLE,
+            "the demonstration that produced three separated roots was NOT ONE FLUID: it "
+            "was admitted to the pressure-drop correlation as two_component 'air-water' "
+            "and evolved with single-component water saturation properties (rho_g "
+            "1.2 -> 3.218 saturated steam, rho_f 997 -> 907.97, pressure 1.2 -> 6.099 bar) "
+            "while mu_g stayed at air's 1.8e-5 against steam's 1.429e-5. No consistency "
+            "check related working_fluid to case.fluid or case.composition, so the case "
+            "passed the applicability guard on labels the saturation model contradicts. "
+            "Three separated roots from that hybrid do not discharge S4-3, and the "
+            "discharge is withdrawn (D90/F-01). A consistent demonstration is not "
+            "available either: the only implemented pressure-drop correlation admits "
+            "two_component only, and a condensing state exists only for a single "
+            "substance, so no case satisfies both.",
         )
-        if holds:
-            return (
-                "discharged",
-                True,
-                f"measured by S4-3's own falsifier: {measured}. Smallest pairwise "
-                f"separation {smallest:.3e} kg/s, above the solver's own tolerance "
-                f"{tolerance_kg_s:.1e} kg/s.",
-            )
-        return (
-            "not_discharged",
-            False,
-            f"S4-3's falsifier does not pass: {measured}. Smallest pairwise separation "
-            f"{smallest:.3e} kg/s against a tolerance of {tolerance_kg_s:.1e} kg/s; "
-            f"{len({round(r, 12) for r in roots})} distinct roots from {len(sinks_K)} "
-            "sinks. Roots that do not separate are not a discharge.",
-        )
-    return (
+    return S4_3_Verdict(
         "unevaluable",
         UNEVALUABLE,
         "the device has no operating point to move: the pressure-drop correlation "
@@ -503,21 +529,49 @@ def s4_3_state(
         "close. S4-3 is therefore neither discharged nor failed on the device.",
     )
 
+class D14State(NamedTuple):
+    """D-14's state. **Its own truth test refuses, for F-05's reason.**
 
-def d14_state() -> tuple[str, str]:
-    """``(state, reason)`` for debt D-14. **It does not retire at S5.**
-
-    The coupling now exists, so what D-14 is blocked on has changed -- but a debt whose
-    subject is the S0 coupled-solver milestone for THIS PROJECT'S DEVICE cannot retire on
-    a machinery demonstration. Retiring it would collapse the unevaluable device leg into
-    "discharged", which is the reduction :data:`UNEVALUABLE` exists to prevent.
+    Found by doing what F-05 says to do -- "check the other public returns in this module
+    for the same shape before you finish". ``d14_state()`` returned a plain 2-tuple, so
+    ``if d14_state():`` was true whether the debt was open or retired. That is the same
+    defect one function over: a state a consumer can collapse without ever reading it.
     """
-    return (
+
+    state: str
+    reason: str
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            f"D-14 is {self.state!r}; this result has no bare truth value. A 2-tuple is "
+            "always true, so `if d14_state():` reads the same open or retired (F-05). "
+            "Destructure it, or read .state."
+        )
+
+
+def d14_state() -> D14State:
+    """D-14's state. **Open, and the blocker HAS MOVED BACK to the coupling.**
+
+    **This is a moving claim and it moved back, which is why it is stated rather than
+    implied.** After D85 it read "no longer the coupling, but the pressure-drop leg" --
+    the coupling existed and S4-3 was discharged on the demonstration. D90/F-01 withdrew
+    that discharge: the demonstration was a hybrid case, and no consistent one is
+    available under the implemented correlation set. So the coupling is again what D-14
+    waits on, not the pressure-drop leg.
+
+    The mechanism built at D85 is not deleted and is not wrong -- the radiative closure,
+    the fixed point and the density path all stand. What is gone is any case it can be
+    demonstrated on, which is a different failure and is recorded as one.
+    """
+    return D14State(
         "open",
-        "the coupling is BUILT and S4-3 is discharged on the machinery demonstration by "
-        "its own falsifier. On the device S4-3 is UNEVALUABLE -- the loop refuses "
-        "upstream on composition and orientation under D17 -- so the S0 coupled-solver "
-        "milestone is not shown discharged for the device. D-14's S8 pass-condition "
-        "stands, and what it is blocked on has moved: no longer the coupling, but the "
-        "pressure-drop leg.",
+        "the coupling MECHANISM is built -- radiative closure, fixed point on the "
+        "condensing state, density carrying the coupling -- but S4-3 is UNEVALUABLE on "
+        "BOTH legs and no discharge stands. The demonstration that once discharged it "
+        "was a hybrid case (D90/F-01, discharge withdrawn), and no consistent "
+        "demonstration is available: the only implemented pressure-drop correlation "
+        "admits two_component only, while a condensing state exists for a single "
+        "substance only. THE BLOCKER HAS MOVED BACK TO THE COUPLING -- after D85 this "
+        "reason said the pressure-drop leg, and that is no longer true. D-14's S8 "
+        "pass-condition stands.",
     )
