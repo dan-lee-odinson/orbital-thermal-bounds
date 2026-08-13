@@ -30,6 +30,7 @@ import dataclasses
 import inspect
 import pathlib
 import re
+import warnings
 
 import pytest
 
@@ -49,6 +50,14 @@ _MICROGRAVITY = 1e-6  # LEO, the D-10 divergence table's own case
 #: reason. Water is the fluid because ammonia is explicitly OUTSIDE Shah (1987)'s fluid
 #: basis, which is debt D-6's subject, not D6's.
 _FULL_CASE = {"geometry": "round_tube", "orientation": "vertical_upflow"}
+
+
+class _RouteNotExercised(UserWarning):
+    """A construction route this interpreter cannot offer, so the witness could not run it.
+
+    Its own category so a reader can tell it from an ordinary warning, and so the
+    visibility check below can find it without matching on prose.
+    """
 
 
 # --------------------------------------------------------------------------------------
@@ -1149,7 +1158,20 @@ def test_d100_every_object_creation_protocol_is_enumerated_and_reported():
 
     # UNAVAILABLE is not a failure -- it is a coverage report, and it must be visible.
     if unavailable:
-        print(f"\nROUTES NOT EXERCISED ON THIS INTERPRETER: {unavailable}")
+        # D102/R6. This was a `print`, and pytest CAPTURES stdout for PASSING tests: on a
+        # plain `pytest -q` the sentence was produced and discarded. Measured on 3.11 it
+        # fired every run and appeared zero times. It looked right to me because I run
+        # 3.14, where copy.replace exists, the route is live and the notice never fires --
+        # so I had never seen the run that loses it. Same shape one turn smaller: a report
+        # confirming it was PRODUCED without confirming anyone RECEIVES it.
+        #
+        # warnings.warn lands in the warnings summary a plain `-q` already prints, so it
+        # needs no addopts and nothing outside this file.
+        warnings.warn(
+            f"ROUTES NOT EXERCISED ON THIS INTERPRETER: {unavailable}",
+            _RouteNotExercised,
+            stacklevel=2,
+        )
     assert set(routes) >= {
         "constructor", "dataclasses.replace", "copy.replace", "copy.copy",
         "copy.deepcopy", "pickle", "object.__new__"}, (
@@ -1262,3 +1284,64 @@ def test_d101_r1_the_scope_still_works_on_the_thread_that_opened_it():
     record = results.get("record")
     assert record is not None, "assess_leg must still mint on whatever thread runs it"
     assert record.eligible is False
+
+
+
+def test_d102_r6_the_coverage_notice_reaches_a_plain_pytest_run():
+    """**D102/R6: the notice must be RECEIVED, not merely produced.**
+
+    The channel is ``warnings.warn``, which lands in the warnings summary a plain
+    ``pytest -q`` already prints. The previous channel was ``print``, which pytest
+    captures for passing tests and discards.
+
+    **This test forces the UNAVAILABLE branch rather than waiting for an interpreter that
+    triggers it.** On 3.13+ ``copy.replace`` exists, so the real notice never fires and a
+    witness that only ran the natural path would be green here and untested -- which is
+    exactly how the defect survived. Hiding the attribute reproduces what 3.10-3.12 sees,
+    on any interpreter.
+
+    The code change is not the check. The check is a plain ``pytest -q`` over the whole
+    suite with the output grepped for this warning; that grep is recorded in the
+    hand-back, because a test asserting a warning was raised still would not prove a
+    reader ever sees it.
+    """
+    import copy
+
+    original = getattr(copy, "replace", None)
+    try:
+        if original is not None:
+            del copy.replace
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            test_d100_every_object_creation_protocol_is_enumerated_and_reported()
+    finally:
+        if original is not None:
+            copy.replace = original
+
+    notices = [w for w in caught if issubclass(w.category, _RouteNotExercised)]
+    assert notices, (
+        "with copy.replace absent the enumeration must WARN, not print: a print is "
+        "captured and discarded for passing tests under a plain pytest -q"
+    )
+    assert "copy.replace" in str(notices[0].message)
+    assert "ROUTES NOT EXERCISED ON THIS INTERPRETER" in str(notices[0].message)
+
+
+def test_d102_r6_the_notice_is_emitted_by_this_suite_so_the_grep_has_something_to_find():
+    """A warning raised only inside ``catch_warnings`` is invisible to the summary too.
+
+    So this one escapes: it warns unconditionally, in the same category, naming the
+    interpreter. On 3.10-3.12 the enumeration's own notice joins it; on 3.13+ this is the
+    only one, and it is what makes the channel greppable on every interpreter rather than
+    only on the ones that happen to lose a route.
+    """
+    import copy
+    import sys
+
+    warnings.warn(
+        "ROUTES NOT EXERCISED ON THIS INTERPRETER: "
+        f"{{}} (python {sys.version_info[:2]}, copy.replace "
+        f"{'present' if hasattr(copy, 'replace') else 'ABSENT'}) -- channel check",
+        _RouteNotExercised,
+        stacklevel=2,
+    )

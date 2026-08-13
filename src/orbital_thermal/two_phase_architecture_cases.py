@@ -193,9 +193,12 @@ def _registry_gravity_bases(
 #: ``ContextVar`` is per-context: threads start with their own, and tasks copy at
 #: creation. This module has no async today; the choice is for what S6 inherits.
 #:
-#: **The residual, stated because it is not zero.** A task created INSIDE an open scope
-#: copies the context and inherits the mint. Nothing here creates tasks, so it is not
-#: reachable today, but an async ``assess_leg`` that spawned work would carry it.
+#: **The residual, stated because it is not zero -- and WIDER than first written.** The
+#: mechanism is ``contextvars.copy_context()`` generally: any context captured inside an
+#: open scope carries the mint, and ``.run()`` on it later replays that. A task created
+#: inside the scope is one instance of this and was the only one named at D101; a copied
+#: context needs no task at all. Nothing here copies contexts or creates tasks, so none of
+#: it is reachable today -- but the class is context capture, not task creation.
 _MINTING: _contextvars.ContextVar[bool] = _contextvars.ContextVar(
     "orbital_thermal.two_phase_architecture_cases._MINTING", default=False
 )
