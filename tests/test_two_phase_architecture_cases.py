@@ -176,7 +176,7 @@ def test_s5_3_the_module_emits_no_ordering():
 def test_s5_4_a_chf_leg_cannot_be_constructed_without_a_gravity_basis():
     """**S5-4.** Falsifier: "a CHF-dependent eligibility record constructible with an
     absent, empty, or defaulted gravity basis"."""
-    with pytest.raises(ValueError, match="gravity basis"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(
             fluid="ammonia", leg="chf", entry_id="two_phase.chf.shah_1987", eligible=True)
 
@@ -817,7 +817,7 @@ def test_f04_a_fabricated_gravity_basis_is_refused():
     """
     fabricated = ac.GravityBasis(
         entry_id="MADE-UP", reference_gravity_m_s2=9.80665, basis="invented")
-    with pytest.raises(ValueError, match="not a registry entry"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(fluid="water", leg="chf", entry_id="MADE-UP",
                           eligible=True, gravity_basis=fabricated)
 
@@ -834,7 +834,7 @@ def test_f04_an_empty_gravity_basis_is_refused():
         ac.GravityBasis(entry_id=_ADOPTED_CHF.id, reference_gravity_m_s2=9.80665,
                         basis="   "),
     ):
-        with pytest.raises(ValueError, match="empty"):
+        with pytest.raises(TypeError, match="constructible only by the computation"):
             ac.LegEligibility(fluid="water", leg="chf", entry_id=_ADOPTED_CHF.id,
                               eligible=True, gravity_basis=bad)
 
@@ -849,7 +849,7 @@ def test_f04_an_overridden_gravity_basis_is_refused():
     real = _real_basis()
     overridden = ac.GravityBasis(
         entry_id=real.entry_id, reference_gravity_m_s2=1.62, basis=real.basis)
-    with pytest.raises(ValueError, match="does not match the registry"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
                           eligible=True, gravity_basis=overridden)
 
@@ -857,14 +857,14 @@ def test_f04_an_overridden_gravity_basis_is_refused():
         entry_id=real.entry_id,
         reference_gravity_m_s2=real.reference_gravity_m_s2,
         basis="a friendlier basis sentence")
-    with pytest.raises(ValueError, match="does not match the registry"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
                           eligible=True, gravity_basis=reworded)
 
 
 def test_f04_a_zero_or_defaulted_reference_gravity_is_refused():
     """**Falsifier 4: defaulted.** The literal shape Sol constructed: 0.0 with no basis."""
-    with pytest.raises(ValueError, match="not a positive gravity|empty"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(
             fluid="water", leg="chf", entry_id="MADE-UP", eligible=True,
             gravity_basis=ac.GravityBasis(
@@ -878,14 +878,12 @@ def test_f04_the_real_registry_basis_still_constructs():
     module. The basis the registry actually produces must still build a record.
     """
     real = _real_basis()
-    ok = ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
-                           eligible=True, gravity_basis=real)
+    # D100: the record is no longer constructible here, so the positive control is the
+    # computation itself. `is not None`, NOT a truth test: bool() on a CHF record raises
+    # by design (S5-5).
+    ok = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    assert ok is not None
     assert ok.gravity_basis == real
-    # `is not None`, NOT a truth test: bool() on a CHF record raises by design (S5-5), and
-    # the first draft of this control tripped that guard. A negative control that cannot
-    # be written without violating another criterion is a control written carelessly.
-    assert ac.assess_leg(
-        "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE) is not None
 
 
 def test_f04_from_entry_refuses_a_reference_gravity_with_no_basis_text():
@@ -929,27 +927,48 @@ def test_f02_a_real_basis_on_a_fabricated_producer_is_refused():
     aligned the two ids, so none of them could see this.
     """
     real = _real_basis()
-    with pytest.raises(ValueError, match="two producer identities"):
+    with pytest.raises(TypeError, match="constructible only by the computation"):
         ac.LegEligibility(fluid="water", leg="chf", entry_id="MADE-UP",
                           eligible=True, gravity_basis=real)
 
 
 def test_f02_a_real_basis_on_another_real_producer_is_refused():
-    """The same defect without any fabrication: two genuine registry entries, cross-wired.
+    """The same defect without any fabrication: two genuine entries, cross-wired.
 
-    Only one CHF entry yields a basis -- ``shah_2015`` and ``katto_ohno`` both refuse
-    ``from_entry`` for lack of a declared reference gravity -- so the other producers are
-    drawn from the entries that do declare one. Each pairing must refuse.
+    **D100 changed what this test can even set up, and that is the repair showing.**
+    ``_registry_gravity_bases`` used to accept every entry carrying a gravity -- a
+    pressure-drop correlation, a ``NOT_RANK_ELIGIBLE`` heat-transfer entry -- as a CHF
+    producer. It now filters on kind and status, so the population is one entry and there
+    are no mismatched pairs left inside it to build from.
+
+    So the cross-wire is built from OUTSIDE that population, which is where the round-2
+    instance came from: a real basis minted off a real pressure-drop entry, attached to a
+    CHF record. It is unconstructible, and so is every other pairing.
     """
-    bases = ac._registry_gravity_bases()
-    assert len(bases) >= 2, "need at least two real bases to cross-wire"
+    from orbital_thermal.registry import two_phase as tp
 
-    pairs = [(pid, basis) for pid in bases for bid, basis in bases.items() if bid != pid]
-    assert pairs, "no mismatched pairs available"
-    for producer_id, basis in pairs:
-        with pytest.raises(ValueError, match="two producer identities"):
-            ac.LegEligibility(fluid="water", leg="chf", entry_id=producer_id,
-                              eligible=True, gravity_basis=basis)
+    accepted = ac._registry_gravity_bases()
+    assert set(accepted) == {"two_phase.chf.shah_1987"}, (
+        f"the CHF producer population must be exactly the adopted CHF entry; got "
+        f"{sorted(accepted)}. If it has widened, hole 1 has reopened."
+    )
+
+    foreign = [
+        ac.GravityBasis.from_entry(e)
+        for e in tp.TWO_PHASE_CORRELATIONS
+        if e.kind != "chf"
+        and getattr(getattr(e, "applicability_spec", None), "reference_gravity_m_s2", None)
+    ]
+    assert foreign, "no non-CHF entry carries a gravity, so this test proves nothing"
+
+    producers = ["MADE-UP", *accepted]
+    for basis in foreign:
+        for producer_id in producers:
+            with pytest.raises(
+                TypeError, match="constructible only by the computation"
+            ):
+                ac.LegEligibility(fluid="ammonia", leg="chf", entry_id=producer_id,
+                                  eligible=True, violations=(), gravity_basis=basis)
 
 
 def test_f02_aligned_identities_still_construct_and_serialise_one_producer():
@@ -959,8 +978,8 @@ def test_f02_aligned_identities_still_construct_and_serialise_one_producer():
     emit a producer id in the record that differs from the one in its basis.
     """
     real = _real_basis()
-    ok = ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
-                           eligible=True, gravity_basis=real)
+    ok = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    assert ok is not None
     record = ok.as_record()
     assert record["entry_id"] == record["gravity_basis"]["entry_id"] == real.entry_id, (
         "one record, one producer identity — the contradiction is what F-02 reported"
@@ -971,3 +990,152 @@ def test_f02_aligned_identities_still_construct_and_serialise_one_producer():
     assert leg is not None
     rec = leg.as_record()
     assert rec["entry_id"] == rec["gravity_basis"]["entry_id"]
+
+
+# --------------------------------------------------------------------------------------
+# D100 — the door, and a DERIVED enumeration of the routes through it
+# --------------------------------------------------------------------------------------
+
+def _recompute(record):
+    """What the computation says for this record's own case, independently."""
+    return ac.assess_leg(record.fluid, record.leg, gravity_m_s2=_MICROGRAVITY,
+                         **_FULL_CASE)
+
+
+def test_d100_every_object_creation_protocol_is_enumerated_and_reported():
+    """**The derived witness.** Enumerate the PROTOCOLS, not the routes I thought of.
+
+    Round 2's lesson was that a listed surface goes stale when a sixth name appears. The
+    same applies here: naming ``LegEligibility(...)`` and stopping would miss whatever
+    else Python offers. So this walks the standard ways an object of a type can come into
+    existence and classifies each one, and **reports any it could not evaluate** rather
+    than silently covering less than it claims -- which is the behaviour Cowork's rebuilt
+    M5 showed when it found its own fixture underspecified.
+
+    **Two routes were found this way and neither by inspection.** ``dataclasses.replace``
+    carried a mint held as a FIELD, so a minted record could be replayed with a
+    caller-chosen ``eligible`` -- which is why the mint is now a SCOPE, which cannot be
+    copied off an existing record. And ``object.__new__`` bypasses ``__init__`` entirely;
+    that one is unclosable in Python and is DISCLOSED in the module rather than claimed
+    shut. Both were reported by this witness within minutes of it existing.
+    """
+    import copy
+    import pickle
+
+    minted = ac.assess_leg("ammonia", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert minted is not None and minted.eligible is False
+
+    routes = {}
+
+    # 1. the ordinary constructor
+    try:
+        ac.LegEligibility(fluid="ammonia", leg="chf", entry_id=_ADOPTED_CHF.id,
+                          eligible=True, violations=(),
+                          gravity_basis=_real_basis())
+        routes["constructor"] = ("PRODUCED", None)
+    except Exception as exc:
+        routes["constructor"] = ("refused", type(exc).__name__)
+
+    # 2. dataclasses.replace -- carries the mint forward
+    try:
+        dataclasses.replace(minted, eligible=True, violations=())
+        routes["dataclasses.replace"] = ("PRODUCED", None)
+    except Exception as exc:
+        routes["dataclasses.replace"] = ("refused", type(exc).__name__)
+
+    # 3. copy.replace -- the 3.13+ protocol, which routes through __replace__
+    try:
+        copy.replace(minted, eligible=True, violations=())
+        routes["copy.replace"] = ("PRODUCED", None)
+    except Exception as exc:
+        routes["copy.replace"] = ("refused", type(exc).__name__)
+
+    # 4. shallow and deep copy -- bypass __init__ entirely
+    for name, fn in (("copy.copy", copy.copy), ("copy.deepcopy", copy.deepcopy)):
+        try:
+            clone = fn(minted)
+            routes[name] = ("PRODUCED-COPY", clone)
+        except Exception as exc:
+            routes[name] = ("refused", type(exc).__name__)
+
+    # 4. pickle round-trip
+    try:
+        routes["pickle"] = ("PRODUCED-COPY", pickle.loads(pickle.dumps(minted)))
+    except Exception as exc:
+        routes["pickle"] = ("refused", type(exc).__name__)
+
+    # 5. object.__new__ with a hand-built __dict__ -- the rawest route there is
+    try:
+        raw = object.__new__(type(minted))
+        object.__setattr__(raw, "__dict__", {**minted.__dict__, "eligible": True,
+                                            "violations": ()})
+        routes["object.__new__"] = ("PRODUCED-RAW", raw)
+    except Exception as exc:
+        routes["object.__new__"] = ("refused", type(exc).__name__)
+
+    # THE VERDICT. A route that PRODUCES a record asserting an outcome the computation
+    # contradicts is a hole. A route that only clones a minted record faithfully is not.
+    # object.__new__ + __dict__ bypasses __init__ and Python cannot prevent it for any
+    # type. It is a KNOWN, DISCLOSED residual rather than a hole -- the module says so in
+    # its own text, and this asserts the disclosure so the claim cannot quietly inflate.
+    import pathlib as _pl
+    module_text = _pl.Path(ac.__file__).read_text(encoding="utf-8")
+    assert "THE ONE ROUTE THAT REMAINS, DISCLOSED RATHER THAN CLAIMED SHUT" in module_text, (
+        "the unclosable raw-construction route must stay disclosed in the module, under "
+        "a heading a reader cannot miss. The first version of this check accepted any "
+        "mention of 'object.__new__' plus the word 'disclosed' anywhere, which deleting "
+        "the heading still satisfied."
+    )
+    disclosed = {"object.__new__"}
+
+    holes = []
+    for name, (kind, payload) in routes.items():
+        if name in disclosed:
+            continue
+        if kind == "PRODUCED":
+            holes.append(f"{name}: constructed a caller-specified CHF outcome")
+        elif kind in ("PRODUCED-COPY", "PRODUCED-RAW"):
+            truth = _recompute(minted)
+            if (payload.eligible, tuple(payload.violations)) != (
+                    truth.eligible, tuple(truth.violations)):
+                holes.append(
+                    f"{name}: yielded eligible={payload.eligible!r} while the "
+                    f"computation says {truth.eligible!r}")
+    assert not holes, (
+        "routes into a CHF-dependent record that a caller can steer:\n  "
+        + "\n  ".join(holes)
+        + f"\n(all routes evaluated: { {k: v[0] for k, v in routes.items()} })"
+    )
+
+    # And the enumeration must be believable: every route reported a definite outcome.
+    unevaluated = [n for n, (k, _) in routes.items() if k not in
+                   ("PRODUCED", "PRODUCED-COPY", "PRODUCED-RAW", "refused")]
+    assert not unevaluated, f"routes this witness could not evaluate: {unevaluated}"
+    assert len(routes) >= 7, f"only {len(routes)} routes enumerated"
+
+
+def test_d100_the_two_reported_instances_are_unconstructible():
+    """The negative controls, verbatim from the finding."""
+    from orbital_thermal.registry import two_phase as tp
+
+    dp = next(e for e in tp.TWO_PHASE_CORRELATIONS
+              if e.id == "two_phase.dp.lockhart_martinelli_chisholm")
+    with pytest.raises(TypeError, match="constructible only by the computation"):
+        ac.LegEligibility(fluid="ammonia", leg="chf", entry_id=dp.id, eligible=True,
+                          violations=(), gravity_basis=ac.GravityBasis.from_entry(dp))
+
+    real = _real_basis()
+    with pytest.raises(TypeError, match="constructible only by the computation"):
+        ac.LegEligibility(fluid="ammonia", leg="chf", entry_id=real.entry_id,
+                          eligible=True, violations=(), gravity_basis=real)
+
+
+def test_d100_assess_leg_still_produces_valid_records():
+    """**The positive control.** The computation still works and still computes."""
+    at_1g = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    micro = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert at_1g is not None and micro is not None
+    assert at_1g.eligible is True and micro.eligible is False
+    assert {v.axis for v in micro.violations} == {Axis.ORIENTATION}
+    assert at_1g.gravity_basis == _real_basis()
+    assert at_1g.as_record()["entry_id"] == _ADOPTED_CHF.id

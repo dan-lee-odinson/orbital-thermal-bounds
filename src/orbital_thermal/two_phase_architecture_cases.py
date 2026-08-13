@@ -69,6 +69,7 @@ consumer, which is why it is not taken unilaterally at S5.
 
 from __future__ import annotations
 
+import contextlib as _contextlib
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -160,6 +161,12 @@ def _registry_gravity_bases(
     """
     bases: dict[str, GravityBasis] = {}
     for entry in (REGISTRY_ENTRIES if entries is None else entries):
+        # D100, hole 1: this filtered on NEITHER kind NOR status, so a pressure-drop
+        # correlation and a NOT_RANK_ELIGIBLE entry were both accepted as CHF producers.
+        # Filtering is not a fourth check on the caller -- it makes the helper's own
+        # claim true. The mint is what closes the boundary.
+        if entry.kind not in CHF_DEPENDENT_LEGS or entry.status not in ADOPTED_FOR_RANKING:
+            continue
         try:
             bases[entry.id] = GravityBasis.from_entry(entry)
         except ValueError:
@@ -167,12 +174,52 @@ def _registry_gravity_bases(
     return bases
 
 
+#: **D100: the minting scope.**
+#:
+#: A FLAG, not a field. The first shape was a token carried as a dataclass field, and the
+#: derived witness caught it within minutes: ``dataclasses.replace`` copies every field,
+#: so a minted record could be replayed with a caller-chosen ``eligible`` and the token
+#: came along for the ride. A scope cannot be copied off an existing record.
+_MINTING = False
+
+
+@_contextlib.contextmanager
+def _minting():
+    global _MINTING
+    previous, _MINTING = _MINTING, True
+    try:
+        yield
+    finally:
+        _MINTING = previous
+
+
 @dataclass(frozen=True)
 class LegEligibility:
     """Whether one fluid is rank-eligible on one leg, and the evidence for it.
 
-    **This type refuses two reductions**, and both refusals are the criteria rather than
-    defensive programming:
+    **D100: a CHF-dependent record is constructible ONLY by the computation that
+    produces it.** Three review rounds attacked this boundary field by field -- the basis
+    was fabricable (round 1), the producer id was free of the basis (round 2), the
+    outcome and the producer's kind were free of both (round 3) -- and every repair was
+    witnessed against its own falsifiers and looked complete when written. That is the
+    evidence the boundary cannot be closed field by field, so the Director ruled the door
+    shut rather than guarded: :func:`assess_leg` mints, and direct construction refuses.
+
+    Nothing needs authenticating if nothing is caller-supplied. The checks below are kept
+    because they are witnessed and cost nothing, but they are no longer the boundary --
+    the mint is.
+
+    **THE ONE ROUTE THAT REMAINS, DISCLOSED RATHER THAN CLAIMED SHUT.**
+    ``object.__new__(LegEligibility)`` followed by writing ``__dict__`` bypasses
+    ``__init__`` entirely, so no ``__post_init__`` check can see it. Python offers no way
+    to prevent that for any type. It was found by the derived witness rather than by
+    inspection, and it is recorded here because the alternative -- saying the boundary is
+    closed -- would be the overclaim this module has already had to retract once. What the
+    mint buys is that every ORDINARY route refuses: the constructor,
+    ``dataclasses.replace``, and ``copy.replace``. Reaching for ``object.__new__`` is a
+    deliberate act no consumer performs by accident.
+
+    **This type also refuses two reductions**, both criteria rather than defensive code:
 
     * a CHF-dependent leg cannot be *constructed* without a :class:`GravityBasis` (S5-4);
     * a CHF-dependent leg cannot be *read as a bool* at all (S5-5), because that is the
@@ -186,9 +233,35 @@ class LegEligibility:
     violations: tuple[Violation, ...] = ()
     gravity_basis: GravityBasis | None = None
 
+    def __replace__(self, **changes: object) -> LegEligibility:
+        """``dataclasses.replace`` is a construction route and it carried the mint.
+
+        Found by enumerating the object-creation protocols rather than the routes I
+        thought of. **This method is NOT load-bearing and cannot be witnessed**: both
+        ``dataclasses.replace`` and ``copy.replace`` end in ``__init__``, where the
+        minting scope refuses them first, so disabling this method changes no outcome.
+        It is kept for the message it gives a caller, and that redundancy is stated here
+        rather than left for a reviewer to discover as an unwitnessed guard.
+        """
+        if self.leg in CHF_DEPENDENT_LEGS:
+            raise TypeError(
+                f"{self.fluid}/{self.leg}: a CHF-dependent eligibility cannot be "
+                "replaced. It would inherit the mint of the record it was copied from "
+                "while carrying values the computation never produced (D100). Re-run "
+                "assess_leg."
+            )
+        return LegEligibility(**{**self.__dict__, **changes})
+
     def __post_init__(self) -> None:
         if self.leg not in CHF_DEPENDENT_LEGS:
             return
+        if not _MINTING:
+            raise TypeError(
+                f"{self.fluid}/{self.leg}: a CHF-dependent eligibility is constructible "
+                "only by the computation that produces it. Call assess_leg; its "
+                "`eligible` and `violations` are computed from the case and the "
+                "registry, and a caller-supplied outcome is what D100 removed."
+            )
         # --- Sol's F-04. S5-4 forbids FIVE shapes and __post_init__ rejected one. ------
         # Absent was refused; empty, defaulted, caller-supplied and caller-overridden all
         # constructed. A record built around a caller's basis fields is a record whose
@@ -362,14 +435,15 @@ def assess_leg(
         if v.consequence in (Consequence.DE_RANK, Consequence.REJECT, Consequence.BLOCK)
     )
     basis = GravityBasis.from_entry(entry) if leg in CHF_DEPENDENT_LEGS else None
-    return LegEligibility(
-        fluid=fluid,
-        leg=leg,
-        entry_id=entry.id,
-        eligible=not disqualifying,
-        violations=violations,
-        gravity_basis=basis,
-    )
+    with _minting():
+        return LegEligibility(
+            fluid=fluid,
+            leg=leg,
+            entry_id=entry.id,
+            eligible=not disqualifying,
+            violations=violations,
+            gravity_basis=basis,
+        )
 
 
 def assess_fluid(
