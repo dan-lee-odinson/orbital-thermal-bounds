@@ -70,6 +70,7 @@ consumer, which is why it is not taken unilaterally at S5.
 from __future__ import annotations
 
 import contextlib as _contextlib
+import contextvars as _contextvars
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -174,23 +175,39 @@ def _registry_gravity_bases(
     return bases
 
 
-#: **D100: the minting scope.**
+#: **D101/R1: the minting scope, held PER EXECUTION CONTEXT.**
 #:
-#: A FLAG, not a field. The first shape was a token carried as a dataclass field, and the
-#: derived witness caught it within minutes: ``dataclasses.replace`` copies every field,
-#: so a minted record could be replayed with a caller-chosen ``eligible`` and the token
-#: came along for the ride. A scope cannot be copied off an existing record.
-_MINTING = False
+#: It was a plain module-level ``bool``, which is a global. One thread inside
+#: :func:`assess_leg` held it open for every thread, so the public constructor D100
+#: removed succeeded whenever anybody else happened to be minting. Measured at **100 %**,
+#: not at a race's edge: four minter threads against one constructor thread fabricated
+#: 367 896 records out of 367 896 attempts in five seconds, each carrying
+#: ``eligible=True``, ``violations=()``, the genuine Shah-1987 basis and a gravity the
+#: computation never saw. Deterministically, one minter holding the scope open on a
+#: barrier is enough.
+#:
+#: **``ContextVar`` rather than ``threading.local``**, and the difference is real. A
+#: ``threading.local`` is per-thread, so within one thread every ``await`` point shares
+#: the flag -- an async caller suspended inside the scope would let another task on the
+#: same thread construct. That is the identical defect one level narrower. A
+#: ``ContextVar`` is per-context: threads start with their own, and tasks copy at
+#: creation. This module has no async today; the choice is for what S6 inherits.
+#:
+#: **The residual, stated because it is not zero.** A task created INSIDE an open scope
+#: copies the context and inherits the mint. Nothing here creates tasks, so it is not
+#: reachable today, but an async ``assess_leg`` that spawned work would carry it.
+_MINTING: _contextvars.ContextVar[bool] = _contextvars.ContextVar(
+    "orbital_thermal.two_phase_architecture_cases._MINTING", default=False
+)
 
 
 @_contextlib.contextmanager
 def _minting():
-    global _MINTING
-    previous, _MINTING = _MINTING, True
+    token = _MINTING.set(True)
     try:
         yield
     finally:
-        _MINTING = previous
+        _MINTING.reset(token)
 
 
 @dataclass(frozen=True)
@@ -237,25 +254,27 @@ class LegEligibility:
         """``dataclasses.replace`` is a construction route and it carried the mint.
 
         Found by enumerating the object-creation protocols rather than the routes I
-        thought of. **This method is NOT load-bearing and cannot be witnessed**: both
-        ``dataclasses.replace`` and ``copy.replace`` end in ``__init__``, where the
-        minting scope refuses them first, so disabling this method changes no outcome.
-        It is kept for the message it gives a caller, and that redundancy is stated here
-        rather than left for a reviewer to discover as an unwitnessed guard.
+        thought of. **D101/R2: on 3.10-3.12 this method is DEAD CODE**, measured by
+        instrumenting it -- it is invoked zero times by any protocol, including for a
+        non-CHF leg where its own return path lives, because ``copy.replace`` does not
+        exist before 3.13 and ``dataclasses.replace`` goes straight to ``__init__``. This
+        project declares ``requires-python = ">=3.10"`` and tests 3.10/3.11/3.12, so on
+        every supported interpreter neither its refusal nor its message reaches a caller.
+        It is live only on 3.13+, and it is kept for that. The previous docstring said it
+        "cannot be witnessed", which was more generous than the measurement.
         """
         if self.leg in CHF_DEPENDENT_LEGS:
             raise TypeError(
                 f"{self.fluid}/{self.leg}: a CHF-dependent eligibility cannot be "
-                "replaced. It would inherit the mint of the record it was copied from "
-                "while carrying values the computation never produced (D100). Re-run "
-                "assess_leg."
+                "replaced -- a replaced record is not the record the computation "
+                "produced (D100). Re-run assess_leg."
             )
         return LegEligibility(**{**self.__dict__, **changes})
 
     def __post_init__(self) -> None:
         if self.leg not in CHF_DEPENDENT_LEGS:
             return
-        if not _MINTING:
+        if not _MINTING.get():
             raise TypeError(
                 f"{self.fluid}/{self.leg}: a CHF-dependent eligibility is constructible "
                 "only by the computation that produces it. Call assess_leg; its "

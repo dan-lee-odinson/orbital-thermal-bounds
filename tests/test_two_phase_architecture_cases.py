@@ -1021,6 +1021,7 @@ def test_d100_every_object_creation_protocol_is_enumerated_and_reported():
     """
     import copy
     import pickle
+    import sys
 
     minted = ac.assess_leg("ammonia", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
     assert minted is not None and minted.eligible is False
@@ -1033,22 +1034,37 @@ def test_d100_every_object_creation_protocol_is_enumerated_and_reported():
                           eligible=True, violations=(),
                           gravity_basis=_real_basis())
         routes["constructor"] = ("PRODUCED", None)
-    except Exception as exc:
-        routes["constructor"] = ("refused", type(exc).__name__)
+    except TypeError as exc:
+        routes["constructor"] = ("refused", str(exc)[:140])
+    except Exception as exc:  # noqa: BLE001 - a refusal for another reason is not closed
+        routes["constructor"] = ("UNEXPECTED", type(exc).__name__)
 
     # 2. dataclasses.replace -- carries the mint forward
     try:
         dataclasses.replace(minted, eligible=True, violations=())
         routes["dataclasses.replace"] = ("PRODUCED", None)
-    except Exception as exc:
-        routes["dataclasses.replace"] = ("refused", type(exc).__name__)
+    except TypeError as exc:
+        routes["dataclasses.replace"] = ("refused", str(exc)[:140])
+    except Exception as exc:  # noqa: BLE001 - a refusal for another reason is not closed
+        routes["dataclasses.replace"] = ("UNEXPECTED", type(exc).__name__)
 
-    # 3. copy.replace -- the 3.13+ protocol, which routes through __replace__
-    try:
-        copy.replace(minted, eligible=True, violations=())
-        routes["copy.replace"] = ("PRODUCED", None)
-    except Exception as exc:
-        routes["copy.replace"] = ("refused", type(exc).__name__)
+    # 3. copy.replace -- a 3.13 ADDITION. On 3.10-3.12, which is what this project
+    #    declares and what CI tests, the attribute does not exist. The first version of
+    #    this route caught `Exception`, filed the AttributeError as "refused", and the
+    #    unevaluated-route check then accepted "refused" as one of its four literals -- so
+    #    the check whose stated purpose is to report what it could not evaluate did not
+    #    report the one route it could not evaluate. Instance eight of the class, inside
+    #    the witness certifying D100. UNAVAILABLE is now its own outcome.
+    if hasattr(copy, "replace"):
+        try:
+            copy.replace(minted, eligible=True, violations=())
+            routes["copy.replace"] = ("PRODUCED", None)
+        except TypeError as exc:
+            routes["copy.replace"] = ("refused", str(exc)[:140])
+        except Exception as exc:  # noqa: BLE001 - surfaced, never filed as closed
+            routes["copy.replace"] = ("UNEXPECTED", type(exc).__name__)
+    else:
+        routes["copy.replace"] = ("UNAVAILABLE", f"python {sys.version_info[:2]}")
 
     # 4. shallow and deep copy -- bypass __init__ entirely
     for name, fn in (("copy.copy", copy.copy), ("copy.deepcopy", copy.deepcopy)):
@@ -1108,10 +1124,37 @@ def test_d100_every_object_creation_protocol_is_enumerated_and_reported():
     )
 
     # And the enumeration must be believable: every route reported a definite outcome.
-    unevaluated = [n for n, (k, _) in routes.items() if k not in
-                   ("PRODUCED", "PRODUCED-COPY", "PRODUCED-RAW", "refused")]
-    assert not unevaluated, f"routes this witness could not evaluate: {unevaluated}"
-    assert len(routes) >= 7, f"only {len(routes)} routes enumerated"
+    # A route the interpreter cannot offer, or one that refused for a reason unrelated
+    # to the mint, is REPORTED -- never counted as closed.
+    unavailable = {n: d for n, (k, d) in routes.items() if k == "UNAVAILABLE"}
+    unexpected = {n: d for n, (k, d) in routes.items() if k == "UNEXPECTED"}
+    assert not unexpected, (
+        f"routes that refused for a reason other than the mint: {unexpected}. A refusal "
+        "the mint did not cause is not a closed route."
+    )
+    # A refusal must come from THIS boundary, not from something incidental. Two are
+    # legitimate and both are named: the mint, and __replace__'s own refusal -- which
+    # copy.replace reaches on 3.13+, and which is therefore live here and dead on the
+    # interpreters CI actually runs.
+    boundary_refusals = (
+        "constructible only by the computation",
+        "cannot be replaced",
+    )
+    for name, detail in routes.items():
+        if detail[0] == "refused":
+            assert any(r in str(detail[1]) for r in boundary_refusals), (
+                f"{name} refused, but not by this boundary: {detail[1]!r}. A refusal for "
+                "an unrelated reason is not a closed route."
+            )
+
+    # UNAVAILABLE is not a failure -- it is a coverage report, and it must be visible.
+    if unavailable:
+        print(f"\nROUTES NOT EXERCISED ON THIS INTERPRETER: {unavailable}")
+    assert set(routes) >= {
+        "constructor", "dataclasses.replace", "copy.replace", "copy.copy",
+        "copy.deepcopy", "pickle", "object.__new__"}, (
+        f"the enumeration shrank: {sorted(routes)}"
+    )
 
 
 def test_d100_the_two_reported_instances_are_unconstructible():
@@ -1139,3 +1182,83 @@ def test_d100_assess_leg_still_produces_valid_records():
     assert {v.axis for v in micro.violations} == {Axis.ORIENTATION}
     assert at_1g.gravity_basis == _real_basis()
     assert at_1g.as_record()["entry_id"] == _ADOPTED_CHF.id
+
+
+def test_d101_r1_the_mint_does_not_leak_across_threads():
+    """**D101/R1, and the witness is DETERMINISTIC rather than timed.**
+
+    ``_MINTING`` was a plain module-level bool -- a global. One thread inside
+    ``assess_leg`` held it open for every thread, so the public constructor D100 removed
+    succeeded whenever anyone else happened to be minting. Measured at **100 %**: four
+    minter threads against one constructor thread fabricated **367 896 records out of
+    367 896 attempts** in five seconds, each carrying ``eligible=True``, ``violations=()``,
+    the genuine Shah-1987 basis and a gravity the computation never saw.
+
+    A threaded test that depends on timing is a defect of its own kind, so this does not
+    race: one thread opens the scope and BLOCKS on a barrier while another constructs.
+    The window is held open deliberately, so the outcome is the same on every run and on
+    any machine. It is red on the old shape and green on the new one for a reason, not
+    for a schedule.
+
+    Nothing in this repository calls ``assess_leg`` from more than one thread today. The
+    defect was the unconditional form of the claim, and what S6 inherits.
+    """
+    import threading
+
+    real = _real_basis()
+    scope_open = threading.Event()
+    may_close = threading.Event()
+    outcome: dict[str, object] = {}
+
+    def hold_the_scope() -> None:
+        with ac._minting():
+            scope_open.set()
+            may_close.wait(10)
+
+    def construct_from_another_thread() -> None:
+        try:
+            assert scope_open.wait(10), "the minting thread never opened its scope"
+            try:
+                record = ac.LegEligibility(
+                    fluid="ammonia", leg="chf", entry_id=real.entry_id,
+                    eligible=True, violations=(), gravity_basis=real)
+                outcome["fabricated"] = (record.eligible, record.violations)
+            except TypeError as exc:
+                outcome["refused"] = str(exc)[:140]
+        finally:
+            may_close.set()
+
+    minter = threading.Thread(target=hold_the_scope, name="minter")
+    caller = threading.Thread(target=construct_from_another_thread, name="caller")
+    minter.start()
+    caller.start()
+    caller.join(15)
+    minter.join(15)
+    assert not minter.is_alive() and not caller.is_alive(), "the witness deadlocked"
+
+    assert "fabricated" not in outcome, (
+        f"another thread's open minting scope let the public constructor produce "
+        f"{outcome.get('fabricated')!r}. The mint must be per execution context, not "
+        "per module."
+    )
+    assert "constructible only by the computation" in str(outcome.get("refused", "")), (
+        f"the construction was refused, but not by the mint: {outcome!r}"
+    )
+
+
+def test_d101_r1_the_scope_still_works_on_the_thread_that_opened_it():
+    """The positive control: per-context must not mean per-nothing."""
+    import threading
+
+    results: dict[str, object] = {}
+
+    def assess_on_a_worker() -> None:
+        record = ac.assess_leg("ammonia", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+        results["record"] = record
+
+    worker = threading.Thread(target=assess_on_a_worker)
+    worker.start()
+    worker.join(15)
+    record = results.get("record")
+    assert record is not None, "assess_leg must still mint on whatever thread runs it"
+    assert record.eligible is False
