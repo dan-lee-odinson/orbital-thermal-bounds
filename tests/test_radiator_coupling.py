@@ -248,12 +248,19 @@ def test_f01_d14_is_blocked_on_the_coupling_again_and_says_the_claim_moved():
 # D87 — the disclosure still travels with whatever numbers exist
 # ======================================================================================
 
+def _one_point():
+    """One real operating point, so the root route can be exercised without a solve."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        return C.find_operating_points(demo_case(), PUMP, **FLOWS, samples=240)[:1]
+
+
 def _solution() -> RC.CoupledSolution:
     """A CoupledSolution built directly: no case can be coupled any more."""
     return RC.CoupledSolution(
         _case=demo_case(), _operating_points=(), _condensing_temperature_K=432.62,
         _saturation_pressure_Pa=6.099e5, _rejected_W=1234.0,
-        iterations=1, converged=True)
+        _iterations=1, _converged=True)
 
 
 def test_d87_the_disclosure_states_the_widening_and_why():
@@ -309,7 +316,7 @@ def test_d87_coupled_loop_is_not_touched():
 # ======================================================================================
 
 def test_f06_s5_13_is_not_discharged_asserted_across_the_modules_that_decide_it():
-    """**F-06's replacement.** The deleted test inferred absence and could never notice.
+    """**F-06's replacement.** The old test inferred absence and could never notice.
 
     ``test_s5_13_is_vacuous_and_says_so`` asserted that S5 had not built the coupling, by
     reading ``coupled_loop.sink_collapse_conflicts`` — in a packet that ships
@@ -349,7 +356,7 @@ def test_a_state_outside_a_declared_basis_is_refused_not_extrapolated():
 def test_non_uniqueness_is_never_resolved_by_picking():
     s = _solution()
     with pytest.raises(ValueError, match="forbids selecting"):
-        _ = s.root_kg_s
+        s.disclosed_root()
 
 
 def test_the_radiator_boundary_refuses_unphysical_inputs():
@@ -358,3 +365,177 @@ def test_the_radiator_boundary_refuses_unphysical_inputs():
         with pytest.raises(ValueError):
             RC.RadiatorBoundary(**{
                 "area_m2": 0.8, "emissivity": 0.85, "sink_temperature_K": 250.0, **bad})
+
+
+# ======================================================================================
+# F-03 — the public root route, and a witness that derives the surface
+# ======================================================================================
+
+def _public_values(obj):
+    """Every public name on an instance, with what it yields. **Derived, never listed.**
+
+    Zero-argument callables are invoked, because a method that returns a bare number is
+    as public a route as a property that does. Anything needing arguments is reported as
+    uncalled rather than skipped silently.
+    """
+    seen = {}
+    for name in dir(obj):
+        if name.startswith("_"):
+            continue
+        try:
+            value = getattr(obj, name)
+        except Exception as exc:  # pragma: no cover - a raising accessor is not a route
+            seen[name] = ("raised", exc)
+            continue
+        if callable(value):
+            try:
+                seen[name] = ("called", value())
+            except TypeError:
+                seen[name] = ("needs-args", None)
+            except Exception as exc:
+                seen[name] = ("raised", exc)
+        else:
+            seen[name] = ("attribute", value)
+    return seen
+
+
+def _carries_disclosure(value) -> bool:
+    if isinstance(value, str):
+        return RC.DEMONSTRATION_DISCLOSURE in value
+    fields = getattr(value, "_fields", None)
+    if fields:
+        return any(
+            isinstance(v, str) and RC.DEMONSTRATION_DISCLOSURE in v for v in value)
+    return False
+
+
+def test_f03_every_public_route_out_of_coupledsolution_is_derived_and_disclosed():
+    """**F-03, ruled at D92, and the second clause matters more than the first.**
+
+    ``root_kg_s`` was a public property returning ``0.046404853853`` bare while the
+    class's docstring said the coupled numbers were reachable only through ``disclosed``
+    or ``render``. The previous public-surface witness checked a HAND-LISTED set of five
+    names and omitted the sixth — the one the discharge itself used — so it went stale the
+    moment a name was added, and did.
+
+    This enumerates instead. Every public name on the instance is discovered by
+    reflection, every zero-argument callable is invoked, and each result must either
+    carry the disclosure or not be a coupled number at all. A sixth name added tomorrow
+    is caught without editing this test.
+    """
+    values = _public_values(_solution())
+    assert values, "the surface must not be empty, or this witness proves nothing"
+
+    offenders = []
+    for name, (how, value) in values.items():
+        if how == "needs-args":
+            offenders.append(f"{name}: public route this witness could not evaluate")
+            continue
+        if isinstance(value, bool) or value is None:
+            continue
+        if isinstance(value, (int, float)):
+            offenders.append(f"{name}: yields the bare number {value!r}")
+        elif isinstance(value, (tuple, list)) and not _carries_disclosure(value):
+            if any(isinstance(x, (int, float)) and not isinstance(x, bool)
+                   for x in value):
+                offenders.append(f"{name}: yields bare numbers {value!r}")
+        elif not _carries_disclosure(value) and how != "raised":
+            offenders.append(f"{name}: yields {type(value).__name__} without disclosure")
+    assert not offenders, (
+        "public routes that hand back coupled quantities without the disclosure:\n  "
+        + "\n  ".join(offenders)
+    )
+
+    # And the root is still obtainable — closed, not sealed shut.
+    single = RC.CoupledSolution(
+        _case=demo_case(), _operating_points=_one_point(), _condensing_temperature_K=432.6,
+        _saturation_pressure_Pa=6.099e5, _rejected_W=1234.0, _iterations=4,
+        _converged=True)
+    root = single.disclosed_root()
+    assert root.disclosure == RC.DEMONSTRATION_DISCLOSURE
+    assert root.root_kg_s > 0
+
+
+def test_f03_the_bare_public_root_property_is_gone():
+    """The first clause: the route ceased to be public rather than being annotated."""
+    assert not hasattr(RC.CoupledSolution, "root_kg_s"), (
+        "root_kg_s is public again; Sol's fix was that it carries the disclosure or "
+        "ceases to be public, and an annotated bare number is neither"
+    )
+
+
+def test_f03_the_same_shape_swept_over_the_other_new_public_types():
+    """**The sweep D92 asked for, reported either way.**
+
+    ``S4_3_Verdict`` and ``D14State`` are new public types from the D90 commit. Neither
+    carries a coupled quantity, so neither owes the disclosure — what they owe is that
+    their verdict-bearing member cannot be collapsed, and that is already guarded: the
+    whole tuple refuses ``bool()``, and ``S4_3_Verdict.verdict`` is the UNEVALUABLE
+    sentinel which refuses it again.
+
+    **What the sweep DID find is named rather than quietly fixed:** ``.label`` and
+    ``.state`` are ordinary non-empty strings, so ``if verdict.label:`` and
+    ``if state.state:`` are true for every value they can take. That is weaker than the
+    tuple guard beside it. It is not the F-03 defect — no number and no disclosure is
+    dropped, and a string that must be compared to a known value is not a claim that
+    collapses silently — but it is the same family, and it is recorded here rather than
+    repaired under a ruling that did not ask for it.
+    """
+    verdict = RC.s4_3_state(C.RunKind.REFERENCE_CASE)
+    state = RC.d14_state()
+
+    for result in (verdict, state):
+        with pytest.raises(TypeError, match="no bare truth value"):
+            bool(result)
+
+    # The verdict member is doubly guarded; the label is not, and that is the finding.
+    with pytest.raises(TypeError):
+        bool(verdict.verdict)
+    assert isinstance(verdict.label, str) and verdict.label
+    assert isinstance(state.state, str) and state.state
+
+    # Neither type carries a coupled number, so neither owes the disclosure.
+    for result in (verdict, state):
+        assert not any(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in result)
+
+
+def test_f06_nothing_asserts_s5_13_vacuity_again():
+    """**The guard the deletion needed.** A deletion with no guard silently returns.
+
+    F-06 was reported fixed once already: the replacement was written, and the obsolete
+    test was left in place beside it, green, asserting the opposite. Deleting it a second
+    time without a guard would leave exactly the same opening.
+
+    So the property is asserted rather than the absence trusted: no test in the package
+    may claim S5-13 is vacuous or unbuilt, and no module header may say so. The conflict
+    record itself stays untouched — it is the historical baseline, and reading it is fine;
+    what is forbidden is inferring S5-13's state from it.
+    """
+    import inspect
+    import pathlib
+
+    # THIS FUNCTION'S OWN LINES ARE EXCLUDED, and that is not a convenience.
+    # The first draft scanned every test file including this one and fired on its own
+    # docstring and its own detection code — a check tripping on the statement of the
+    # rule rather than on a breach of it. That is the fourth time this milestone; the
+    # range is computed rather than hard-coded so it cannot drift.
+    own_file = pathlib.Path(__file__).name
+    first, count = inspect.getsourcelines(test_f06_nothing_asserts_s5_13_vacuity_again)
+    own_range = range(count, count + len(first))
+
+    package = pathlib.Path(__file__).parent
+    offenders = []
+    for path in sorted(package.glob("test_*.py")):
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if path.name == own_file and n in own_range:
+                continue
+            lowered = line.lower()
+            if "def test_" in lowered and "vacuous" in lowered and "s5_13" in lowered:
+                offenders.append(f"{path.name}:{n}: {line.strip()[:80]}")
+            if "s5-13 is vacuous" in lowered:
+                offenders.append(f"{path.name}:{n}: header claims S5-13 vacuity")
+    assert not offenders, (
+        "S5-13 is NOT vacuous — the coupling is built and S5-13 is undischarged on both "
+        "legs, terminally. These re-assert the obsolete state:\n  " + "\n  ".join(offenders)
+    )

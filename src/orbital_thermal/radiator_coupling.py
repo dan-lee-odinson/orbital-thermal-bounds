@@ -276,6 +276,15 @@ class DisclosedCoupledResult(NamedTuple):
     condensing_temperature_K: float
     saturation_pressure_Pa: float
     rejected_W: float
+    iterations: int
+    converged: bool
+
+
+class DisclosedRoot(NamedTuple):
+    """A root and its disclosure. They leave together or the root does not leave."""
+
+    disclosure: str
+    root_kg_s: float
 
 
 @dataclass(frozen=True)
@@ -302,8 +311,8 @@ class CoupledSolution:
     _condensing_temperature_K: float
     _saturation_pressure_Pa: float
     _rejected_W: float
-    iterations: int
-    converged: bool
+    _iterations: int
+    _converged: bool
 
     def disclosed(self) -> DisclosedCoupledResult:
         """Every coupled quantity, bundled with the disclosure. The only public route."""
@@ -314,6 +323,8 @@ class CoupledSolution:
             condensing_temperature_K=self._condensing_temperature_K,
             saturation_pressure_Pa=self._saturation_pressure_Pa,
             rejected_W=self._rejected_W,
+            iterations=self._iterations,
+            converged=self._converged,
         )
 
     def render(self) -> str:
@@ -328,15 +339,24 @@ class CoupledSolution:
             f"{self._rejected_W:.1f} W; root(s) {roots}"
         )
 
-    @property
-    def root_kg_s(self) -> float:
-        """The single root, or a refusal. Non-uniqueness is S4-5's business, not a pick.
+    def disclosed_root(self) -> DisclosedRoot:
+        """The single root, WITH the disclosure. **Sol's F-03, ruled at D92.**
 
-        This returns a bare number, so it is deliberately NOT how a consumer obtains the
-        condensing state: it answers one question -- "which flow?" -- and the disclosure
-        travels with the state, through :meth:`disclosed`. A caller that wants the numbers
-        that produced this root has to take them disclosed.
+        ``root_kg_s`` was a public property returning ``0.046404853853`` bare, while this
+        class's own docstring said the coupled numbers were reachable only through
+        :meth:`disclosed` or :meth:`render`. That was not the D-19 private-field residual
+        -- it was the ordinary public route the tests, the certificate and the withdrawn
+        S4-3 discharge all used, and the docstring was false about it.
+
+        Sol's fix, adopted verbatim: the public root route carries the same disclosure as
+        every other coupled result, or ceases to be public. It does both -- the bare
+        property is gone, and what replaces it is disclosed.
+
+        Non-uniqueness is still S4-5's business and still refuses rather than picking.
         """
+        return DisclosedRoot(DEMONSTRATION_DISCLOSURE, self._root_kg_s())
+
+    def _root_kg_s(self) -> float:
         if len(self._operating_points) != 1:
             raise ValueError(
                 f"{len(self._operating_points)} operating points; S4-5 forbids selecting "
@@ -406,8 +426,8 @@ def solve_coupled(
         _condensing_temperature_K=t_cond,
         _saturation_pressure_Pa=coupled.pressure_Pa,
         _rejected_W=load,
-        iterations=iterations,
-        converged=converged,
+        _iterations=iterations,
+        _converged=converged,
     )
 
 

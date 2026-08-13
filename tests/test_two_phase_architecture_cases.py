@@ -6,9 +6,16 @@ Criteria file: ``ACCEPTANCE_CRITERIA_OTB-G005.md``. All fourteen criteria have a
 S5-5 is only PARTIALLY discharged -- ``LegEligibility.eligible`` is a public field, so the
 gravity basis can be dropped in one attribute access; the guard buys visibility, not
 impossibility, and ``test_s5_5_the_residual_public_eligible_field_is_recorded`` pins that
-so the claim cannot re-inflate. S5-13 is VACUOUS: it binds only if S5 builds the S4
-coupling, which it has not, and the test says so rather than reporting green on a
-condition never evaluated.
+so the claim cannot re-inflate (D-18, closing at S6).
+
+**S5-13 IS NOT VACUOUS AND THIS HEADER USED TO SAY IT WAS.** The coupling IS built
+(D85), and S5-13 is NOT DISCHARGED -- terminally, on both legs. The demonstration that
+once discharged it was a hybrid case and the discharge was withdrawn at D90/F-01; no
+consistent demonstration is available, because the only implemented pressure-drop
+correlation admits ``two_component`` only while a condensing state exists for a single
+substance only. The operative state lives in ``radiator_coupling`` and is asserted in
+``tests/test_radiator_coupling.py``; the test that used to assert vacuity here is
+deleted, not repaired (D90/F-06).
 
 **Every test below is named for the criterion it holds and fails when that criterion's own
 falsifier is introduced.** `OTB-G002` criterion 8 — every new check has been witnessed
@@ -645,23 +652,6 @@ def test_s5_12_s5_does_not_weaken_s4_3():
     module = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
     for claim in ("coupling is built", "S4-3 passes", "milestone is discharged"):
         assert claim not in module
-
-
-def test_s5_13_is_vacuous_and_says_so():
-    """**S5-13** binds only if S5 builds the coupling. It has not, and this records that.
-
-    D-14 permits S5, S6 or S7 to build it early and requires none of them to. A test that
-    PRETENDED to exercise a discharge would be worse than none: it would report green on a
-    condition that has never been evaluated.
-    """
-    from orbital_thermal import coupled_loop as C
-
-    assert C.sink_collapse_conflicts(), (
-        "the coupling appears to have been built. S5-13 then applies: the discharge is "
-        "measured on S4-3's own falsifier -- three sink temperatures producing three "
-        "roots differing by more than the solver tolerance -- and D-14's retirement "
-        "condition must be re-measured rather than asserted."
-    )
 
 
 # --------------------------------------------------------------------------------------
