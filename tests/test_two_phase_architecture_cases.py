@@ -912,3 +912,62 @@ def test_f04_from_entry_refuses_a_reference_gravity_with_no_basis_text():
     # And such an entry contributes no basis to the construction boundary, so a record
     # cannot be closed around it either.
     assert entry.id not in ac._registry_gravity_bases((entry,))
+
+
+# --------------------------------------------------------------------------------------
+# D97 / F-02 — one record, one producer identity
+# --------------------------------------------------------------------------------------
+
+def test_f02_a_real_basis_on_a_fabricated_producer_is_refused():
+    """**The cross-wiring round 1 left open.** A genuine basis, a producer that is not it.
+
+    ``LegEligibility(entry_id='MADE-UP', gravity_basis=from_entry(shah_1987))``
+    constructed, and ``as_record()`` serialised BOTH identities as valid: the record said
+    its producer was ``MADE-UP`` while its basis said ``two_phase.chf.shah_1987``. The
+    round-1 repair authenticated the basis against the registry and never bound it to the
+    field naming the correlation the eligibility came from. All six of its witnesses
+    aligned the two ids, so none of them could see this.
+    """
+    real = _real_basis()
+    with pytest.raises(ValueError, match="two producer identities"):
+        ac.LegEligibility(fluid="water", leg="chf", entry_id="MADE-UP",
+                          eligible=True, gravity_basis=real)
+
+
+def test_f02_a_real_basis_on_another_real_producer_is_refused():
+    """The same defect without any fabrication: two genuine registry entries, cross-wired.
+
+    Only one CHF entry yields a basis -- ``shah_2015`` and ``katto_ohno`` both refuse
+    ``from_entry`` for lack of a declared reference gravity -- so the other producers are
+    drawn from the entries that do declare one. Each pairing must refuse.
+    """
+    bases = ac._registry_gravity_bases()
+    assert len(bases) >= 2, "need at least two real bases to cross-wire"
+
+    pairs = [(pid, basis) for pid in bases for bid, basis in bases.items() if bid != pid]
+    assert pairs, "no mismatched pairs available"
+    for producer_id, basis in pairs:
+        with pytest.raises(ValueError, match="two producer identities"):
+            ac.LegEligibility(fluid="water", leg="chf", entry_id=producer_id,
+                              eligible=True, gravity_basis=basis)
+
+
+def test_f02_aligned_identities_still_construct_and_serialise_one_producer():
+    """**The negative control**, and the serialisation the finding was reported through.
+
+    A record whose two identities agree must still build, and ``as_record()`` must never
+    emit a producer id in the record that differs from the one in its basis.
+    """
+    real = _real_basis()
+    ok = ac.LegEligibility(fluid="water", leg="chf", entry_id=real.entry_id,
+                           eligible=True, gravity_basis=real)
+    record = ok.as_record()
+    assert record["entry_id"] == record["gravity_basis"]["entry_id"] == real.entry_id, (
+        "one record, one producer identity — the contradiction is what F-02 reported"
+    )
+
+    # And the real assessment path still produces records that satisfy it.
+    leg = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    assert leg is not None
+    rec = leg.as_record()
+    assert rec["entry_id"] == rec["gravity_basis"]["entry_id"]

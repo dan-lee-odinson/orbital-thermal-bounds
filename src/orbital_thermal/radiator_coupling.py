@@ -35,12 +35,14 @@ which sinks are admissible and does not carry the coupling; density carries it. 
 that had assumed pressure was the mechanism would have produced a coupling that ran and
 moved nothing.
 
-WHAT THIS DISCHARGES, AND THE THIRD STATE IT MUST NOT COLLAPSE
---------------------------------------------------------------
-S4-3 is discharged **on the machinery demonstration**, by its own falsifier: three sink
-temperatures, three roots differing by far more than the solver's convergence tolerance.
+WHAT THIS DISCHARGES -- NOTHING -- AND THE THIRD STATE IT MUST NOT COLLAPSE
+---------------------------------------------------------------------------
+**THIS HEADER USED TO SAY S4-3 WAS DISCHARGED ON THE MACHINERY DEMONSTRATION. IT IS NOT,
+AND THE WITHDRAWAL IS D90/F-01.** The demonstration that produced three separated roots
+was a hybrid case, and no consistent one is available under the implemented correlation
+set. S4-3 is UNEVALUABLE on BOTH legs, terminally, and this module discharges nothing.
 
-**On the device it is not discharged, and it is not failed either. It is UNEVALUABLE.**
+**On the device it is unevaluable for a second and independent reason.**
 ``solve_reference_case`` cannot build a characteristic at all: the pressure-drop
 correlation refuses this project's loop at 240 of 240 sampled flows, on ``composition``
 (single-component ammonia against a two-component basis) and ``orientation``
@@ -55,10 +57,13 @@ annotation that could not be read was made not-an-``int`` so no ``== 0`` could c
 into "not a member"; here, a criterion that cannot be evaluated is made not-a-``bool`` so
 no ``if discharged:`` can collapse it into "discharged".
 
-**D-14 THEREFORE DOES NOT RETIRE AT S5.** Its S8 pass-condition stands. What changes is
-what it is blocked on: no longer the coupling, which now exists, but the pressure-drop leg
-under D17. :func:`d14_state` says exactly that, and a test fails if this module ever
-claims otherwise.
+**D-14 THEREFORE DOES NOT RETIRE AT S5.** Its S8 pass-condition stands, and it is
+blocked on THE COUPLING -- the mechanism exists but has no case it can be demonstrated
+on. This header previously said the blocker was "no longer the coupling ... but the
+pressure-drop leg"; that was true between D85 and D90 and is not true now.
+:func:`d14_state` is the operative statement, and
+``test_f03_every_current_surface_agrees_with_the_operative_verdict`` compares this
+header against it rather than trusting either.
 """
 
 from __future__ import annotations
@@ -69,13 +74,57 @@ from typing import NamedTuple
 
 from . import coupled_loop as _cl
 from . import fluids as _fluids
+from .registry import two_phase as _tp
+from .registry.provenance import Status as _Status
 
 #: Stefan-Boltzmann, W/m^2/K^4 (CODATA, exact under the 2019 SI redefinition).
 STEFAN_BOLTZMANN = 5.670374419e-8
 
-#: The pressure-drop correlation's declared validity domain, in Pa. Read from the
-#: registry rather than restated, so this module cannot drift from the enforced bound.
-_DP_PRESSURE_DOMAIN = (1.0e5, 2.0e6)
+#: The registry key under which the pressure-drop correlation declares its pressure
+#: domain. Named as data so the resolution is auditable and so a renamed key fails loudly
+#: rather than silently falling back to a literal.
+_DP_PRESSURE_KEY = "P_Pa"
+
+
+def _dp_pressure_domain() -> tuple[float, float]:
+    """The adopted pressure-drop correlation's declared pressure domain, **resolved**.
+
+    **D97/F-04.** This module used to carry ``_DP_PRESSURE_DOMAIN = (1.0e5, 2.0e6)`` under
+    a comment claiming it was "read from the registry rather than restated, so this module
+    cannot drift from the enforced bound". It was a second literal. It happened to equal
+    the registry's ``P_Pa`` and nothing held it equal -- no test and no certificate row
+    bound them. The comment described a protection that did not exist, which is this
+    project's signature defect written into a source file.
+
+    Now it is resolved at the boundary, every call, from the entry that is actually
+    adopted. A missing, malformed or ambiguous range refuses rather than falling back:
+    a coupling that cannot find the bound it is enforcing must not proceed on a guess.
+    """
+    adopted = [
+        e for e in _tp.TWO_PHASE_CORRELATIONS
+        if e.kind == "dp" and e.status is _Status.RESOLVED
+    ]
+    if len(adopted) != 1:
+        raise CoupledCaseRefused(
+            f"{len(adopted)} pressure-drop correlations are adopted for ranking "
+            f"({', '.join(e.id for e in adopted)}); which one's declared pressure domain "
+            "bounds the coupling is a decision, not something this function may pick."
+        )
+    ranges = getattr(getattr(adopted[0], "domain", None), "ranges", None) or {}
+    declared = ranges.get(_DP_PRESSURE_KEY)
+    if declared is None or len(declared) != 2:
+        raise CoupledCaseRefused(
+            f"{adopted[0].id} declares no usable {_DP_PRESSURE_KEY} range "
+            f"({declared!r}). The coupling enforces the correlation's own bound and has "
+            "no bound of its own to fall back on."
+        )
+    low, high = (float(declared[0]), float(declared[1]))
+    if not (low < high):
+        raise CoupledCaseRefused(
+            f"{adopted[0].id} declares an inverted or empty {_DP_PRESSURE_KEY} range "
+            f"({low}, {high})."
+        )
+    return low, high
 
 
 @dataclass(frozen=True)
@@ -177,6 +226,15 @@ def _refuse_inconsistent_fluid(case: _cl.LoopCase, working_fluid: str) -> None:
         )
 
 
+#: Every physical property a ``LoopCase`` carries that is a function of the saturation
+#: state. **All of them are derived; none is retained.** Named as data so the witness can
+#: enumerate them rather than list them, and so adding a property to ``LoopCase`` without
+#: deriving it is visible here rather than silent.
+SATURATION_DEPENDENT_FIELDS: tuple[str, ...] = (
+    "pressure_Pa", "h_fg_J_kg", "rho_f", "rho_g", "mu_f", "mu_g",
+)
+
+
 def couple(
     case: _cl.LoopCase,
     boundary: RadiatorBoundary,
@@ -184,26 +242,40 @@ def couple(
     working_fluid: str,
     rejected_W: float | None = None,
 ) -> _cl.LoopCase:
-    """A copy of ``case`` whose condensing state is the one the radiator permits.
+    """A copy of ``case`` at the condensing state the radiator permits.
 
-    The saturated densities at ``T_cond`` replace the case's, and the saturation pressure
-    replaces its pressure. ``rejected_W`` defaults to the applied duty; a caller that has
-    already computed pump heat passes the total, which is what makes the loop closed
-    rather than merely coupled.
+    **D97/F-01: built from ONE verified saturation state, and nothing is retained.**
+
+    The previous version substituted three saturation-dependent properties -- pressure and
+    the two densities -- and copied three others that are equally saturation-dependent and
+    equally consumed by the characteristic. Measured on a case whose BOTH labels were
+    correct, so no label comparison could have caught it: ``mu_f`` was **420 % wrong**,
+    ``mu_g`` 26 % wrong (the same air viscosity as round 1), ``h_fg`` 8.5 % wrong. The
+    round-1 repair compared labels, and labels were all it compared.
+
+    So the shape is removed rather than guarded. Every field in
+    :data:`SATURATION_DEPENDENT_FIELDS` is taken from a single
+    :class:`fluids.SaturationState`, and that state is verified with
+    :meth:`fluids.SaturationState.verify_is`, which **re-derives every property from the
+    pinned backend and compares them** -- its own docstring records this defect class, and
+    the round-1 repair reached past it for a string comparison.
+
+    A hybrid is therefore not refused; it cannot be constructed. What ``verify_is`` still
+    catches at the boundary is a state that has been relabelled or produced under a
+    different pinned backend version.
     """
     _refuse_inconsistent_fluid(case, working_fluid)
     load = case.duty_W if rejected_W is None else rejected_W
     t_cond = condensing_temperature_K(load, boundary)
     try:
         p_sat = _fluids.saturation_pressure(t_cond, working_fluid)
-        rho_f, rho_g = _fluids.saturated_densities(t_cond, working_fluid)
     except ValueError as exc:
         raise CoupledCaseRefused(
             f"sink {boundary.sink_temperature_K} K forces a condensing temperature of "
             f"{t_cond:.2f} K, at which {working_fluid} has no saturation state: {exc}"
         ) from exc
 
-    low, high = _DP_PRESSURE_DOMAIN
+    low, high = _dp_pressure_domain()
     if not (low <= p_sat <= high):
         raise CoupledCaseRefused(
             f"sink {boundary.sink_temperature_K} K forces condensing at {t_cond:.2f} K "
@@ -211,6 +283,29 @@ def couple(
             f"domain [{low:.0f}, {high:.0f}] Pa. The case is refused rather than "
             "evaluated outside a declared basis."
         )
+
+    # ONE state, and it is verified before a single property is read off it.
+    try:
+        state = _fluids.saturation_state(p_sat, working_fluid)
+        state.verify_is(case.fluid)
+    except ValueError as exc:
+        raise CoupledCaseRefused(
+            f"the saturation state at {p_sat:.0f} Pa does not verify as "
+            f"{case.fluid!r}: {exc}"
+        ) from exc
+
+    derived = {
+        "pressure_Pa": state.pressure_Pa,
+        "h_fg_J_kg": state.h_fg_J_kg,
+        "rho_f": state.rho_f_kg_m3,
+        "rho_g": state.rho_g_kg_m3,
+        "mu_f": state.mu_f_Pa_s,
+        "mu_g": state.mu_g_Pa_s,
+    }
+    assert set(derived) == set(SATURATION_DEPENDENT_FIELDS), (
+        "every saturation-dependent field must be derived from the state; a field named "
+        "in SATURATION_DEPENDENT_FIELDS and missing here would be silently retained"
+    )
 
     return _cl.LoopCase(
         kind=case.kind,
@@ -221,18 +316,13 @@ def couple(
         diameter_m=case.diameter_m,
         length_m=case.length_m,
         duty_W=case.duty_W,
-        pressure_Pa=p_sat,
-        h_fg_J_kg=case.h_fg_J_kg,
-        rho_f=rho_f,
-        rho_g=rho_g,
-        mu_f=case.mu_f,
-        mu_g=case.mu_g,
         quality_in=case.quality_in,
         sink_temperature_K=boundary.sink_temperature_K,
-        saturation_temperature_K=t_cond,
+        saturation_temperature_K=state.T_sat_K,
         inlet_temperature_K=case.inlet_temperature_K,
         height_m=case.height_m,
         rel_roughness=case.rel_roughness,
+        **derived,
     )
 
 

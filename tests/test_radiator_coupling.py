@@ -539,3 +539,300 @@ def test_f06_nothing_asserts_s5_13_vacuity_again():
         "S5-13 is NOT vacuous — the coupling is built and S5-13 is undischarged on both "
         "legs, terminally. These re-assert the obsolete state:\n  " + "\n  ".join(offenders)
     )
+
+
+def test_f03_every_current_surface_agrees_with_the_operative_verdict():
+    """**F-03, round 2: the withdrawal reached the functions and stopped there.**
+
+    D90 changed ``s4_3_state`` and ``d14_state`` and left the module header of
+    ``radiator_coupling`` still saying "S4-3 is discharged on the machinery demonstration"
+    and "no longer the coupling ... but the pressure-drop leg". The F-06 guard passed
+    beside all of it because its root was the tests directory and it matched ``test_*.py``.
+    **A guard witnessed inside its own scope tells you nothing about the scope**, and that
+    is the round-1 lesson one layer inward.
+
+    So this reads SOURCE as well as tests, derives the operative verdict from the code
+    rather than restating it, and requires every CURRENT claim to agree with it.
+
+    **Historical statements are exempt, and only when they say they are historical.** The
+    D-14 reason recites its own previous wording in order to retract it, and the header
+    does the same; a claim is exempt when a retraction marker sits within two lines of it.
+    That is a deliberately narrow escape: prose that merely *mentions* the old state
+    without withdrawing it is a current claim and is caught.
+    """
+    import pathlib
+
+    # The operative verdict, DERIVED. If this module ever discharges anything, this test
+    # must be re-derived rather than the surfaces edited to match it.
+    assert RC.s4_3_state(C.RunKind.MACHINERY_DEMONSTRATION).label == "unevaluable"
+    assert RC.s4_3_state(C.RunKind.REFERENCE_CASE).label == "unevaluable"
+    assert RC.d14_state().state == "open"
+
+    withdrawn = (
+        "s4-3 is discharged",
+        "discharged on the machinery demonstration",
+        "no longer the coupling",
+        "d-14 retires",
+        "blocked on the pressure-drop leg",
+    )
+    retraction = (
+        "used to say", "previously said", "no longer true", "was withdrawn",
+        "withdrawn at", "this header used to", "after d85 it read", "it is not,",
+        "historical",
+    )
+
+    root = pathlib.Path(RC.__file__).parents[2]
+    surfaces = sorted(
+        list((root / "src" / "orbital_thermal").glob("*.py"))
+        + list((root / "tests").glob("test_*.py"))
+    )
+    assert len(surfaces) > 10, "the scan found too few surfaces to be believable"
+
+    # THE SCANNER'S OWN LINES ARE EXCLUDED, by computation. A check that must print the
+    # phrases it forbids will fire on itself otherwise -- the fifth time this milestone,
+    # after the sorted() ban, the criteria-document scan, the "non-droppable" substring
+    # and the F-06 guard. The ranges are derived from the functions, so they cannot drift.
+    import inspect
+
+    own_file = pathlib.Path(__file__).name
+    own_lines: set[int] = set()
+    for fn in (test_f03_every_current_surface_agrees_with_the_operative_verdict,
+               test_f03_the_scan_is_not_vacuous_and_reaches_source):
+        src, first = inspect.getsourcelines(fn)
+        own_lines.update(range(first, first + len(src)))
+
+    offenders = []
+    for path in surfaces:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for n, line in enumerate(lines):
+            if path.name == own_file and (n + 1) in own_lines:
+                continue
+            lowered = line.lower()
+            hit = next((w for w in withdrawn if w in lowered), None)
+            if hit is None:
+                continue
+            window = " ".join(lines[max(0, n - 2): n + 3]).lower()
+            if any(marker in window for marker in retraction):
+                continue
+            offenders.append(f"{path.name}:{n + 1}: states {hit!r} as current")
+
+    assert not offenders, (
+        "these surfaces state a withdrawn claim about S4-3 or D-14 as current, while the "
+        "operative verdict is unevaluable/open:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_f03_the_scan_is_not_vacuous_and_reaches_source():
+    """The scope check the round-1 guard lacked: prove the scan reaches the source tree.
+
+    A scan that silently matched nothing would pass forever. This plants a withdrawn
+    claim into the module under test and requires the scan to find it, which establishes
+    that source headers are inside the root and that the phrase list is live.
+    """
+    import pathlib
+
+    module = pathlib.Path(RC.__file__)
+    original = module.read_text(encoding="utf-8")
+    try:
+        module.write_text(
+            original.replace(
+                '"""D85: the radiator/condenser coupling',
+                '"""S4-3 is discharged on the machinery demonstration.\n\nD85: the '
+                "radiator/condenser coupling", 1),
+            encoding="utf-8")
+        with pytest.raises(AssertionError, match="as current"):
+            test_f03_every_current_surface_agrees_with_the_operative_verdict()
+    finally:
+        module.write_text(original, encoding="utf-8")
+
+    # And with the plant removed it passes again, so the failure was the plant.
+    test_f03_every_current_surface_agrees_with_the_operative_verdict()
+
+
+# ======================================================================================
+# D97 / F-01 — one saturation state, nothing retained. One witness per property.
+# ======================================================================================
+
+def _coherent_case(**over) -> C.LoopCase:
+    """A case whose BOTH labels are correct. This is the shape round 1 could not catch."""
+    return demo_case(fluid="Water", composition="single_component", **over)
+
+
+def _coupled(case) -> C.LoopCase:
+    return RC.couple(case, boundary(250.0), working_fluid="Water")
+
+
+@pytest.mark.parametrize("field", RC.SATURATION_DEPENDENT_FIELDS)
+def test_f01_no_saturation_dependent_property_survives_from_the_input(field):
+    """**One witness per retained property, and the list is DERIVED not typed.**
+
+    Round 1 compared labels, so a case with both labels correct passed while carrying
+    air's ``mu_g`` (26 % wrong), air's ``mu_f`` (**420 % wrong** -- the largest of the
+    three and unquantified in the finding) and water-at-1.2-bar's ``h_fg`` (8.5 % wrong).
+    Only pressure and the two densities were replaced.
+
+    The repair does not guard each hybrid; it removes the possibility. Every field in
+    ``SATURATION_DEPENDENT_FIELDS`` is derived from one verified state, so altering the
+    INPUT changes nothing about the output. This parametrises over the module's own tuple,
+    so a property added there without being derived fails here without editing this test.
+    """
+    truth = _coupled(_coherent_case())
+    perturbed_input = _coherent_case(**{field: getattr(_coherent_case(), field) * 3.0})
+    perturbed_output = _coupled(perturbed_input)
+
+    assert getattr(perturbed_input, field) != getattr(truth, field), (
+        f"the perturbation of {field} did not change the INPUT, so this proves nothing"
+    )
+    assert getattr(perturbed_output, field) == getattr(truth, field), (
+        f"{field} survived from the input into the coupled case. It is a function of the "
+        "saturation state and must be derived from it, not carried over."
+    )
+    # And every OTHER derived field is unmoved too, so one perturbation cannot leak.
+    for other in RC.SATURATION_DEPENDENT_FIELDS:
+        assert getattr(perturbed_output, other) == getattr(truth, other)
+
+
+def test_f01_the_coupled_case_matches_a_freshly_derived_state_exactly():
+    """The positive half: the coupled case IS the saturation state, property for property.
+
+    Asserted against a state derived independently here, so the test does not merely
+    agree with whatever ``couple`` happened to produce.
+    """
+    coupled = _coupled(_coherent_case())
+    state = fluids.saturation_state(coupled.pressure_Pa, "Water")
+    assert coupled.h_fg_J_kg == state.h_fg_J_kg
+    assert coupled.rho_f == state.rho_f_kg_m3
+    assert coupled.rho_g == state.rho_g_kg_m3
+    assert coupled.mu_f == state.mu_f_Pa_s
+    assert coupled.mu_g == state.mu_g_Pa_s
+    assert coupled.saturation_temperature_K == state.T_sat_K
+
+
+def test_f01_a_relabelled_state_is_refused_by_property_identity():
+    """``verify_is`` is the boundary check, and it re-derives rather than reading labels.
+
+    The round-1 repair reached past this checker -- which already existed, already
+    re-derives every property, and already records this defect class in its own docstring
+    -- for a string comparison. This asserts the coupling now goes through it.
+    """
+    real = fluids.saturation_state(6.0e5, "Water")
+    with pytest.raises(ValueError):
+        real.verify_is("Ammonia")
+
+    # Checked by AST, not by token. The first draft asserted "verify_is" appeared in the
+    # source of couple() -- which its own DOCSTRING satisfies, so deleting the call left
+    # the test green. That is the same error a seventh time, made while writing about it.
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(RC.couple)))
+    called = {
+        node.func.attr for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    }
+    assert "verify_is" in called, (
+        "couple() must CALL verify_is on the state it reads properties from; a label "
+        "comparison is what round 1 shipped and round 2 defeated, and a mention in a "
+        "docstring is not a call"
+    )
+
+
+# ======================================================================================
+# D97 / F-04 — the domain is resolved from the registry, and moves with it
+# ======================================================================================
+
+def test_f04_the_refusal_boundary_moves_with_the_registry(monkeypatch):
+    """**The witness the comment always claimed and never had.**
+
+    ``_DP_PRESSURE_DOMAIN = (1.0e5, 2.0e6)`` sat under a comment saying it was read from
+    the registry so the module could not drift. It was a second literal, equal by
+    coincidence and bound by nothing. Move the registry's declared range and the
+    coupling's refusal boundary must move with it.
+    """
+    import dataclasses
+
+    from orbital_thermal.registry import two_phase as tp
+
+    low, high = RC._dp_pressure_domain()
+    assert (low, high) == (1.0e5, 2.0e6), "today's registry values, for orientation"
+
+    # A pressure inside the real domain, and outside a narrowed one.
+    case = _coherent_case()
+    RC.couple(case, boundary(250.0), working_fluid="Water")  # ~6.1 bar: admitted
+
+    narrowed = tuple(
+        dataclasses.replace(
+            e, domain=dataclasses.replace(
+                e.domain, ranges={**e.domain.ranges, "P_Pa": (1.0e5, 3.0e5)}))
+        if e.id == "two_phase.dp.lockhart_martinelli_chisholm" else e
+        for e in tp.TWO_PHASE_CORRELATIONS
+    )
+    monkeypatch.setattr(RC._tp, "TWO_PHASE_CORRELATIONS", narrowed)
+
+    assert RC._dp_pressure_domain() == (1.0e5, 3.0e5), (
+        "the resolved domain must follow the registry, not a literal"
+    )
+    with pytest.raises(RC.CoupledCaseRefused, match="declared\\s+domain|outside"):
+        RC.couple(case, boundary(250.0), working_fluid="Water")
+
+
+def test_f04_an_unusable_declared_range_refuses_rather_than_falling_back():
+    """A missing or inverted range refuses. There is no literal left to fall back to."""
+    import dataclasses
+
+    from orbital_thermal.registry import two_phase as tp
+
+    for bad in ({}, {"P_Pa": (2.0e6, 1.0e5)}):
+        broken = tuple(
+            dataclasses.replace(
+                e, domain=dataclasses.replace(e.domain, ranges=bad))
+            if e.id == "two_phase.dp.lockhart_martinelli_chisholm" else e
+            for e in tp.TWO_PHASE_CORRELATIONS
+        )
+        original = RC._tp.TWO_PHASE_CORRELATIONS
+        try:
+            RC._tp.TWO_PHASE_CORRELATIONS = broken
+            with pytest.raises(RC.CoupledCaseRefused):
+                RC._dp_pressure_domain()
+        finally:
+            RC._tp.TWO_PHASE_CORRELATIONS = original
+
+
+def test_f04_no_pressure_literal_remains_in_the_module():
+    """The comment described a protection that did not exist; the literal is gone.
+
+    Checked by AST, not by text. The first draft searched the source for the token and
+    fired on the docstring EXPLAINING the removal -- a check tripping on the statement of
+    the rule rather than on a breach of it, for the sixth time this milestone. A parse
+    distinguishes an assignment from a mention; a substring search cannot.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path(RC.__file__).read_text(encoding="utf-8"))
+    assigned = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    } | {
+        node.target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    assert "_DP_PRESSURE_DOMAIN" not in assigned, (
+        "the module has re-acquired a pressure-domain literal; the bound is the "
+        "registry's and must be resolved, not restated"
+    )
+
+    # And no executable tuple of the two magic numbers, wherever it might be hiding.
+    literals = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Tuple) and len(node.elts) == 2
+        and all(isinstance(e, ast.Constant) and isinstance(e.value, float)
+                for e in node.elts)
+        and [e.value for e in node.elts] == [1.0e5, 2.0e6]
+    ]
+    assert not literals, f"{len(literals)} restated pressure-domain tuples remain"

@@ -213,6 +213,21 @@ class LegEligibility:
                 f"{self.fluid}/{self.leg}: reference_gravity_m_s2={reference!r} is not a "
                 "positive gravity. A fabricated 0.0 is the shape F-04 constructed."
             )
+        # **D97/F-02: the two identities must be ONE.** Round 1 authenticated the basis
+        # against the registry and never bound it to `entry_id` -- the field naming the
+        # correlation the eligibility came from. So a genuine Shah-1987 basis could be
+        # attached to a record claiming producer 'MADE-UP', and `as_record()` serialised
+        # both contradictory identities as valid. S5-4 forbids a caller-OVERRIDDEN basis,
+        # and overriding which correlation a genuine basis is said to support is that
+        # falsifier. All six round-1 witnesses aligned the two ids, so none exercised it.
+        if basis.entry_id != self.entry_id:
+            raise ValueError(
+                f"{self.fluid}/{self.leg}: the record names producer "
+                f"{self.entry_id!r} while its gravity basis was produced by "
+                f"{basis.entry_id!r}. One record cannot carry two producer identities -- "
+                "the basis must be the basis of the correlation the eligibility came "
+                "from, not a genuine basis borrowed from another entry."
+            )
         registry = _registry_gravity_bases()
         if basis.entry_id not in registry:
             raise ValueError(
