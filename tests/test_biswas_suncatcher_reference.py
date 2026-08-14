@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from conftest import _child_env
+
 # Vendored, byte-identical copy of report-1/report_one_thermal.py from the pinned upstream
 # release v1.2 (commit 23053beeff53); the SHA-256 below is the pinned upstream file's hash.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -65,6 +67,7 @@ def test_vendored_script_selfcheck_passes():
         capture_output=True,
         text=True,
         timeout=30,
+        env=_child_env(),
     )
     assert result.returncode == 0, result.stderr
     assert "checks ok" in result.stdout

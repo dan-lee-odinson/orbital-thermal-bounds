@@ -36,6 +36,7 @@ import sys
 import warnings
 
 import pytest
+from conftest import _child_env
 
 from orbital_thermal import two_phase_architecture_cases as ac
 from orbital_thermal.registry import two_phase as _tp_module
@@ -2022,7 +2023,9 @@ except Exception:
 print(here, there)
 """
     completed = subprocess.run(
-        [sys.executable, "-c", program], capture_output=True, text=True
+        [sys.executable, "-c", program], capture_output=True, text=True,
+        env=_child_env(),  # D107: without this the child imports only from an
+                           # ambient install, and this check silently did not run.
     )
     out = completed.stdout.strip()
     assert completed.returncode == 0, f"the probe itself failed: {completed.stderr[-300:]}"
@@ -2031,4 +2034,168 @@ print(here, there)
         "scope no longer holds. Either this module now reads the source registry live "
         "-- in which case it is a fifth steering route and not a bounded one -- or the "
         "consumer that did has stopped. Re-measure the clause either way."
+    )
+
+
+# ======================================================================================
+# D107 — a child process that inherits no import path can only import from an install
+# ======================================================================================
+
+_LAUNCHERS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
+
+
+def _subprocess_launches_without_env(source: str, label: str) -> list[str]:
+    """Every subprocess launch in ``source`` that passes no ``env``. DERIVED, by parse.
+
+    The names that launch a child are resolved from the module's own imports rather
+    than assumed: ``subprocess.run(...)`` after ``import subprocess``, and a bare
+    ``run(...)`` after ``from subprocess import run``. A module that imports it under
+    another name is covered because the binding is what is tracked, not the spelling.
+
+    Parsed and not grepped, and the difference is not stylistic. This project has
+    counted twelve instances of a check that could not tell a thing from a description
+    of one, and the witness below is itself a test file containing the literal text
+    ``subprocess.run(`` inside a string. A token search finds that string; an ast walk
+    sees a ``Constant``, which is what it is.
+    """
+    tree = ast.parse(source)
+
+    aliases: set[str] = set()          # names bound to the subprocess MODULE
+    launchers: set[str] = set()        # names bound to a launcher FUNCTION
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "subprocess":
+                    aliases.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            for alias in node.names:
+                if alias.name in _LAUNCHERS:
+                    launchers.add(alias.asname or alias.name)
+
+    findings: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute):
+            launches = (
+                isinstance(func.value, ast.Name)
+                and func.value.id in aliases
+                and func.attr in _LAUNCHERS
+            )
+        elif isinstance(func, ast.Name):
+            launches = func.id in launchers
+        else:
+            launches = False
+        if not launches:
+            continue
+        if any(keyword.arg is None for keyword in node.keywords):
+            continue  # ``**kwargs`` may carry env; not decidable here, so not claimed
+        if not any(keyword.arg == "env" for keyword in node.keywords):
+            findings.append(f"{label}:{node.lineno}")
+    return findings
+
+
+def test_d107_every_subprocess_launch_in_the_suite_passes_an_env():
+    """**The class, not the call that was found.**
+
+    ``pyproject.toml``'s ``pythonpath = ["src"]`` configures the pytest process; a child
+    of it inherits nothing, so a launch without ``env`` resolves ``orbital_thermal``
+    only from an ambient install. The comment that put that setting there records why
+    that matters: *"a suite whose result depends on ambient install state can lie about
+    itself."* It did -- the D106 scope witness passed here and failed on a bare
+    checkout, and a hand-back carried a total that did not reproduce.
+
+    Every test module is walked, so a launch added in a file that does not exist yet is
+    covered without this test being edited.
+    """
+    offenders: list[str] = []
+    scanned = 0
+    for path in sorted(pathlib.Path(__file__).parent.glob("*.py")):
+        scanned += 1
+        offenders += _subprocess_launches_without_env(
+            path.read_text(encoding="utf-8"), path.name
+        )
+    assert scanned > 1, "the scan found no test modules, so it proves nothing"
+    assert not offenders, (
+        "subprocess launched without env=_child_env(), so the child can import the "
+        "package only from an ambient install: " + ", ".join(offenders)
+    )
+
+
+_PLANTED_SOURCES = {
+    "bare attribute call": ('''
+import subprocess
+import sys
+subprocess.run([sys.executable, "-c", "pass"], capture_output=True)
+''', True),
+    "aliased module": ('''
+import subprocess as sp
+sp.check_output(["x"])
+''', True),
+    "imported launcher": ('''
+from subprocess import run
+run(["x"], text=True)
+''', True),
+    "launcher renamed on import": ('''
+from subprocess import Popen as spawn
+spawn(["x"])
+''', True),
+    "env passed": ('''
+import subprocess
+subprocess.run(["x"], env={"PYTHONPATH": "src"})
+''', False),
+    "env forwarded through kwargs": ('''
+import subprocess
+def go(**kw):
+    return subprocess.run(["x"], **kw)
+''', False),
+    "a call that is only described, in a string": ('''
+DOC = """call subprocess.run([sys.executable]) without env and the child cannot import"""
+''', False),
+    "an unrelated run()": ('''
+def run(x):
+    return x
+run(3)
+''', False),
+}
+
+
+@pytest.mark.parametrize(
+    "label", sorted(_PLANTED_SOURCES), ids=sorted(_PLANTED_SOURCES)
+)
+def test_d107_the_guard_fires_on_a_planted_launch_and_not_on_the_rest(label):
+    """Plant one, and require the guard to find it -- then plant the near-misses.
+
+    The last two are the reason this is a parse: a launch written inside a string is a
+    description of one, and an unrelated function called ``run`` is not subprocess at
+    all. A grep fails both.
+    """
+    source, should_fire = _PLANTED_SOURCES[label]
+    findings = _subprocess_launches_without_env(source, "planted")
+    if should_fire:
+        assert findings, f"the guard did not find the planted launch in {label!r}"
+    else:
+        assert not findings, f"the guard fired on {label!r}, which is not a defect"
+
+
+def test_d107_the_child_actually_imports_the_package_under_test():
+    """The positive control, and the thing the D106 witness assumed without checking.
+
+    ``_child_env`` is one function in one place now, so this is the single assertion
+    that it does what all three call sites need: a child launched with it imports
+    ``orbital_thermal`` from the tree under test, not from wherever an install points.
+    """
+    completed = subprocess.run(
+        [sys.executable, "-c",
+         "import orbital_thermal, pathlib; print(pathlib.Path(orbital_thermal.__file__))"],
+        capture_output=True, text=True, env=_child_env(),
+    )
+    assert completed.returncode == 0, completed.stderr[-400:]
+    child_sees = pathlib.Path(completed.stdout.strip()).resolve()
+    parent_sees = pathlib.Path(ac.__file__).resolve().parent / "__init__.py"
+    assert child_sees == parent_sees, (
+        f"the child imported {child_sees}, the parent {parent_sees}. A child resolving "
+        "the package somewhere else is the incident pyproject.toml's pythonpath comment "
+        "describes: a second tree silently repointing the one under test."
     )
