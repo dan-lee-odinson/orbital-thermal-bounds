@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import inspect
+import math
 import pathlib
 import re
 import subprocess
@@ -1406,6 +1407,12 @@ def _steering_keywords():
         names.update(inspect.signature(seam).parameters)
     for spec in (CorrelationEntry, Applicability):
         names.update(f.name for f in dataclasses.fields(spec))
+    # These are the parameters a caller legitimately passes, so re-passing one is a
+    # duplicate-argument TypeError rather than a steering test. Correct for D104's
+    # question -- and D110 found the sentence written beside it ("the case surface is
+    # clean") was not supportable from a population that removed one of them. The
+    # exclusion is now bound to a compensating population by
+    # test_d110_the_d104_witness_exclusion_is_paid_for_by_this_population.
     names.discard("fluid")
     names.discard("leg")
     names.discard("gravity_m_s2")
@@ -2198,4 +2205,169 @@ def test_d107_the_child_actually_imports_the_package_under_test():
         f"the child imported {child_sees}, the parent {parent_sees}. A child resolving "
         "the package somewhere else is the incident pyproject.toml's pythonpath comment "
         "describes: a second tree silently repointing the one under test."
+    )
+
+
+# ======================================================================================
+# D110 — an input the enumeration excluded. OTB-G002 criterion 6, at the S5 surface.
+# ======================================================================================
+
+#: Values no ordered comparison can place. ``nan`` compares false against everything,
+#: so ``x <= 0`` and ``x > 0`` are both false and every sign-shaped guard is skipped;
+#: the infinities order fine but are not quantities a correlation's database contains.
+_UNORDERABLE_FLOATS = {"nan": math.nan, "+inf": math.inf, "-inf": -math.inf}
+
+#: The finite values that must keep their present outcomes. Zero and negative gravity
+#: are *refused by the mechanism* (``REJECT``) rather than by validation, and that is a
+#: behaviour this repair must not disturb -- a finiteness check placed carelessly turns
+#: a graded refusal into a raised one, which is a different statement about the case.
+_FINITE_NONPHYSICAL_GRAVITIES = {"zero": 0.0, "negative": -9.80665}
+
+
+def _public_case_inputs() -> dict[str, str]:
+    """Every input a caller can hand the public S5 API, DERIVED from two signatures.
+
+    The named parameters of :func:`assess_leg` and :func:`assess_fluid`, plus -- because
+    ``**case`` is forwarded verbatim -- the parameters of :meth:`Applicability.check`.
+    Nothing is listed, so an input added to either signature is probed here without this
+    file being edited. That is the whole point: D110 was an input that both instruments
+    looking at this surface had removed from their own population.
+    """
+    found: dict[str, str] = {}
+    for entry_point in (ac.assess_leg, ac.assess_fluid):
+        for name, parameter in inspect.signature(entry_point).parameters.items():
+            if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                continue
+            found[name] = str(parameter.annotation)
+    for name, parameter in inspect.signature(Applicability.check).parameters.items():
+        if name != "self":
+            found.setdefault(name, str(parameter.annotation))
+    assert "gravity_m_s2" in found, (
+        "the derivation lost the parameter D110 was reported against, which is the "
+        "failure mode this witness exists to make impossible"
+    )
+    return found
+
+
+def _numeric_public_inputs() -> list[str]:
+    return sorted(n for n, ann in _public_case_inputs().items() if "float" in ann)
+
+
+def _assess_with(name: str, value: object):
+    """``assess_leg`` on the reference case with one input replaced."""
+    call = {"gravity_m_s2": _REFERENCE_G, **_FULL_CASE, name: value}
+    fluid = call.pop("fluid", "water")
+    leg = call.pop("leg", "chf")
+    return ac.assess_leg(fluid, leg, **call)
+
+
+@pytest.mark.parametrize("name", _numeric_public_inputs())
+@pytest.mark.parametrize("label", sorted(_UNORDERABLE_FLOATS))
+def test_d110_no_unorderable_value_on_any_numeric_input_mints_an_eligible_record(
+    name, label
+):
+    """**The class: an input a sign test cannot order must never produce eligibility.**
+
+    Reported for ``gravity_m_s2`` at ``nan``. Measured before building, the same
+    boundary admitted ``nan`` and both infinities on ``liquid_reynolds``,
+    ``branch_value`` and ``branch_value_at_reference_gravity`` as well -- nine further
+    cells, every one of them minting ``eligible=True`` with the genuine adopted basis
+    attached. So the assertion is over the derived numeric surface, not over the cell
+    that was reported.
+
+    The property is stated as *never eligible*, which is weaker than *always raises*
+    and is deliberate: it holds whether an input is refused by validation or graded by
+    the mechanism, so it does not quietly mandate one of those. The next test pins
+    which one gravity gets.
+    """
+    with pytest.raises(ValueError, match="must be finite"):
+        _assess_with(name, _UNORDERABLE_FLOATS[label])
+
+
+def test_d110_nan_gravity_is_refused_through_assess_fluid_too():
+    """The finding reported both entry points, so both are witnessed."""
+    with pytest.raises(ValueError, match="gravity_m_s2 must be finite"):
+        ac.assess_fluid("water", gravity_m_s2=math.nan, **_FULL_CASE)
+
+
+def test_d110_the_paired_control_a_valid_case_must_still_evaluate():
+    """**The paired control, which is part of criterion 6 and not an extra.**
+
+    *"A valid case must still evaluate, so 'refuses everything' cannot satisfy this."*
+    Both controls, unchanged from before the repair: standard gravity is eligible with
+    no violations, and microgravity is de-ranked on ``ORIENTATION``. A validation that
+    took either of these would be a worse defect than the one it fixed.
+    """
+    at_reference = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    assert at_reference.eligible is True
+    assert at_reference.violations == ()
+    assert at_reference.gravity_basis.reference_gravity_m_s2 == _REFERENCE_G
+
+    in_microgravity = ac.assess_leg(
+        "water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE
+    )
+    assert in_microgravity.eligible is False
+    assert [(v.axis, v.consequence) for v in in_microgravity.violations] == [
+        (Axis.ORIENTATION, Consequence.DE_RANK)
+    ]
+
+
+@pytest.mark.parametrize("label", sorted(_FINITE_NONPHYSICAL_GRAVITIES))
+def test_d110_a_finite_nonphysical_gravity_is_still_graded_not_newly_refused(label):
+    """Zero and negative gravity were already refused **by the mechanism**, as
+    ``Axis.ORIENTATION`` / ``Consequence.REJECT``, and they stay that way.
+
+    This is the guard against fixing the reported cell by widening the check until it
+    swallows its neighbours. A raised refusal and a ``REJECT`` violation are different
+    statements -- one says the input was not a quantity, the other says the case fails a
+    physical gate -- and only the first is what ``nan`` warrants.
+    """
+    leg = _assess_with("gravity_m_s2", _FINITE_NONPHYSICAL_GRAVITIES[label])
+    assert leg.eligible is False
+    assert [(v.axis, v.consequence) for v in leg.violations] == [
+        (Axis.ORIENTATION, Consequence.REJECT)
+    ]
+
+
+def test_d110_every_numeric_input_at_the_boundary_is_finiteness_validated():
+    """Derived completeness: a numeric parameter added to ``check`` without being
+    validated fails here, rather than waiting for someone to pass it a ``nan``.
+
+    Executed rather than read off the source, because a check that is present and
+    unreached is what four of this gate's twelve self-referential findings were.
+    """
+    unguarded = []
+    for name in _numeric_public_inputs():
+        try:
+            _assess_with(name, math.nan)
+        except ValueError:
+            continue
+        unguarded.append(name)
+    assert not unguarded, (
+        "numeric inputs reach the applicability comparisons without a finiteness "
+        f"check, so nan skips every sign-shaped guard on them: {unguarded}"
+    )
+
+
+def test_d110_the_d104_witness_exclusion_is_paid_for_by_this_population():
+    """**The enforcement half: an exclusion must be paid for, not merely reasoned.**
+
+    ``_steering_keywords`` discards ``fluid``, ``leg``, ``gravity_m_s2`` and ``case``.
+    That discard was correct for the question D104 asked -- those are the parameters a
+    caller legitimately passes, so re-passing one produces a duplicate-argument
+    ``TypeError`` and demonstrates nothing about whether a caller can supply the
+    *rules*. It was reasoned, and it stays.
+
+    What was wrong was the conclusion drawn beside it. A population that removes an
+    input cannot support "the case surface is clean", and that sentence was written
+    anyway. So the exclusion is now bound to a compensating population: every name
+    discarded there must appear in the inputs derived here. Dropping a name from one
+    witness without it being covered by another fails this test.
+    """
+    discarded = {"fluid", "leg", "gravity_m_s2", "case"}
+    covered = set(_public_case_inputs())
+    uncovered = discarded - covered - {"case"}  # "case" is the **kwargs name itself
+    assert not uncovered, (
+        "these inputs are excluded from the D104 steering population and covered by no "
+        f"other witness, so nothing on this surface tests them: {sorted(uncovered)}"
     )

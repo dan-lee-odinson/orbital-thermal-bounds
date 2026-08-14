@@ -32,6 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .. import _validate as _v
+
 
 class Axis(str, Enum):
     """The axes on which a correlation may declare applicability."""
@@ -210,7 +212,47 @@ class Applicability:
         but it does not by itself change a case's status. Making it de-rank would
         over-enforce past the ruling and would de-rank every case through Gungor &
         Winterton regardless of merit, which is not what "demoted" meant.
+
+        **Non-finite inputs are refused before any axis is evaluated (D110).** Every
+        ordered comparison below is false for ``NaN`` -- ``nan <= 0`` and ``nan > 0``
+        are *both* false -- so a NaN gravity skipped the non-positive branch and the
+        off-reference branch alike, and the caller received an empty violation tuple.
+        An absence produced by an unorderable value is indistinguishable from an
+        absence produced by a compliant case, so S5 minted ``eligible=True`` for it,
+        carrying the genuine adopted basis. That is OTB-G002 criterion 6's falsifier
+        exactly: *"any non-number or out-of-range quantity crossing the boundary marked
+        applicable"*, and its own wording anticipated the mechanism -- *"a sign test
+        does not exclude NaN"*.
+
+        Checked here rather than at each caller because this is where the comparisons
+        are, and checked over **every** numeric input rather than the one that was
+        reported: ``liquid_reynolds``, ``branch_value`` and
+        ``branch_value_at_reference_gravity`` admitted ``nan`` and both infinities the
+        same way. ``_validate.finite`` is the project's existing helper and is used
+        rather than a second spelling of it, for the reason
+        ``two_phase_loop._validate_hydraulic_inputs`` records beside the identical
+        repair: three copies of a check is the per-instance pattern C9 forbids, and a
+        guard that a mutation cannot single out is not witnessable.
+
+        The refusal travels as ``ValueError``, not as a :class:`Violation`, and the
+        distinction is deliberate. A ``Violation`` grades a *case*: it says a
+        well-formed quantity falls outside a declared basis, and it is consumed
+        downstream as a finding. ``NaN`` is not a value of the quantity, so a
+        ``DE_RANK`` or ``REJECT`` for it would answer a question that was never posed
+        and would serialise as a physical claim about a case. That is the collapse D75
+        and D90 exist to prevent, one level out. It also matches the precedent: the
+        same criterion, the same value and the same helper already refuse a non-finite
+        gravity in :func:`two_phase_loop.two_phase_pressure_drop`.
         """
+        for _name, _value in (
+            ("liquid_reynolds", liquid_reynolds),
+            ("gravity_m_s2", gravity_m_s2),
+            ("branch_value", branch_value),
+            ("branch_value_at_reference_gravity", branch_value_at_reference_gravity),
+        ):
+            if _value is not None:
+                _v.finite(_name, _value)
+
         v: list[Violation] = []
 
         # --- fluid ---
