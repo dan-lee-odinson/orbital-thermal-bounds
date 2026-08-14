@@ -2253,6 +2253,79 @@ def _numeric_public_inputs() -> list[str]:
     return sorted(n for n, ann in _public_case_inputs().items() if "float" in ann)
 
 
+def _textual_public_inputs() -> list[str]:
+    """The string-valued half of the same derived surface, and it is probed too.
+
+    D111: the exclusion guard below used to read the SIGNATURE map, so a name counted
+    as covered merely by existing as a parameter. ``fluid`` and ``leg`` sat in that map
+    with nothing running against them. A population that is exercised is the only kind
+    that can pay for an exclusion, so this one exists and is probed.
+    """
+    return sorted(
+        n for n, ann in _public_case_inputs().items()
+        if "str" in ann and "float" not in ann
+    )
+
+
+#: Values the string inputs admit and no basis contains.
+_UNDECLARED_TEXT = {"empty": "", "blank": "   ", "unknown": "«?»"}
+
+
+@pytest.mark.parametrize("name", _textual_public_inputs())
+@pytest.mark.parametrize("label", sorted(_UNDECLARED_TEXT))
+def test_d110_a_value_outside_a_declared_axis_is_graded_not_admitted(name, label):
+    """**The textual half of the same surface, with the property the axes actually have.**
+
+    Stated against the correlation's own :attr:`~Applicability.declared_axes` rather
+    than as "never eligible", because that would be false and this project has retracted
+    two overclaims. The rule is the one the module already enforces -- *silence is not
+    consent on a DECLARED axis* -- so: a value outside an axis the correlation declares
+    must be graded; on an axis it declares nothing about, admission is the declaration's
+    doing and is recorded here rather than asserted away.
+
+    The axis for each input is resolved through the ``Axis`` enum's own values, so a new
+    constrained axis is mapped without this test being edited.
+    """
+    leg = _assess_with(name, _UNDECLARED_TEXT[label])
+
+    if name == "leg":
+        assert leg is None, (
+            "an unknown leg must yield NO record: no adopted correlation is an absence "
+            "of knowledge, not an ineligibility (S4-8)"
+        )
+        return
+
+    if leg is None or leg.eligible is False:
+        return  # graded, or no correlation to grade -- either is the rule holding
+
+    spec = ac.adopted_entry("chf").applicability_spec
+    try:
+        axis = Axis(name)
+    except ValueError:  # pragma: no cover - an input that names no axis
+        return
+    if axis not in spec.declared_axes:
+        return  # the correlation constrains nothing on this axis; admission is correct
+
+    # Declared, and admitted. That is correct for exactly one declaration shape: an
+    # axis constrained by an EXCLUSION set and no inclusion set constrains its listed
+    # members and nothing else, so a value outside the list is outside the constraint
+    # rather than through it. Recorded here rather than asserted away -- and the shape
+    # is checked, so the carve-out cannot quietly widen.
+    exclusion_fields = [
+        f.name for f in dataclasses.fields(Applicability)
+        if f.name.startswith("excluded_")
+    ]
+    assert exclusion_fields == ["excluded_fluids"], (
+        "another axis has gained an exclusion set, so this carve-out is no longer "
+        f"about one axis and must be generalised: {exclusion_fields}"
+    )
+    assert axis is Axis.FLUID and not spec.fluids and spec.excluded_fluids, (
+        f"{name}={_UNDECLARED_TEXT[label]!r} was admitted as eligible although the "
+        f"correlation declares {axis.name} through an inclusion set. A declared axis "
+        "is binding, and silence on it is not consent."
+    )
+
+
 def _assess_with(name: str, value: object):
     """``assess_leg`` on the reference case with one input replaced."""
     call = {"gravity_m_s2": _REFERENCE_G, **_FULL_CASE, name: value}
@@ -2365,7 +2438,13 @@ def test_d110_the_d104_witness_exclusion_is_paid_for_by_this_population():
     witness without it being covered by another fails this test.
     """
     discarded = {"fluid", "leg", "gravity_m_s2", "case"}
-    covered = set(_public_case_inputs())
+    # D111: the union of the populations the probes above actually consume, NOT the
+    # signature map. A name is in the signature whether or not anything runs against
+    # it, so anchoring there confirmed that a parameter exists and said nothing about
+    # its coverage -- the very substitution this test was written to close, inside the
+    # test written to close it. Every population that feeds a parametrize is unioned
+    # here; adding a probe over a new population means adding it to this union.
+    covered = set(_numeric_public_inputs()) | set(_textual_public_inputs())
     uncovered = discarded - covered - {"case"}  # "case" is the **kwargs name itself
     assert not uncovered, (
         "these inputs are excluded from the D104 steering population and covered by no "
