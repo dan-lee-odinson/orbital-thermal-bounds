@@ -2444,9 +2444,201 @@ def test_d110_the_d104_witness_exclusion_is_paid_for_by_this_population():
     # its coverage -- the very substitution this test was written to close, inside the
     # test written to close it. Every population that feeds a parametrize is unioned
     # here; adding a probe over a new population means adding it to this union.
-    covered = set(_numeric_public_inputs()) | set(_textual_public_inputs())
+    covered = set().union(*_exercised_populations().values())
     uncovered = discarded - covered - {"case"}  # "case" is the **kwargs name itself
     assert not uncovered, (
         "these inputs are excluded from the D104 steering population and covered by no "
         f"other witness, so nothing on this surface tests them: {sorted(uncovered)}"
     )
+
+
+# ======================================================================================
+# D114 — a rule fact arriving as a keyword, and a population that could not see it
+# ======================================================================================
+
+
+def _boolean_public_inputs() -> list[str]:
+    """The boolean third of the derived surface.
+
+    It exists because ``has_executable_form`` existed and neither of the other two
+    populations could hold it: one selects on ``"float" in ann``, the other on
+    ``"str" in ann``, and ``bool`` is neither. Adding this branch is *not* the repair
+    -- a partition by annotation always has a next annotation, and the next one would
+    be invisible the same way. The repair is
+    :func:`test_d114_every_discovered_public_input_belongs_to_an_exercised_population`,
+    which requires the union to be TOTAL and so fails on an annotation nobody has
+    thought of yet.
+    """
+    return sorted(
+        n for n, ann in _public_case_inputs().items()
+        if "bool" in ann and "str" not in ann and "float" not in ann
+    )
+
+
+def _exercised_populations() -> dict[str, list[str]]:
+    """Every population a probe above actually runs over, by name."""
+    return {
+        "numeric": _numeric_public_inputs(),
+        "textual": _textual_public_inputs(),
+        "boolean": _boolean_public_inputs(),
+    }
+
+
+def test_d114_every_discovered_public_input_belongs_to_an_exercised_population():
+    """**Total, not partitioned. This is the fourth enforcement defect's repair.**
+
+    Three witnesses looked at this surface and none could see ``has_executable_form``.
+    Two derived populations split it by annotation and a ``bool`` fell between them;
+    the compensation check asked only whether four named inputs were covered, so a
+    discovered input covered by nothing was not a question it could ask. The gate brief
+    had named that gap in writing -- *"an input annotated in a way neither branch
+    matches is invisible to both"* -- and it shipped unprobed.
+
+    So the assertion is equality, in both directions. An input discovered on the public
+    surface and exercised by no population fails; a population naming something the
+    surface does not discover fails too, because that means a probe is running against
+    a parameter that no longer exists and reporting coverage for it.
+    """
+    discovered = set(_public_case_inputs())
+    exercised: set[str] = set()
+    for population in _exercised_populations().values():
+        exercised.update(population)
+
+    unprobed = discovered - exercised
+    assert not unprobed, (
+        "these public inputs belong to no exercised population, so nothing runs "
+        f"against them however many probes exist: {sorted(unprobed)}. Add a population "
+        "that exercises them -- not a branch that merely classifies them."
+    )
+    stale = exercised - discovered
+    assert not stale, (
+        f"these are probed but are no longer public inputs: {sorted(stale)}"
+    )
+
+
+@pytest.mark.parametrize("name", _boolean_public_inputs())
+@pytest.mark.parametrize("value", [True, False], ids=["true", "false"])
+def test_d114_a_caller_cannot_state_a_boolean_rule_fact(name, value):
+    """**Control one: the caller cannot move eligibility with it, either way.**
+
+    Both values are refused, not just the one that changed the outcome. ``True``
+    happens to match every adopted entry today, so passing it moved nothing and a
+    witness that only tried ``False`` would have called the keyword harmless. Whether a
+    caller's assertion agrees with the truth is not what makes it improper.
+    """
+    with pytest.raises(TypeError, match="not a case fact"):
+        _assess_with(name, value)
+
+
+def test_d114_the_refusal_is_by_construction_and_not_by_name():
+    """The allowlist is the mechanism, so a name nobody has heard of is refused too.
+
+    Four earlier repairs of this class each removed a named door and were each followed
+    by another name. A blocklist would have to grow once per finding; an allowlist
+    refuses the next parameter on the day it is added to ``check``, which is the
+    difference being witnessed here.
+    """
+    with pytest.raises(TypeError, match="not a case fact"):
+        ac.assess_leg(
+            "water", "chf", gravity_m_s2=_REFERENCE_G,
+            **_FULL_CASE, a_parameter_invented_for_this_test=1,
+        )
+    assert "has_executable_form" not in ac.CASE_FACTS
+    assert not (ac.CASE_FACTS & {"fluid", "gravity_m_s2", "has_executable_form"}), (
+        "a value the computation states must never be listed as a caller's to state"
+    )
+
+
+def test_d114_every_check_parameter_is_accounted_for():
+    """Nothing in ``check``'s signature may be neither stated nor allowed. DERIVED.
+
+    The allowlist is written by hand, so this is what keeps it honest: every parameter
+    of :meth:`Applicability.check` is either a case fact a caller may state or a value
+    the computation states from the entry, and a parameter added to that method belongs
+    to neither until someone decides which. It fails on the day the parameter appears
+    rather than on the day someone passes it -- which is the whole gap D114 came
+    through.
+    """
+    stated_by_the_computation = {"fluid", "gravity_m_s2", "has_executable_form"}
+    signature = {
+        name for name in inspect.signature(Applicability.check).parameters
+        if name != "self"
+    }
+    unaccounted = signature - ac.CASE_FACTS - stated_by_the_computation
+    assert not unaccounted, (
+        "parameters of Applicability.check that are neither declared case facts nor "
+        f"stated by the computation: {sorted(unaccounted)}. Decide which, in "
+        "CASE_FACTS or in the computation's own dict -- until then a caller reaches "
+        "them through **case."
+    )
+    assert stated_by_the_computation <= signature, (
+        "the computation states a value that is no longer a parameter of check()"
+    )
+
+
+def _entry_with_no_reachable_executable_form():
+    """The adopted CHF entry with no reachable implementation, at the ENTRY.
+
+    ``has_executable_form`` is true for *either* a callable on the entry *or* a
+    declared path that resolves, so both have to go: the callable is removed and the
+    path is pointed at a module that does not exist. Measured rather than assumed --
+    the first version of this helper changed only the path and the property stayed
+    ``True``, because ``evaluate`` short-circuits it, which would have made the control
+    below assert against a case it had not actually created.
+    """
+    return tuple(
+        dataclasses.replace(
+            e, evaluate=None, executable_form="orbital_thermal.nothing_lives_here")
+        if e.kind == "chf" and e.status in ac.ADOPTED_FOR_RANKING else e
+        for e in ac.REGISTRY_ENTRIES
+    )
+
+
+def test_d114_the_paired_control_the_entry_still_moves_the_outcome():
+    """**Control two, and the one that says the repair is not just a wall.**
+
+    A fix that made executability unreachable from anywhere would pass every assertion
+    above and would be wrong: the value is load-bearing and must still decide the
+    outcome when it changes *at the entry*. So the same fact, moved where it actually
+    lives, must still block the leg.
+    """
+    entries = _entry_with_no_reachable_executable_form()
+    adopted = next(e for e in entries if e.kind == "chf" and e.status in ac.ADOPTED_FOR_RANKING)
+    assert adopted.has_executable_form is False, (
+        "the entry still resolves an executable form, so this proves nothing about "
+        "whether the computation reads it"
+    )
+
+    blocked = ac._assess_leg_against_a_supplied_registry(
+        entries, "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
+    )
+    assert blocked.eligible is False
+    assert [(v.axis, v.consequence) for v in blocked.violations] == [
+        (Axis.PROVENANCE, Consequence.BLOCK)
+    ]
+
+    # And the control's control: with the real registry the same call is eligible, so
+    # the difference above is the entry's executable form and nothing else.
+    unblocked = ac._assess_leg_against_a_supplied_registry(
+        ac.REGISTRY_ENTRIES, "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
+    )
+    assert unblocked.eligible is True
+    assert unblocked.violations == ()
+
+
+def test_d114_the_computation_reads_executability_rather_than_a_default():
+    """The value is passed, not defaulted. Witnessed by the entry moving it, above --
+    this pins the other half: ``check``'s default must not be what decides it.
+
+    If the computation stopped passing the value, ``check`` would fall back to
+    ``has_executable_form: bool = True`` and a genuinely unreachable implementation
+    would stop blocking. That is the defect one level down from the reported one, and
+    it is what the paired control would catch.
+    """
+    signature = inspect.signature(Applicability.check)
+    assert signature.parameters["has_executable_form"].default is True, (
+        "the default changed; the paired control above is what proves the computation "
+        "does not rely on it, and this note should be re-read if that default moves"
+    )
+    entry = ac.adopted_entry("chf")
+    assert entry.has_executable_form is True, "today's adopted entry, for orientation"

@@ -196,6 +196,73 @@ CHF_DEPENDENT_LEGS: frozenset[str] = frozenset({"chf"})
 ADOPTED_FOR_RANKING: frozenset[Status] = frozenset({Status.RESOLVED})
 
 
+#: The keywords a caller may state about the **case**, and the only ones ``**case``
+#: admits. **Default-deny, and that is the whole point of the shape.**
+#:
+#: D114 was the fifth repair of one class: a fact about the RULES arriving from the
+#: caller. The first four were closed by name -- authenticate the basis tuple, join the
+#: producer id, remove the outcome door, remove ``entries=`` -- and each was followed by
+#: another name, because the mechanism was never the name. The mechanism is ``**case``:
+#: an untyped forwarding channel into :meth:`Applicability.check`, which makes *every*
+#: parameter of that method a public keyword by virtue of being forwarded, whether or
+#: not it describes a case. ``has_executable_form`` is a parameter of it, and so a
+#: caller could state whether the correlation they are being assessed against has a
+#: reachable implementation.
+#:
+#: So the set below is an allowlist rather than a blocklist. A parameter added to
+#: ``check`` is **not** a case fact until someone writes it here with a reason, which
+#: means the next parameter is refused on the day it appears rather than on the day
+#: someone passes it. ``test_d114_every_check_parameter_is_accounted_for`` requires this
+#: set and the computation-stated values together to cover ``check``'s whole signature,
+#: so a new parameter cannot be silently left out of both.
+#:
+#: Each entry is here because it is a property of the *case being assessed* and cannot
+#: be read off the registry:
+#:
+#: * ``composition`` -- single- or two-component flow, a property of the loop;
+#: * ``geometry``, ``orientation`` -- the hardware and how it is mounted;
+#: * ``liquid_reynolds`` -- the flow state;
+#: * ``branch_value``, ``branch_value_at_reference_gravity`` -- the correlating
+#:   parameter this case produces, and what it would produce on the ground.
+CASE_FACTS: frozenset[str] = frozenset({
+    "composition",
+    "geometry",
+    "orientation",
+    "liquid_reynolds",
+    "branch_value",
+    "branch_value_at_reference_gravity",
+})
+
+
+def _refuse_keywords_that_are_not_case_facts(
+    case: dict[str, object], stated_by_the_computation: dict[str, object]
+) -> None:
+    """Refuse anything in ``**case`` that is not a caller's to state.
+
+    Two kinds, reported apart because they are different mistakes. A keyword the
+    computation states is a *rule* fact arriving from the caller -- the D114 class. A
+    keyword that is neither is simply not part of this API, and saying so here is
+    better than letting it surface as a ``TypeError`` from a registry method the caller
+    never called.
+    """
+    rules = sorted(k for k in case if k in stated_by_the_computation)
+    if rules:
+        raise TypeError(
+            f"{', '.join(rules)}: not a case fact. The computation states this from the "
+            "adopted registry entry, and a caller who states it is supplying the rules "
+            "the assessment applies rather than the case it applies them to (D114). "
+            f"A caller states {', '.join(sorted(CASE_FACTS))}."
+        )
+    unknown = sorted(k for k in case if k not in CASE_FACTS)
+    if unknown:
+        raise TypeError(
+            f"{', '.join(unknown)}: not a case fact. `**case` admits only "
+            f"{', '.join(sorted(CASE_FACTS))} -- it is an allowlist, so a parameter "
+            "added to Applicability.check is not a public keyword until it is declared "
+            "one here."
+        )
+
+
 class GravityBasis(NamedTuple):
     """The gravity a correlation's database was taken at, carried with the claim.
 
@@ -577,7 +644,20 @@ def _assess_leg_against_a_supplied_registry(
     spec: Applicability | None = getattr(entry, "applicability_spec", None)
     violations: tuple[Violation, ...] = ()
     if spec is not None:
-        violations = spec.check(fluid=fluid, gravity_m_s2=gravity_m_s2, **case)  # type: ignore[arg-type]
+        # What the COMPUTATION states, read off the selected entry and this call's own
+        # named parameters. `has_executable_form` is a fact about the correlation, not
+        # about the case: the entry resolves its declared path and knows the answer, so
+        # letting `check`'s default stand in for it was letting a caller answer it.
+        # Both other consumers of this boundary already derive it -- `two_phase` from
+        # `entry.evaluate is not None`, `two_phase_loop` from the same property -- so S5
+        # was the only caller that did not.
+        stated_by_the_computation = {
+            "fluid": fluid,
+            "gravity_m_s2": gravity_m_s2,
+            "has_executable_form": entry.has_executable_form,
+        }
+        _refuse_keywords_that_are_not_case_facts(case, stated_by_the_computation)
+        violations = spec.check(**stated_by_the_computation, **case)  # type: ignore[arg-type]
 
     disqualifying = tuple(
         v for v in violations
