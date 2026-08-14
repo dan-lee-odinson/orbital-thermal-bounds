@@ -31,6 +31,8 @@ import dataclasses
 import inspect
 import pathlib
 import re
+import subprocess
+import sys
 import warnings
 
 import pytest
@@ -1563,6 +1565,15 @@ def _disclosure_section() -> str:
     return doc[doc.index(_DISCLOSURE_HEADING):]
 
 
+def _disclosure_prose() -> str:
+    """:func:`_disclosure_section` with its line wrapping normalised away.
+
+    D106: a needle that happens to span a line break fails against text that plainly
+    says the thing. That is a fact about the wrapping, not about the disclosure.
+    """
+    return " ".join(_disclosure_section().split())
+
+
 def _steer_by_rebinding_the_module_attribute(monkeypatch):
     forged = tuple(
         dataclasses.replace(
@@ -1827,4 +1838,197 @@ def test_d105_r2_each_seam_carries_one_docstring_holding_both_things():
     assert not orphans, (
         "bare string statements below the docstring, unreachable from help(): "
         + ", ".join(orphans)
+    )
+
+
+# ======================================================================================
+# D106 — the anti-overclaim half names its boundary, and the worked example is witnessed
+# ======================================================================================
+
+_REAL_CHF_ID = "two_phase.chf.shah_1987"
+
+
+def _forge_a_chf_leg(**over):
+    """Direct construction of a CHF-dependent record with a caller-chosen outcome.
+
+    Refused by the mint under the real :data:`CHF_DEPENDENT_LEGS`; permitted once that
+    set is emptied. It is the same call either way -- that is the point of the pair.
+    """
+    fields = {
+        "fluid": "ammonia", "leg": "chf", "entry_id": _REAL_CHF_ID,
+        "eligible": True, "violations": (), "gravity_basis": None,
+    }
+    return ac.LegEligibility(**{**fields, **over})
+
+
+def _guard_mint():
+    return _forge_a_chf_leg()
+
+
+def _guard_s5_4_basis_requirement():
+    return _forge_a_chf_leg(gravity_basis=None).gravity_basis
+
+
+def _guard_s5_5_bool_refusal():
+    return bool(ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE))
+
+
+def _guard_replace_refusal():
+    return ac.assess_leg(
+        "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
+    ).__replace__(eligible=True)
+
+
+def _guard_registry_gravity_bases():
+    """Unlike the other four this one reports rather than refuses, so it is written to
+    the same polarity deliberately: it raises while a CHF basis is still enumerated and
+    returns once the enumeration has gone empty. Same shape, same pair of assertions."""
+    bases = ac._registry_gravity_bases()
+    if bases:
+        raise TypeError(f"a CHF gravity basis is still enumerated: {len(bases)}")
+    return bases
+
+
+#: (guard, the text the clause must carry, the probe). Same rule as the four steering
+#: routes: a guard cannot be named in the clause without a demonstration beside it, and
+#: cannot be demonstrated without being named. The probe here is DIRECT CONSTRUCTION
+#: and the guards around it -- not the computation, which is the boundary the original
+#: claim was measured against and the reason the clause was needed.
+_GUARDS_GATED_ON_CHF_DEPENDENT_LEGS = [
+    ("the mint", "mint check never runs", _guard_mint),
+    ("S5-4's basis requirement", "gravity_basis=None", _guard_s5_4_basis_requirement),
+    ("S5-5's bool refusal", "returns a bare truth value", _guard_s5_5_bool_refusal),
+    ("__replace__'s refusal", "``__replace__`` stops refusing", _guard_replace_refusal),
+    ("the gravity-basis enumeration", "zero bases instead of one",
+     _guard_registry_gravity_bases),
+]
+
+
+@pytest.mark.parametrize(
+    "guard,needle,probe", _GUARDS_GATED_ON_CHF_DEPENDENT_LEGS,
+    ids=[g[0] for g in _GUARDS_GATED_ON_CHF_DEPENDENT_LEGS],
+)
+def test_d106_each_guard_gated_on_chf_dependent_legs_is_named_and_demonstrated(
+    guard, needle, probe, monkeypatch
+):
+    """**Inert for the computation is not inert for the mint, one guard at a time.**
+
+    ``CHF_DEPENDENT_LEGS`` was disclosed at D105 as a name that does not move
+    eligibility. That was measured against :func:`assess_leg`'s outcome and it is true.
+    It is also the gate on every CHF-specific guard in the module, so the same
+    assignment that changes no computed answer switches all five off.
+
+    Each guard must refuse under the real set and stop refusing under the emptied one.
+    The first half is what makes the second half mean something: a probe that never
+    refused to begin with would demonstrate nothing about the gate.
+    """
+    assert needle in _disclosure_prose(), (
+        f"the clause does not name {guard}, which is measured here to be gated on "
+        "CHF_DEPENDENT_LEGS. A bound that omits a measured guard is not a bound."
+    )
+
+    with pytest.raises(TypeError):
+        probe()
+
+    monkeypatch.setattr(ac, "CHF_DEPENDENT_LEGS", frozenset())
+    probe()  # the same call, now permitted: the guard was gated on that one name
+
+
+def test_d106_the_worked_example_forges_a_serialisable_record(monkeypatch):
+    """The consequence stated end to end, because five disabled guards is an inventory
+    and this is what they add up to: a record that *serialises* as a valid CHF
+    eligibility carrying the real entry id and an outcome the caller chose."""
+    truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert truth.eligible is False
+
+    monkeypatch.setattr(ac, "CHF_DEPENDENT_LEGS", frozenset())
+
+    # Half one: the computation is untouched. This is the D105 claim, still true.
+    after = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert after.eligible is False
+    assert [v.axis for v in after.violations] == [Axis.ORIENTATION]
+
+    # Half two: the mint is gone, and the forgery serialises.
+    forged = _forge_a_chf_leg()
+    record = forged.as_record()
+    assert record["entry_id"] == _REAL_CHF_ID
+    assert record["eligible"] is True
+    assert record["leg"] == "chf"
+
+
+def test_d106_the_clause_states_the_rule_and_the_boundary_it_measured():
+    """The clause must generalise, or it is five instances where three were.
+
+    Anchored on the boundary statement and on the rule, not on any one guard -- the
+    same test the four steering routes are held to one paragraph up.
+    """
+    section = _disclosure_prose()
+    assert "boundary it was measured against" in section, (
+        "the anti-overclaim half does not say what its claims were measured against"
+    )
+    assert "inert for the COMPUTATION may be" in section and "MINT" in section, (
+        "the clause gives the worked example without the rule behind it"
+    )
+    assert "unmeasured rather than as general" in section
+
+
+def test_d106_adopted_for_ranking_is_bounded_as_the_clause_says(monkeypatch):
+    """The clause calls this one bounded. Checked against the boundaries that caught
+    ``CHF_DEPENDENT_LEGS``, not only against the computation."""
+    assert "ADOPTED_FOR_RANKING` **is bounded.**" in _disclosure_prose()
+
+    monkeypatch.setattr(ac, "ADOPTED_FOR_RANKING", frozenset())
+    assert ac.adopted_entry("chf") is None
+    assert ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE) is None
+
+    # The CHF guards are untouched: they gate on a different name.
+    with pytest.raises(TypeError):
+        _forge_a_chf_leg()
+
+
+def test_d106_the_source_registry_claim_is_scoped_to_this_module():
+    """``TWO_PHASE_CORRELATIONS`` is inert *here* and live for a call-time consumer.
+
+    Measured rather than reasoned: this module's snapshot does not move, and
+    ``radiator_coupling`` -- which resolves its pressure domain from the source
+    registry at call time, the D97/F-04 repair -- does. Asserting the second half is
+    what stops the first from being written as "does nothing".
+    """
+    section = _disclosure_prose()
+    assert "bounded for this module" in section
+    assert "_dp_pressure_domain" in section
+
+    program = """
+from orbital_thermal import two_phase_architecture_cases as ac
+from orbital_thermal import radiator_coupling as RC
+from orbital_thermal.registry import two_phase as tp
+
+RC._dp_pressure_domain()
+tp.TWO_PHASE_CORRELATIONS = ()
+
+try:
+    leg = ac.assess_leg('water', 'chf', gravity_m_s2=1e-6,
+                        geometry='round_tube', orientation='vertical_upflow')
+    here = 'unmoved' if leg is not None and leg.eligible is False else 'MOVED'
+except Exception as exc:
+    here = 'MOVED(%s)' % type(exc).__name__
+
+try:
+    RC._dp_pressure_domain()
+    there = 'unmoved'
+except Exception:
+    there = 'moved'
+
+print(here, there)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program], capture_output=True, text=True
+    )
+    out = completed.stdout.strip()
+    assert completed.returncode == 0, f"the probe itself failed: {completed.stderr[-300:]}"
+    assert out == "unmoved moved", (
+        f"measured {out!r}, expected 'unmoved moved': the source-registry claim's "
+        "scope no longer holds. Either this module now reads the source registry live "
+        "-- in which case it is a fifth steering route and not a bounded one -- or the "
+        "consumer that did has stopped. Re-measure the clause either way."
     )

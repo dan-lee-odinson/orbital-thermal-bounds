@@ -100,13 +100,55 @@ violations=['ORIENTATION']`` to ``eligible=True, violations=[]``:
 Those four are illustrative. Enumerating more would be the same error at greater
 length, because what is disclosed here is the mechanism.
 
-**And what does NOT reach the rules**, because a disclosure that over-reaches is a
-defect in the other direction and this project has retracted an overclaim twice.
-Measured, same method: rebinding ``TWO_PHASE_CORRELATIONS`` in the source registry
-module after import does nothing, because :data:`REGISTRY_ENTRIES` is a snapshot taken
-at import. Emptying :data:`CHF_DEPENDENT_LEGS` does not move eligibility. Widening
-:data:`ADOPTED_FOR_RANKING` forges nothing: it makes three CHF correlations adopted at
-once and :func:`adopted_entry` **refuses**, which is the ambiguity guard working.
+**And what does NOT reach the rules -- each claim with the boundary it was measured
+against**, because a disclosure that over-reaches is a defect in the other direction
+and this project has retracted an overclaim twice. This is the half a reader takes as
+a bound, so the bound has to say where it was taken. Every claim here was first
+measured against **one** boundary -- the outcome :func:`assess_leg` computes -- and a
+name that is inert *there* can be load-bearing elsewhere in this module. One of the
+three is. Saying "does not move eligibility" without saying what was watched would be
+the same defect as the D104 sentence above, exact about the thing measured and silent
+about the category beside it, sitting inside the paragraph written to stop it.
+
+* :data:`ADOPTED_FOR_RANKING` **is bounded.** Widening it forges nothing: three CHF
+  correlations become adopted at once and :func:`adopted_entry` **refuses**, at
+  standard gravity as well as in microgravity. Emptying it yields an *absence* -- no
+  adopted entry, so ``assess_leg`` returns ``None``, which S4-8 requires to stay
+  distinct from an ineligibility -- and drops :func:`_registry_gravity_bases` to zero.
+  Also checked against the mint, the S5-4 basis requirement, the S5-5 refusal and
+  ``__replace__``: it gates none of them. Refusal or absence, never a forged pass.
+
+* ``TWO_PHASE_CORRELATIONS`` **is bounded for this module, and this module is the
+  scope of the claim.** Rebinding it in the source registry after import leaves every
+  boundary above identical, because :data:`REGISTRY_ENTRIES` is a snapshot taken at
+  import. It is *not* inert for a consumer that resolves from the source registry at
+  call time: ``radiator_coupling._dp_pressure_domain()`` does, and rebinding it makes
+  ``couple()`` refuse. A refusal rather than a forged result, and outside S5 -- but
+  "does nothing", unscoped, is a claim this module is not in a position to make.
+
+* :data:`CHF_DEPENDENT_LEGS` **is inert for the computation and LIVE FOR THE MINT.**
+  This is the worked example and the reason this clause exists. Emptying it leaves the
+  computed answer untouched -- still ``eligible=False`` with its ``ORIENTATION``
+  violation, which is exactly what "does not move eligibility" measured and it is
+  true. But every CHF-specific guard in this module gates on that one name, so a single
+  assignment disables all five of them at once:
+
+  - ``__post_init__``'s mint check never runs, so ``LegEligibility(leg="chf",
+    eligible=True, violations=())`` **constructs**, and :meth:`~LegEligibility.
+    as_record` serialises it as a valid CHF eligibility carrying the real entry id and
+    a caller-chosen outcome. D100's boundary is not defeated here, it is skipped;
+  - S5-4's requirement that a CHF leg carry a :class:`GravityBasis` stops applying, so
+    the same object builds with ``gravity_basis=None``;
+  - S5-5's refusal stops applying, so ``bool(chf_leg)`` returns a bare truth value
+    instead of raising -- the collapse the whole type exists to prevent;
+  - ``__replace__`` stops refusing;
+  - :func:`_registry_gravity_bases` reports zero bases instead of one.
+
+**The rule rather than the instance:** a name inert for the COMPUTATION may be
+load-bearing for the MINT, or for any other guard that reads it. Those are different
+boundaries, and inertness at one is not inertness at the other. Each claim above names
+the boundaries it was measured against; a claim that does not should be read as
+unmeasured rather than as general.
 
 **How heavy the act is, stated as a fact and not as a reassurance.** Rebinding is not
 passing a keyword. It is global rather than per-call, it persists for the life of the
