@@ -65,6 +65,61 @@ cannot quietly re-inflate in a docstring later.
 disclosed: make ``eligible`` return a type that carries its own basis for CHF legs, so
 there is no bare flag anywhere in the object graph. That is a shape change to every
 consumer, which is why it is not taken unilaterally at S5.
+
+**THE RULES ARE REACHABLE FROM INSIDE THE PROCESS. DISCLOSED, NOT CLAIMED SHUT.**
+D104 removed every parameter through which a caller could supply the rules the
+computation applies, and the sentence recording that -- *"there is no parameter that
+supplies correlations; the rules come from* :data:`REGISTRY_ENTRIES` *"* -- is exact
+about parameters and silent about the attribute it names in its own second clause.
+Both directions, then.
+
+**Closed.** Nothing that arrives *through a call* reaches the rules. Not a positional
+argument, not a keyword, not ``**case``: every field name of :class:`CorrelationEntry`
+and of ``Applicability`` has been passed through ``**case`` carrying a widened
+tolerance, and none moved the outcome. The case surface is clean, and the witness that
+says so derives those names from the dataclasses themselves rather than listing them.
+
+**Not closed, and not closeable.** The rules are ordinary Python objects that this
+module reaches **by name, at call time**. Anything already running in this process can
+rewrite what the computation reads, and Python offers no way to prevent that for any
+module. *The mechanism is name lookup; it is not any particular name.* Four routes have
+been MEASURED to move a microgravity case from ``eligible=False,
+violations=['ORIENTATION']`` to ``eligible=True, violations=[]``:
+
+* rebinding the public module attribute -- ``two_phase_architecture_cases.
+  REGISTRY_ENTRIES = forged``. No underscore, no seam, no protocol: an assignment;
+* writing through the frozen entry the computation reads --
+  ``object.__setattr__(entry.applicability_spec, "gravity_rel_tol", 1e12)``. This is
+  D101/R3's raw-write residual reaching the RULES instead of the record: the same
+  mechanism against a new target, which is why this section is one disclosure of a
+  class rather than two notes naming instances;
+* replacing the enforcement itself -- ``Applicability.check = lambda *a, **k: ()``;
+* rebinding this module's own seam, which then returns whatever it likes and never
+  reaches the mint at all.
+
+Those four are illustrative. Enumerating more would be the same error at greater
+length, because what is disclosed here is the mechanism.
+
+**And what does NOT reach the rules**, because a disclosure that over-reaches is a
+defect in the other direction and this project has retracted an overclaim twice.
+Measured, same method: rebinding ``TWO_PHASE_CORRELATIONS`` in the source registry
+module after import does nothing, because :data:`REGISTRY_ENTRIES` is a snapshot taken
+at import. Emptying :data:`CHF_DEPENDENT_LEGS` does not move eligibility. Widening
+:data:`ADOPTED_FOR_RANKING` forges nothing: it makes three CHF correlations adopted at
+once and :func:`adopted_entry` **refuses**, which is the ambiguity guard working.
+
+**How heavy the act is, stated as a fact and not as a reassurance.** Rebinding is not
+passing a keyword. It is global rather than per-call, it persists for the life of the
+process rather than for the call, it affects every consumer downstream of it rather
+than only the caller who wrote it, and it appears in a diff as an assignment to a
+public name. That difference is real, and it does not shrink the disclosure: a test
+that substitutes the registry and fails to restore it is a *mistake* rather than an
+abuse, and it steers every result computed after it in that process just the same.
+
+**If this should be closed rather than disclosed**, the change is to read the registry
+through a function so that rebinding the public tuple no longer reaches the
+computation. That is a different decision with a different blast radius, and it is the
+Director's -- it was considered at D105 and not chosen.
 """
 
 from __future__ import annotations
@@ -463,12 +518,15 @@ def _assess_leg_against_a_supplied_registry(
     leg disappear -- a real criterion witness. It is private, it takes the registry
     FIRST and positionally so no call reads like the public one, and its name says what
     it is.
-    """
-    """Assess one leg for one fluid. ``None`` when no correlation is adopted for it.
 
-    ``None`` is *not* "ineligible": no adopted correlation is an absence of knowledge,
-    and S4-8 requires that to stay distinguishable from a refusal. The caller sees the
-    difference because it gets no record rather than a negative one.
+    **What it computes**: one leg for one fluid, and ``None`` when no correlation is
+    adopted for that leg. ``None`` is *not* "ineligible": no adopted correlation is an
+    absence of knowledge, and S4-8 requires that to stay distinguishable from a refusal.
+    The caller sees the difference because it gets no record rather than a negative one.
+
+    (D105: that paragraph was a second bare string below this docstring, so ``help()``
+    could not reach it and S5-6's stripper -- which read ``body[0]`` only -- scanned it
+    as executable code. A criterion is not decoration and does not live in an orphan.)
     """
     entry = _adopted_entry_in_a_supplied_registry(entries, leg)
     if entry is None:
@@ -503,8 +561,11 @@ def _assess_fluid_against_a_supplied_registry(
     **case: object,
 ) -> FluidEligibility:
     """**NOT THE API.** The :func:`assess_fluid` seam. See
-    :func:`_assess_leg_against_a_supplied_registry`."""
-    """Assess every ranking leg for one fluid. Computed, never declared (S5-1)."""
+    :func:`_assess_leg_against_a_supplied_registry`.
+
+    **What it computes**: every ranking leg for one fluid. Computed, never declared,
+    which is S5-1. (D105: that sentence was a second bare string below this docstring.)
+    """
     legs: dict[str, LegEligibility] = {}
     for leg in RANKING_LEGS:
         outcome = _assess_leg_against_a_supplied_registry(

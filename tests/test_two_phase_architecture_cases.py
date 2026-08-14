@@ -36,6 +36,7 @@ import warnings
 import pytest
 
 from orbital_thermal import two_phase_architecture_cases as ac
+from orbital_thermal.registry import two_phase as _tp_module
 from orbital_thermal.registry.applicability import Applicability, Axis, Consequence
 from orbital_thermal.registry.provenance import CorrelationEntry, Status
 
@@ -346,28 +347,7 @@ def test_s5_6_the_module_carries_no_second_gravity_comparison():
     registry's". The only gravity arithmetic permitted here is handing the value to
     ``Applicability.check``."""
     source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
-    # D104: this filter used to drop only lines CONTAINING a triple quote, so the
-    # INTERIOR of every multi-line docstring was scanned as executable code, and prose
-    # describing the registry's gravity comparison read as a second implementation of
-    # it. Parse instead of filter: ast gives the exact span of every docstring, so what
-    # gets scanned is what actually runs.
-    docstring_lines: set[int] = set()
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(
-            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-        ):
-            continue
-        first = node.body[0] if node.body else None
-        if (
-            isinstance(first, ast.Expr)
-            and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)
-        ):
-            docstring_lines.update(range(first.lineno, (first.end_lineno or 0) + 1))
-    body = "\n".join(
-        line for number, line in enumerate(source.splitlines(), start=1)
-        if number not in docstring_lines and not line.lstrip().startswith("#")
-    )
+    body = _executable_lines(source)
     assert "def assess_leg(" in body, (
         "the docstring stripper removed executable code too, so an empty body would pass"
     )
@@ -1558,3 +1538,293 @@ def test_d104_the_positive_control_still_produces_records():
     assert chf.gravity_basis is not None
     assert chf.gravity_basis.reference_gravity_m_s2 == _REFERENCE_G
     assert chf.as_record()["gravity_basis"]["entry_id"] == chf.entry_id
+
+
+# ======================================================================================
+# D105 R1 — the disclosure, witnessed by measurement rather than by mention
+# ======================================================================================
+
+_DISCLOSURE_HEADING = (
+    "**THE RULES ARE REACHABLE FROM INSIDE THE PROCESS. DISCLOSED, NOT CLAIMED SHUT.**"
+)
+
+
+def _disclosure_section() -> str:
+    """The disclosure as ``help()`` sees it -- ``__doc__``, not the file on disk.
+
+    Reading the source would pass even if the section sat in a comment or an orphaned
+    string no reader ever reaches. D105/R2 is exactly that failure one level down.
+    """
+    doc = ac.__doc__ or ""
+    assert _DISCLOSURE_HEADING in doc, (
+        "the D105 disclosure heading is not in the module docstring. It is the anchor "
+        "every check below hangs on, and a disclosure a reader cannot find is not one."
+    )
+    return doc[doc.index(_DISCLOSURE_HEADING):]
+
+
+def _steer_by_rebinding_the_module_attribute(monkeypatch):
+    forged = tuple(
+        dataclasses.replace(
+            e, applicability_spec=dataclasses.replace(
+                e.applicability_spec, gravity_rel_tol=1.0e12))
+        if e.kind == "chf" and e.applicability_spec is not None else e
+        for e in ac.REGISTRY_ENTRIES
+    )
+    monkeypatch.setattr(ac, "REGISTRY_ENTRIES", forged)
+
+
+def _steer_by_writing_through_the_frozen_entry(monkeypatch):
+    # The entry is frozen, so monkeypatch cannot set it and cannot restore it either.
+    # The undo is registered by hand, through the same door the write goes through.
+    spec = ac.adopted_entry("chf").applicability_spec
+    _RAW_WRITE_UNDO.append((spec, spec.gravity_rel_tol))
+    object.__setattr__(spec, "gravity_rel_tol", 1.0e12)
+
+
+def _steer_by_replacing_the_enforcement(monkeypatch):
+    monkeypatch.setattr(Applicability, "check", lambda self, **kw: ())
+
+
+def _steer_by_rebinding_the_seam(monkeypatch):
+    monkeypatch.setattr(
+        ac, "_assess_leg_against_a_supplied_registry",
+        lambda *a, **k: _FORGED_SENTINEL,
+    )
+
+
+_FORGED_SENTINEL = object()
+_RAW_WRITE_UNDO: list = []
+
+
+@pytest.fixture
+def _undo_raw_writes():
+    yield
+    while _RAW_WRITE_UNDO:
+        target, value = _RAW_WRITE_UNDO.pop()
+        object.__setattr__(target, "gravity_rel_tol", value)
+
+
+#: (name, the text the disclosure must carry, the probe that proves it).
+#: The pairing is the point: a route cannot be named in the disclosure without an
+#: executed demonstration beside it, and cannot be demonstrated without being named.
+_DISCLOSED_STEERING_ROUTES = [
+    ("rebind the module attribute", "REGISTRY_ENTRIES = forged",
+     _steer_by_rebinding_the_module_attribute),
+    ("raw-write the frozen entry", "object.__setattr__(entry.applicability_spec",
+     _steer_by_writing_through_the_frozen_entry),
+    ("replace the enforcement", "Applicability.check = lambda",
+     _steer_by_replacing_the_enforcement),
+    ("rebind the seam", "rebinding this module's own seam",
+     _steer_by_rebinding_the_seam),
+]
+
+
+@pytest.mark.parametrize(
+    "name,needle,probe", _DISCLOSED_STEERING_ROUTES, ids=[r[0] for r in _DISCLOSED_STEERING_ROUTES]
+)
+def test_d105_r1_each_disclosed_route_is_named_and_still_steers(
+    name, needle, probe, monkeypatch, _undo_raw_writes
+):
+    """**The disclosure is held to measurement, in both directions.**
+
+    D100's first version of this check accepted any mention of the route plus the word
+    "disclosed" anywhere in the file, which a fresh instance satisfies by writing the
+    marker's own wording back (D43: a key that is the marker's own text is not a key).
+    So mention is only half. The other half executes the route and requires it to still
+    move a microgravity case from ``False, ['ORIENTATION']`` to ``True, []``.
+
+    That makes the check bite in the direction that matters for a DISCLOSURE, which is
+    the opposite of a guard: if a later repair closes one of these routes, this fails
+    and the module must stop claiming it is open. An overclaim about what is broken is
+    still an overclaim.
+    """
+    section = _disclosure_section()
+    assert needle in section, (
+        f"the disclosure does not name the {name} route, but it is measured below to "
+        "steer the outcome. A disclosure that omits a measured route is incomplete."
+    )
+
+    truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert truth.eligible is False and [v.axis for v in truth.violations] == [
+        Axis.ORIENTATION
+    ], "the case is not de-ranked to begin with, so steering it would prove nothing"
+
+    probe(monkeypatch)
+    steered = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    if steered is _FORGED_SENTINEL:
+        return  # the seam route: the computation was replaced outright
+    assert steered.eligible is True and steered.violations == (), (
+        f"the {name} route no longer steers the outcome. If it was closed on purpose, "
+        "the module's disclosure now overclaims what is reachable and must be narrowed."
+    )
+
+
+def _inert_rebind_the_source_registry(monkeypatch):
+    monkeypatch.setattr(_tp_module, "TWO_PHASE_CORRELATIONS", ())
+
+
+def _inert_empty_the_chf_leg_set(monkeypatch):
+    monkeypatch.setattr(ac, "CHF_DEPENDENT_LEGS", frozenset())
+
+
+_DISCLOSED_INERT_ROUTES = [
+    ("rebind the source registry after import", _inert_rebind_the_source_registry),
+    ("empty CHF_DEPENDENT_LEGS", _inert_empty_the_chf_leg_set),
+]
+
+
+@pytest.mark.parametrize(
+    "name,probe", _DISCLOSED_INERT_ROUTES, ids=[r[0] for r in _DISCLOSED_INERT_ROUTES]
+)
+def test_d105_r1_the_routes_called_harmless_are_still_harmless(name, probe, monkeypatch):
+    """The other direction. This project has retracted an overclaim twice, so the
+    disclosure states what does NOT reach the rules, and that half is measured too."""
+    truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    probe(monkeypatch)
+    after = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert after.eligible == truth.eligible, (
+        f"the disclosure says {name} does not reach the rules, and it now does"
+    )
+    assert [v.axis for v in after.violations] == [v.axis for v in truth.violations]
+
+
+def test_d105_r1_widening_the_adopted_status_set_refuses_rather_than_forging(monkeypatch):
+    """The third inert route refuses instead of returning: three CHF correlations become
+    adopted at once and the ambiguity guard declines to pick one. Disclosed as a refusal
+    rather than as a steering route, because that is what it measures as."""
+    monkeypatch.setattr(ac, "ADOPTED_FOR_RANKING", frozenset(Status))
+    with pytest.raises(ValueError, match="adopted for ranking"):
+        ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert "refuses" in _disclosure_section()
+
+
+def test_d105_r1_the_disclosure_states_the_mechanism_not_only_its_instances():
+    """The question this gate keeps having to ask: does the text name the mechanism, or
+    one of the things the mechanism can do?
+
+    Anchored on two claims that are about the mechanism rather than about any route --
+    that the rules are reached by name at call time, and that the enumerated routes are
+    illustrative. A section listing four routes without either would be four instances.
+    """
+    section = _disclosure_section()
+    assert "by name" in section and "call time" in section, (
+        "the disclosure names routes but not the mechanism that makes them work"
+    )
+    assert "illustrative" in section, (
+        "the disclosure reads as a complete list, which it is not and cannot be"
+    )
+    assert "not any particular name" in section
+def _executable_lines(source: str) -> str:
+    """``source`` with every comment and every BARE STRING STATEMENT removed.
+
+    D104 replaced a line filter -- which dropped only lines *containing* a triple quote,
+    so docstring interiors were scanned as executable code -- with an ast walk. D105:
+    that walk read ``body[0]`` only, and a function can carry more than one bare string.
+    Both seam functions did: the D104 warning became ``__doc__`` and the sentence
+    describing what the function computes became an orphan below it, unreachable from
+    ``help()`` and scanned here as implementation.
+
+    So the rule is the general one and not the docstring one: **an ``Expr`` whose value
+    is a string constant is documentation wherever it appears.** Walking every node
+    rather than each body's head also covers strings nested in ``if``/``try``/``for``
+    bodies, which a head-of-body reading cannot see at all.
+    """
+    documentation_lines: set[int] = set()
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            documentation_lines.update(range(node.lineno, (node.end_lineno or 0) + 1))
+    return "\n".join(
+        line for number, line in enumerate(source.splitlines(), start=1)
+        if number not in documentation_lines and not line.lstrip().startswith("#")
+    )
+
+
+_TWO_STRING_SOURCE = '''\
+def seam(entries, leg):
+    """A warning that became the docstring."""
+    """What the function computes. The tolerance comparison -- gravity_rel_tol -- lives
+    in the registry, not here, and this sentence is the maintainer's note saying so."""
+    if leg:
+        """A third string, nested, where a head-of-body reading cannot see it at all:
+        gravity_rel_tol again."""
+        return entries[0]
+    return None
+'''
+
+
+def test_d105_r2_documentation_below_the_first_string_is_not_read_as_code():
+    """**The planted-prose witness, in the shape the finding used.**
+
+    A maintainer's note mentioning the tolerance is placed in the SECOND string of a
+    function and again in a nested THIRD. Under the ``body[0]`` reading both survive
+    stripping and S5-6 fires on documentation; under this one neither does. The control
+    below keeps that from being satisfied by a stripper that deletes everything.
+    """
+    body = _executable_lines(_TWO_STRING_SOURCE)
+
+    assert "gravity_rel_tol" not in body, (
+        "prose in a non-first string is still being read as executable code"
+    )
+    assert "def seam(entries, leg):" in body and "return entries[0]" in body, (
+        "the stripper removed executable code, so 'no match' would mean nothing"
+    )
+    # And the head-of-body reading it replaces genuinely fails this, so the witness is
+    # not describing a distinction without a difference.
+    head_only: set[int] = set()
+    for node in ast.walk(ast.parse(_TWO_STRING_SOURCE)):
+        if isinstance(node, (ast.Module, ast.FunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                head_only.update(range(first.lineno, (first.end_lineno or 0) + 1))
+    under_the_old_rule = "\n".join(
+        line for number, line in enumerate(_TWO_STRING_SOURCE.splitlines(), start=1)
+        if number not in head_only
+    )
+    assert "gravity_rel_tol" in under_the_old_rule, (
+        "the reading this replaced would have passed too, so nothing was repaired"
+    )
+
+
+def test_d105_r2_each_seam_carries_one_docstring_holding_both_things():
+    """``help()`` must reach the criterion, not only the warning.
+
+    S4-8's distinction -- ``None`` is an absence of knowledge, not an ineligibility --
+    was in an orphaned string below each seam's docstring, so it was invisible to
+    ``help()`` and to every reader who did not open the file.
+    """
+    for seam, needle in (
+        (ac._assess_leg_against_a_supplied_registry, "not"),
+        (ac._assess_fluid_against_a_supplied_registry, "S5-1"),
+    ):
+        doc = inspect.getdoc(seam) or ""
+        assert "NOT THE API" in doc, "the seam must still announce that it is a seam"
+        assert "What it computes" in doc, (
+            f"{seam.__name__}.__doc__ does not carry what the function computes; it is "
+            "still an orphan string that help() cannot reach"
+        )
+        assert needle in doc
+
+    leg_doc = inspect.getdoc(ac._assess_leg_against_a_supplied_registry) or ""
+    assert "absence of knowledge" in leg_doc and "S4-8" in leg_doc, (
+        "the S4-8 criterion is not reachable from help() on the seam that implements it"
+    )
+
+    source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    orphans = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        for statement in node.body[1:]:
+            if isinstance(statement, ast.Expr) and isinstance(
+                statement.value, ast.Constant
+            ) and isinstance(statement.value.value, str):
+                orphans.append(f"{node.name}:{statement.lineno}")
+    assert not orphans, (
+        "bare string statements below the docstring, unreachable from help(): "
+        + ", ".join(orphans)
+    )
