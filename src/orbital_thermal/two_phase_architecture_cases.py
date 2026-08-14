@@ -407,17 +407,26 @@ class FluidEligibility:
         return [self.legs[leg].as_record() for leg in RANKING_LEGS if leg in self.legs]
 
 
-def adopted_entry(
-    leg: str, entries: tuple[CorrelationEntry, ...] | None = None
-) -> CorrelationEntry | None:
-    """The correlation adopted for ranking on a leg, or ``None`` if none is.
+def adopted_entry(leg: str) -> CorrelationEntry | None:
+    """The correlation adopted for ranking on a leg, **in the adopted registry**.
 
     Derived from status, so an entry moving out of ``RESOLVED`` moves eligibility with it
     -- which is S5-1's falsifier ("an eligibility that does not change when a
     correlation's declared basis, adoption status, or applicability axis changes").
+
+    D104: this function used to take ``entries=`` too. It was found by the derived
+    witness rather than by the finding, which named only :func:`assess_leg` -- a public
+    parameter that carries the rules is the defect, and the reported call site was one
+    instance of it.
     """
-    pool = REGISTRY_ENTRIES if entries is None else entries
-    adopted = [e for e in pool if e.kind == leg and e.status in ADOPTED_FOR_RANKING]
+    return _adopted_entry_in_a_supplied_registry(REGISTRY_ENTRIES, leg)
+
+
+def _adopted_entry_in_a_supplied_registry(
+    entries: tuple[CorrelationEntry, ...], leg: str
+) -> CorrelationEntry | None:
+    """:func:`adopted_entry` against a registry the caller states. Not production."""
+    adopted = [e for e in entries if e.kind == leg and e.status in ADOPTED_FOR_RANKING]
     if not adopted:
         return None
     if len(adopted) > 1:
@@ -429,21 +438,39 @@ def adopted_entry(
     return adopted[0]
 
 
-def assess_leg(
+def _assess_leg_against_a_supplied_registry(
+    entries: tuple[CorrelationEntry, ...],
     fluid: str,
     leg: str,
     *,
     gravity_m_s2: float,
-    entries: tuple[CorrelationEntry, ...] | None = None,
     **case: object,
 ) -> LegEligibility | None:
+    """**NOT THE API. A test seam, and it is private and named so it cannot be mistaken.**
+
+    D104. ``entries`` used to be a keyword of the PUBLIC :func:`assess_leg`, so the rules
+    the computation applies were caller-supplied. Measured: copy the adopted CHF entry,
+    keep id, kind, status, reference gravity and basis text byte-identical, widen only
+    ``gravity_rel_tol`` from 0.01 to 1e12, and microgravity returns
+    ``eligible=True, violations=[]`` instead of ``False, ['ORIENTATION']``. No direct
+    construction, no private name, no raw protocol -- the permitted route, used as
+    designed. The mint guarantees a record came from the computation; it never guaranteed
+    the computation ran against the adopted registry.
+
+    The Director ruled the injection REMOVED from the production route rather than the
+    supplied entry authenticated: a fifth field-level check is what the previous four
+    were. So this exists only because ``S5-1`` needs to de-adopt an entry and watch the
+    leg disappear -- a real criterion witness. It is private, it takes the registry
+    FIRST and positionally so no call reads like the public one, and its name says what
+    it is.
+    """
     """Assess one leg for one fluid. ``None`` when no correlation is adopted for it.
 
     ``None`` is *not* "ineligible": no adopted correlation is an absence of knowledge,
     and S4-8 requires that to stay distinguishable from a refusal. The caller sees the
     difference because it gets no record rather than a negative one.
     """
-    entry = adopted_entry(leg, entries)
+    entry = _adopted_entry_in_a_supplied_registry(entries, leg)
     if entry is None:
         return None
 
@@ -468,17 +495,20 @@ def assess_leg(
         )
 
 
-def assess_fluid(
+def _assess_fluid_against_a_supplied_registry(
+    entries: tuple[CorrelationEntry, ...],
     fluid: str,
     *,
     gravity_m_s2: float,
-    entries: tuple[CorrelationEntry, ...] | None = None,
     **case: object,
 ) -> FluidEligibility:
+    """**NOT THE API.** The :func:`assess_fluid` seam. See
+    :func:`_assess_leg_against_a_supplied_registry`."""
     """Assess every ranking leg for one fluid. Computed, never declared (S5-1)."""
     legs: dict[str, LegEligibility] = {}
     for leg in RANKING_LEGS:
-        outcome = assess_leg(fluid, leg, gravity_m_s2=gravity_m_s2, entries=entries, **case)
+        outcome = _assess_leg_against_a_supplied_registry(
+            entries, fluid, leg, gravity_m_s2=gravity_m_s2, **case)
         if outcome is not None:
             legs[leg] = outcome
     return FluidEligibility(fluid=fluid, legs=legs)
@@ -755,3 +785,59 @@ def d6_retirement_state() -> tuple[str, str]:
         f"{d.acted_on} at {d.measurement.deviation_percent} % -- which is NOT the best "
         f"recorded deviation. {d.accuracy_disclaimer} {d.structural_rejection}",
     )
+
+
+# =======================================================================================
+# THE PUBLIC API. It reads the module registry and nothing else.
+# =======================================================================================
+#
+# **D104, and it is the construction boundary a fourth time -- one layer out.**
+#
+#   round 1 F-04   the basis was fabricable                 -> authenticate the tuple
+#   round 2 F-02   the producer id was free of the basis    -> join the two ids
+#   closure F-01   the outcome and the kind were free       -> remove the door
+#   D104           the RULES the computation applies were caller-supplied
+#
+# ``entries`` was a keyword of both public entry points, so a caller supplied the
+# correlation set the computation reasoned over. Keeping every authenticated field
+# byte-identical and widening only ``gravity_rel_tol`` -- an ordinary field of the same
+# frozen dataclass, and the multiplier deciding whether the DE_RANK exists at all --
+# turned a microgravity refusal into ``eligible=True, violations=[]``.
+#
+# The Director ruled the injection REMOVED rather than the supplied entry authenticated:
+# a fifth field-level check is what the previous four were. Nothing caller-supplied
+# reaches the rules now, so there is nothing left to authenticate. The parameters that
+# remain describe the CASE -- which fluid, which gravity, which geometry -- and a case is
+# what a caller is entitled to state.
+
+
+def assess_leg(fluid: str, leg: str, *, gravity_m_s2: float, **case: object):
+    """Assess one leg for one fluid **against the adopted registry**.
+
+    There is no parameter that supplies correlations. The rules come from
+    :data:`REGISTRY_ENTRIES`; the caller states the case.
+    """
+    if "entries" in case:
+        raise TypeError(
+            "assess_leg does not take `entries`: the rules come from REGISTRY_ENTRIES, "
+            "not from a caller (D104). A caller states the CASE -- which fluid, which "
+            "gravity, which geometry -- and the registry states the rules. Tests that "
+            "must vary the adopted set use "
+            "_assess_leg_against_a_supplied_registry, which is private and says so."
+        )
+    return _assess_leg_against_a_supplied_registry(
+        REGISTRY_ENTRIES, fluid, leg, gravity_m_s2=gravity_m_s2, **case)
+
+
+def assess_fluid(fluid: str, *, gravity_m_s2: float, **case: object):
+    """Assess every ranking leg for one fluid **against the adopted registry**."""
+    if "entries" in case:
+        raise TypeError(
+            "assess_fluid does not take `entries`: the rules come from REGISTRY_ENTRIES, "
+            "not from a caller (D104). A caller states the CASE -- which fluid, which "
+            "gravity, which geometry -- and the registry states the rules. Tests that "
+            "must vary the adopted set use "
+            "_assess_fluid_against_a_supplied_registry, which is private and says so."
+        )
+    return _assess_fluid_against_a_supplied_registry(
+        REGISTRY_ENTRIES, fluid, gravity_m_s2=gravity_m_s2, **case)

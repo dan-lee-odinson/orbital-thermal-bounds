@@ -26,6 +26,7 @@ falsifying shape itself and requiring it to be refused.
 
 from __future__ import annotations
 
+import ast
 import dataclasses
 import inspect
 import pathlib
@@ -35,8 +36,8 @@ import warnings
 import pytest
 
 from orbital_thermal import two_phase_architecture_cases as ac
-from orbital_thermal.registry.applicability import Axis, Consequence
-from orbital_thermal.registry.provenance import Status
+from orbital_thermal.registry.applicability import Applicability, Axis, Consequence
+from orbital_thermal.registry.provenance import CorrelationEntry, Status
 
 #: Standard gravity, as the registry declares it. Read from the adopted CHF entry rather
 #: than written here, so this file cannot drift from the source the ruling rests on.
@@ -80,7 +81,10 @@ def test_s5_1_eligibility_moves_when_the_adopted_correlation_set_moves():
         if e.id == _ADOPTED_CHF.id else e
         for e in ac.REGISTRY_ENTRIES
     )
-    after = ac.assess_fluid("ammonia", gravity_m_s2=_REFERENCE_G, entries=demoted)
+    # D104: the seam, not the API. It is private and named so this line cannot be
+    # mistaken for something a consumer would write.
+    after = ac._assess_fluid_against_a_supplied_registry(
+        demoted, "ammonia", gravity_m_s2=_REFERENCE_G)
     assert "chf" not in after.legs, (
         "de-adopting the CHF correlation must remove the CHF leg; if it does not, "
         "eligibility is a list rather than a rule"
@@ -101,7 +105,8 @@ def test_s5_1_an_absent_correlation_is_not_an_ineligibility():
     a refusal: "no correlation exists" and "one exists and refuses" are different claims.
     """
     stripped = tuple(e for e in ac.REGISTRY_ENTRIES if e.kind != "chf")
-    assert ac.assess_leg("ammonia", "chf", gravity_m_s2=_REFERENCE_G, entries=stripped) is None
+    assert ac._assess_leg_against_a_supplied_registry(
+        stripped, "ammonia", "chf", gravity_m_s2=_REFERENCE_G) is None
     refused = ac.assess_leg("ammonia", "chf", gravity_m_s2=_MICROGRAVITY)
     assert refused is not None and refused.eligible is False, (
         "a correlation that exists and refuses must produce a record, not an absence"
@@ -341,9 +346,30 @@ def test_s5_6_the_module_carries_no_second_gravity_comparison():
     registry's". The only gravity arithmetic permitted here is handing the value to
     ``Applicability.check``."""
     source = pathlib.Path(ac.__file__).read_text(encoding="utf-8")
+    # D104: this filter used to drop only lines CONTAINING a triple quote, so the
+    # INTERIOR of every multi-line docstring was scanned as executable code, and prose
+    # describing the registry's gravity comparison read as a second implementation of
+    # it. Parse instead of filter: ast gives the exact span of every docstring, so what
+    # gets scanned is what actually runs.
+    docstring_lines: set[int] = set()
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(
+            node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            continue
+        first = node.body[0] if node.body else None
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            docstring_lines.update(range(first.lineno, (first.end_lineno or 0) + 1))
     body = "\n".join(
-        line for line in source.splitlines()
-        if not line.lstrip().startswith("#") and '"""' not in line
+        line for number, line in enumerate(source.splitlines(), start=1)
+        if number not in docstring_lines and not line.lstrip().startswith("#")
+    )
+    assert "def assess_leg(" in body, (
+        "the docstring stripper removed executable code too, so an empty body would pass"
     )
     for forbidden in ("gravity_rel_tol", "9.80665", "abs(gravity", "> ref", "< ref"):
         assert forbidden not in body, (
@@ -1345,3 +1371,190 @@ def test_d102_r6_the_notice_is_emitted_by_this_suite_so_the_grep_has_something_t
         _RouteNotExercised,
         stacklevel=2,
     )
+
+
+# ======================================================================================
+# D104 — the rules are not an input. Derived, not listed.
+# ======================================================================================
+
+
+def _public_entry_points():
+    """Every public callable this module defines. DERIVED from the module, not typed.
+
+    A new public function added later is covered here without this file being edited,
+    which is the whole point: a listed witness only ever guards the door you remembered.
+    """
+    found = []
+    for name in dir(ac):
+        if name.startswith("_"):
+            continue
+        obj = getattr(ac, name)
+        if callable(obj) and getattr(obj, "__module__", None) == ac.__name__:
+            found.append((name, obj))
+    assert [n for n, _ in found if n.startswith("assess_")], (
+        "the enumeration found no assess_* entry point, so it is not looking at the "
+        "module and every assertion below would pass vacuously"
+    )
+    return found
+
+
+def _rule_bearing_type_names():
+    """The names that denote *rules* rather than *a case*. Derived from the registry.
+
+    ``CorrelationEntry`` and ``Applicability`` are the two types whose values decide what
+    the computation concludes. Any annotation that mentions either -- bare, optional, or
+    inside a sequence -- is a parameter through which a caller supplies the rules.
+    """
+    return frozenset({CorrelationEntry.__name__, Applicability.__name__})
+
+
+def _steering_keywords():
+    """Keyword names worth trying against a ``**kwargs`` channel. DERIVED.
+
+    Built from the private seams' own parameter names and from the field names of the
+    two rule-bearing dataclasses, so a rule field added to the registry becomes a probed
+    keyword here without this test being touched.
+    """
+    names = set()
+    for seam in (
+        ac._assess_leg_against_a_supplied_registry,
+        ac._assess_fluid_against_a_supplied_registry,
+    ):
+        names.update(inspect.signature(seam).parameters)
+    for spec in (CorrelationEntry, Applicability):
+        names.update(f.name for f in dataclasses.fields(spec))
+    names.discard("fluid")
+    names.discard("leg")
+    names.discard("gravity_m_s2")
+    names.discard("case")
+    assert "entries" in names and "gravity_rel_tol" in names, (
+        "the keyword derivation lost the two names D104 was reported against"
+    )
+    return sorted(names)
+
+
+def _widened_registry():
+    """The reported instance, byte-for-byte: the adopted CHF entry with one tolerance
+    widened so microgravity falls inside it. id, kind, status, reference gravity and
+    every basis string are unchanged -- this is a forgery that passes inspection."""
+    widened = []
+    for entry in ac.REGISTRY_ENTRIES:
+        if entry.kind == "chf" and entry.status in ac.ADOPTED_FOR_RANKING:
+            entry = dataclasses.replace(
+                entry,
+                applicability_spec=dataclasses.replace(
+                    entry.applicability_spec, gravity_rel_tol=1.0e12
+                ),
+            )
+        widened.append(entry)
+    return tuple(widened)
+
+
+def test_d104_no_public_entry_point_admits_the_rules():
+    """**The finding, generalised: no public parameter may carry a rule.**
+
+    Reported instance: ``assess_leg(..., entries=widened)`` returned ``eligible=True``
+    for a microgravity case, because ``entries=`` let the caller supply the correlations
+    the computation applies rather than the case it applies them to. The repair is not a
+    check on ``entries`` -- it is that the public functions read :data:`REGISTRY_ENTRIES`
+    and nothing else. This asserts that over the *derived* public surface, so it fails
+    for a channel nobody enumerated.
+    """
+    offenders = []
+    for name, fn in _public_entry_points():
+        if isinstance(fn, type):
+            continue  # a record type; its fields are outputs, not caller inputs
+        for pname, param in inspect.signature(fn).parameters.items():
+            annotation = str(param.annotation)
+            if any(rule in annotation for rule in _rule_bearing_type_names()):
+                offenders.append(f"{name}({pname}: {annotation})")
+    assert not offenders, (
+        "public parameters carry the rules the computation applies, not the case: "
+        + "; ".join(offenders)
+        + ". Move them to a private seam whose name says it takes a supplied registry."
+    )
+
+
+@pytest.mark.parametrize("keyword", _steering_keywords())
+def test_d104_no_keyword_channel_steers_the_outcome(keyword):
+    """**The runtime half: ``**case`` is annotated ``object``, so ask it, don't read it.**
+
+    An annotation check cannot clear a ``**kwargs`` parameter -- ``object`` admits the
+    registry. So every derived keyword is actually tried, carrying the forged widened
+    registry, against a microgravity case whose true answer is a de-rank. The outcome
+    must be identical to the un-steered one, or the call must refuse. Passing the
+    forgery and getting the same answer is the assertion; refusing is also acceptable,
+    because either way the caller did not move the result.
+    """
+    truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert truth is not None and truth.eligible is False, (
+        "the negative control is not de-ranked to begin with, so steering it would "
+        "prove nothing"
+    )
+
+    forged = _widened_registry()
+    try:
+        steered = ac.assess_leg(
+            "water", "chf", gravity_m_s2=_MICROGRAVITY, **{**_FULL_CASE, keyword: forged}
+        )
+    except TypeError:
+        return  # refused outright: the channel does not exist
+    assert steered.eligible == truth.eligible, (
+        f"passing the forged registry as {keyword}= moved the outcome from "
+        f"{truth.eligible} to {steered.eligible}. A caller supplied the rules."
+    )
+    assert [v.axis for v in steered.violations] == [v.axis for v in truth.violations]
+
+
+def test_d104_the_reported_instance_is_a_negative_control():
+    """The reported call, unchanged in shape. The outcome must be the SAME, not refused
+    into a different one: microgravity de-ranks whatever the caller hands over."""
+    truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert truth.eligible is False
+    assert [v.axis for v in truth.violations] == [Axis.ORIENTATION]
+
+    with pytest.raises(TypeError, match="does not take"):
+        ac.assess_leg(
+            "water", "chf", gravity_m_s2=_MICROGRAVITY,
+            entries=_widened_registry(), **_FULL_CASE,
+        )
+    with pytest.raises(TypeError, match="does not take"):
+        ac.assess_fluid(
+            "water", gravity_m_s2=_MICROGRAVITY,
+            entries=_widened_registry(), **_FULL_CASE,
+        )
+
+    after = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    assert after.eligible is truth.eligible
+    assert after.entry_id == truth.entry_id
+
+
+def test_d104_the_seam_is_private_and_says_what_it_takes():
+    """The witness S5-1 needs is a seam, and a seam has to be unmistakable.
+
+    Two properties, both required: the name is private, and it *states* that the
+    registry is supplied rather than adopted. A private name alone would still read
+    like the production call at the call site.
+    """
+    for seam in (
+        ac._assess_leg_against_a_supplied_registry,
+        ac._assess_fluid_against_a_supplied_registry,
+    ):
+        assert seam.__name__.startswith("_")
+        assert "supplied_registry" in seam.__name__
+        first = next(iter(inspect.signature(seam).parameters))
+        assert first == "entries", (
+            "the supplied registry must be the FIRST positional parameter, so a call "
+            "through the seam cannot be mistaken for a call to the public function"
+        )
+
+
+def test_d104_the_positive_control_still_produces_records():
+    """The door is shut and the room is still in use: real assessments still work."""
+    fluid = ac.assess_fluid("water", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    assert set(fluid.legs) <= set(ac.RANKING_LEGS)
+    chf = fluid.legs["chf"]
+    assert chf.eligible is True
+    assert chf.gravity_basis is not None
+    assert chf.gravity_basis.reference_gravity_m_s2 == _REFERENCE_G
+    assert chf.as_record()["gravity_basis"]["entry_id"] == chf.entry_id
