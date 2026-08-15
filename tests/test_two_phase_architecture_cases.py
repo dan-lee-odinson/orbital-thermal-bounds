@@ -2642,3 +2642,102 @@ def test_d114_the_computation_reads_executability_rather_than_a_default():
     )
     entry = ac.adopted_entry("chf")
     assert entry.has_executable_form is True, "today's adopted entry, for orientation"
+
+
+# ======================================================================================
+# D115 — a cited basis must be the population that runs
+# ======================================================================================
+
+
+def _closed_basis() -> str:
+    """The ``Closed.`` half of the disclosure, out of ``__doc__`` and unwrapped."""
+    prose = _disclosure_prose()
+    start = prose.index("**Closed.**")
+    end = prose.index("**Not closed")
+    return prose[start:end]
+
+
+def test_d115_the_closed_basis_cites_the_populations_that_actually_run():
+    """**The D105 pattern turned on the D105 text.**
+
+    A route could not be disclosed without a demonstration beside it. A *basis* could,
+    and one was: the paragraph cited dataclass fields as evidence for a claim about
+    every call, and the channel D114 came through was a method parameter. The claim was
+    true; the evidence named a narrower population than the claim needed.
+
+    So the citation is bound to the populations that exist, derived from
+    :func:`_exercised_populations` rather than listed. Cite one that does not run, or
+    run one that is not cited, and this fails. It is deliberately symmetric: a basis
+    that quietly *drops* a population reads exactly like one that never had it.
+    """
+    basis = _closed_basis()
+
+    uncited = [name for name in _exercised_populations() if f"**{name}**" not in basis]
+    assert not uncited, (
+        f"these populations are exercised but the Closed. basis does not cite them: "
+        f"{uncited}. A basis narrower than the coverage it stands on is how D114 "
+        "reached a channel the paragraph had already declared shut."
+    )
+
+    # And the other direction: a population named in bold in the basis must be one that
+    # actually runs, so the citation cannot outlive the probe it refers to.
+    cited = set(re.findall(r"\*\*(numeric|textual|boolean|[a-z]+)\*\*, carrying", basis))
+    unknown = cited - set(_exercised_populations())
+    assert not unknown, (
+        f"the basis cites populations that no probe runs: {sorted(unknown)}"
+    )
+
+
+def test_d115_the_closed_basis_cites_signatures_and_not_only_dataclass_fields():
+    """The specific narrowing that was found, pinned so it cannot recur by omission.
+
+    ``has_executable_form`` is a parameter and not a field. A basis that names only
+    field-shaped sources is narrower than a claim about every call, whatever else it
+    says.
+    """
+    basis = _closed_basis()
+    assert "signatures" in basis and "parameters, not only dataclass fields" in basis, (
+        "the basis does not say that its derived inputs come from signatures; naming "
+        "only dataclass fields is the exact narrowing D114 came through"
+    )
+    for source in ("assess_leg", "assess_fluid", "Applicability.check"):
+        assert source in basis, f"the basis does not name {source} as a derived source"
+
+
+def test_d115_every_witness_the_basis_cites_by_name_exists():
+    """A basis that names a witness must name one that is real.
+
+    Cheap, and it closes the way a citation rots: the test is renamed, the paragraph
+    keeps pointing at the old name, and the reader takes the pointer for the check.
+    """
+    cited = set(re.findall(r"test_[a-z0-9_]+", _disclosure_prose()))
+    assert cited, "the disclosure cites no witness by name, which this expects"
+    defined = {
+        name for name in globals()
+        if name.startswith("test_") and callable(globals()[name])
+    }
+    missing = sorted(cited - defined)
+    assert not missing, (
+        f"the disclosure cites witnesses that do not exist in this module: {missing}"
+    )
+
+
+def test_d115_the_claim_itself_is_unchanged():
+    """A basis repair must not become a claim repair.
+
+    The claim was already correct and is now correctly evidenced. A claim that grows to
+    match a widened basis is the overclaim direction, which the D105 witnesses refuse in
+    the other half of this same paragraph.
+    """
+    basis = _closed_basis()
+    assert "Nothing that arrives *through a call* reaches the rules." in basis or (
+        "Nothing that arrives through a call reaches the rules." in basis
+    ), "the claim sentence was altered; D115 was a basis repair"
+    assert "not a keyword, not ``**case``" in basis
+    # The claim is about calls. It must not have crept outward to cover the routes the
+    # NEXT half discloses as open -- rebinding, raw writes, replacing the enforcement.
+    for overreach in ("cannot be reached", "no route", "is not reachable"):
+        assert overreach not in basis, (
+            f"the Closed. half now claims {overreach!r}, which contradicts the "
+            "disclosure immediately below it"
+        )

@@ -74,10 +74,41 @@ about parameters and silent about the attribute it names in its own second claus
 Both directions, then.
 
 **Closed.** Nothing that arrives *through a call* reaches the rules. Not a positional
-argument, not a keyword, not ``**case``: every field name of :class:`CorrelationEntry`
-and of ``Applicability`` has been passed through ``**case`` carrying a widened
-tolerance, and none moved the outcome. The case surface is clean, and the witness that
-says so derives those names from the dataclasses themselves rather than listing them.
+argument, not a keyword, not ``**case``.
+
+**On what basis -- stated at length because this sentence once cited less than it
+claimed.** Until D114 the evidence offered here was *"every field name of*
+:class:`CorrelationEntry` *and of* ``Applicability`` *has been passed through*
+``**case``\\ *"*: dataclass **fields**, offered for a claim about every **call**.
+``has_executable_form`` is a *parameter* of :meth:`Applicability.check`, not a field of
+anything, so the one channel still open sat outside the evidence the sentence rested
+on. The claim was true when it was written and its basis was narrower than it -- which
+is this module's signature defect, occurring inside the paragraph that records having
+closed it. The claim below is unchanged; only what stands behind it is.
+
+Two parts, and the first is why the second is corroboration rather than the whole:
+
+* **Construction.** ``**case`` admits :data:`CASE_FACTS` and refuses everything else,
+  so the claim does not depend on any enumeration being complete. A parameter added to
+  :meth:`Applicability.check` is refused the day it appears rather than the day someone
+  passes it, and ``test_d114_every_check_parameter_is_accounted_for`` fails until it is
+  declared either a case fact or a value the computation states from the entry.
+* **Coverage, total rather than enumerated.** The inputs are derived from the
+  **signatures** of :func:`assess_leg`, :func:`assess_fluid` and
+  :meth:`Applicability.check` -- parameters, not only dataclass fields -- and from the
+  field names of :class:`CorrelationEntry` and ``Applicability``. Each is exercised by
+  one of three populations: **numeric**, carrying ``nan`` and both infinities;
+  **textual**, carrying empty, blank and outside-every-declared-basis values; and
+  **boolean**, carrying both values rather than only the one that moved an outcome.
+  ``test_d114_every_discovered_public_input_belongs_to_an_exercised_population``
+  asserts equality between what is discovered and what is exercised, in **both**
+  directions, so an input belonging to no population fails it -- which is the state
+  that let a ``bool`` fall between two populations and ship.
+
+``test_d115_the_closed_basis_cites_the_populations_that_actually_run`` holds this
+paragraph to that: a population cannot be cited here without being the one that runs,
+and one that runs cannot go uncited. A basis is the artifact nobody re-derives, because
+it reads as the derivation.
 
 **Not closed, and not closeable.** The rules are ordinary Python objects that this
 module reaches **by name, at call time**. Anything already running in this process can
