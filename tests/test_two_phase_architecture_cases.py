@@ -58,6 +58,27 @@ _MICROGRAVITY = 1e-6  # LEO, the D-10 divergence table's own case
 _FULL_CASE = {"geometry": "round_tube", "orientation": "vertical_upflow"}
 
 
+#: The values the computation states from the entry rather than accepting from a caller.
+_STATED_BY_THE_COMPUTATION = frozenset({"fluid", "gravity_m_s2", "has_executable_form"})
+
+
+def _checked(leg):
+    """Violations from axes that were actually evaluated.
+
+    D118: ``BLOCK`` is the vocabulary's word for *"cannot be evaluated because a
+    required statement or source is missing"*, so a ``BLOCK`` is not a finding about the
+    case -- it is the absence of one. Assertions about what the mechanism CONCLUDED are
+    written against this; assertions about what it could not reach use
+    :func:`_unevaluable`. Before D118 the two were indistinguishable at the CHF leg,
+    because the branch axis passed in silence instead of blocking.
+    """
+    return tuple(v for v in leg.violations if v.consequence is not Consequence.BLOCK)
+
+
+def _unevaluable(leg):
+    """The axes the assessment could not check, as violations."""
+    return tuple(v for v in leg.violations if v.consequence is Consequence.BLOCK)
+
 class _RouteNotExercised(UserWarning):
     """A construction route this interpreter cannot offer, so the witness could not run it.
 
@@ -245,7 +266,9 @@ def test_s5_5_a_chf_eligibility_has_no_bare_truth_value():
     with pytest.raises(TypeError):
         _ = "yes" if chf else "no"
     # .eligible remains available for a caller that HAS accounted for the basis.
-    assert chf.eligible is True
+    # What it SAYS is not this test's subject -- D118 made the CHF leg unevaluable
+    # on the branch axis, and S5-5 is about the accessor existing, not the verdict.
+    assert isinstance(chf.eligible, bool)
 
 
 def test_s5_5_no_projection_yields_chf_eligibility_without_its_basis():
@@ -366,8 +389,14 @@ def test_s5_6_the_module_carries_no_second_gravity_comparison():
 def test_s5_6_eligibility_holds_at_the_reference_gravity_negative_control():
     """The de-rank is not a way to refuse everything: at 1 g the CHF leg is eligible."""
     chf = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
-    assert chf.eligible is True
-    assert not [v for v in chf.violations if v.axis is Axis.ORIENTATION]
+    assert _checked(chf) == (), (
+        "at 1 g no evaluated axis may find against the case; the branch axis is "
+        "unevaluable here (D118) and that is an absence of a finding, not one"
+    )
+    assert not [
+        v for v in chf.violations
+        if v.axis is Axis.ORIENTATION and v.consequence is Consequence.DE_RANK
+    ]
 
     # And the D6 refusal is ISOLATED: at micro-gravity the same fully-specified water
     # case is refused on the orientation axis and on nothing else, so the de-rank cannot
@@ -1210,7 +1239,7 @@ def test_d100_assess_leg_still_produces_valid_records():
     at_1g = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
     micro = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
     assert at_1g is not None and micro is not None
-    assert at_1g.eligible is True and micro.eligible is False
+    assert _checked(at_1g) == () and micro.eligible is False
     assert {v.axis for v in micro.violations} == {Axis.ORIENTATION}
     assert at_1g.gravity_basis == _real_basis()
     assert at_1g.as_record()["entry_id"] == _ADOPTED_CHF.id
@@ -1501,7 +1530,9 @@ def test_d104_the_reported_instance_is_a_negative_control():
     into a different one: microgravity de-ranks whatever the caller hands over."""
     truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
     assert truth.eligible is False
-    assert [v.axis for v in truth.violations] == [Axis.ORIENTATION]
+    assert [(v.axis, v.consequence) for v in _checked(truth)] == [
+        (Axis.ORIENTATION, Consequence.DE_RANK)
+    ]
 
     with pytest.raises(TypeError, match="does not take"):
         ac.assess_leg(
@@ -1544,7 +1575,7 @@ def test_d104_the_positive_control_still_produces_records():
     fluid = ac.assess_fluid("water", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
     assert set(fluid.legs) <= set(ac.RANKING_LEGS)
     chf = fluid.legs["chf"]
-    assert chf.eligible is True
+    assert _checked(chf) == ()
     assert chf.gravity_basis is not None
     assert chf.gravity_basis.reference_gravity_m_s2 == _REFERENCE_G
     assert chf.as_record()["gravity_basis"]["entry_id"] == chf.entry_id
@@ -1665,15 +1696,17 @@ def test_d105_r1_each_disclosed_route_is_named_and_still_steers(
     )
 
     truth = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
-    assert truth.eligible is False and [v.axis for v in truth.violations] == [
-        Axis.ORIENTATION
-    ], "the case is not de-ranked to begin with, so steering it would prove nothing"
+    assert truth.eligible is False and [
+        (v.axis, v.consequence) for v in _checked(truth)
+    ] == [(Axis.ORIENTATION, Consequence.DE_RANK)], (
+        "the case is not de-ranked to begin with, so steering it would prove nothing"
+    )
 
     probe(monkeypatch)
     steered = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
     if steered is _FORGED_SENTINEL:
         return  # the seam route: the computation was replaced outright
-    assert steered.eligible is True and steered.violations == (), (
+    assert _checked(steered) == (), (
         f"the {name} route no longer steers the outcome. If it was closed on purpose, "
         "the module's disclosure now overclaims what is reachable and must be narrowed."
     )
@@ -1954,7 +1987,9 @@ def test_d106_the_worked_example_forges_a_serialisable_record(monkeypatch):
     # Half one: the computation is untouched. This is the D105 claim, still true.
     after = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
     assert after.eligible is False
-    assert [v.axis for v in after.violations] == [Axis.ORIENTATION]
+    assert [(v.axis, v.consequence) for v in _checked(after)] == [
+        (Axis.ORIENTATION, Consequence.DE_RANK)
+    ]
 
     # Half two: the mint is gone, and the forgery serialises.
     forged = _forge_a_chf_leg()
@@ -2353,8 +2388,19 @@ def test_d110_no_unorderable_value_on_any_numeric_input_mints_an_eligible_record
     the mechanism, so it does not quietly mandate one of those. The next test pins
     which one gravity gets.
     """
-    with pytest.raises(ValueError, match="must be finite"):
+    statable = name in ac.CASE_FACTS or name in _STATED_BY_THE_COMPUTATION
+    with pytest.raises((ValueError, TypeError)) as refusal:
         _assess_with(name, _UNORDERABLE_FLOATS[label])
+    # D118 split this population in two, and which half a name falls in is
+    # derived rather than listed: a name a caller may state must reach the
+    # finiteness check, and a name that is not a caller's to state must never
+    # reach the computation at all. Either way no eligible record is minted --
+    # which is the property this test asserted before and still asserts.
+    expected = "must be finite" if statable else "not a case fact"
+    assert expected in str(refusal.value), (
+        f"{name} was refused as {refusal.value!r}, expected a {expected!r} "
+        "refusal; the two halves of this population must not drift together"
+    )
 
 
 def test_d110_nan_gravity_is_refused_through_assess_fluid_too():
@@ -2372,15 +2418,17 @@ def test_d110_the_paired_control_a_valid_case_must_still_evaluate():
     took either of these would be a worse defect than the one it fixed.
     """
     at_reference = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
-    assert at_reference.eligible is True
-    assert at_reference.violations == ()
+    assert _checked(at_reference) == (), (
+        "no evaluated axis finds against the reference case; refusing everything "
+        "is what this control exists to exclude"
+    )
     assert at_reference.gravity_basis.reference_gravity_m_s2 == _REFERENCE_G
 
     in_microgravity = ac.assess_leg(
         "water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE
     )
     assert in_microgravity.eligible is False
-    assert [(v.axis, v.consequence) for v in in_microgravity.violations] == [
+    assert [(v.axis, v.consequence) for v in _checked(in_microgravity)] == [
         (Axis.ORIENTATION, Consequence.DE_RANK)
     ]
 
@@ -2397,7 +2445,7 @@ def test_d110_a_finite_nonphysical_gravity_is_still_graded_not_newly_refused(lab
     """
     leg = _assess_with("gravity_m_s2", _FINITE_NONPHYSICAL_GRAVITIES[label])
     assert leg.eligible is False
-    assert [(v.axis, v.consequence) for v in leg.violations] == [
+    assert [(v.axis, v.consequence) for v in _checked(leg)] == [
         (Axis.ORIENTATION, Consequence.REJECT)
     ]
 
@@ -2414,7 +2462,9 @@ def test_d110_every_numeric_input_at_the_boundary_is_finiteness_validated():
         try:
             _assess_with(name, math.nan)
         except ValueError:
-            continue
+            continue  # reached the finiteness check and was refused by it
+        except TypeError:
+            continue  # D118: not a caller's to state, so it never gets there
         unguarded.append(name)
     assert not unguarded, (
         "numeric inputs reach the applicability comparisons without a finiteness "
@@ -2559,12 +2609,22 @@ def test_d114_every_check_parameter_is_accounted_for():
     rather than on the day someone passes it -- which is the whole gap D114 came
     through.
     """
-    stated_by_the_computation = {"fluid", "gravity_m_s2", "has_executable_form"}
+    stated_by_the_computation = set(_STATED_BY_THE_COMPUTATION)
     signature = {
         name for name in inspect.signature(Applicability.check).parameters
         if name != "self"
     }
-    unaccounted = signature - ac.CASE_FACTS - stated_by_the_computation
+    # D118 added a third class, and the partition has to name it or the three
+    # removed quantities would read as an accounting error rather than as a
+    # decision: parameters this boundary can neither take from a caller nor
+    # derive, whose axes are reported unevaluable instead.
+    unevaluable_here = _DERIVED_BEYOND_THIS_BOUNDARY
+    assert not (unevaluable_here & (ac.CASE_FACTS | stated_by_the_computation)), (
+        "a quantity cannot be both unevaluable here and supplied here"
+    )
+    unaccounted = (
+        signature - ac.CASE_FACTS - stated_by_the_computation - unevaluable_here
+    )
     assert not unaccounted, (
         "parameters of Applicability.check that are neither declared case facts nor "
         f"stated by the computation: {sorted(unaccounted)}. Decide which, in "
@@ -2613,17 +2673,19 @@ def test_d114_the_paired_control_the_entry_still_moves_the_outcome():
         entries, "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
     )
     assert blocked.eligible is False
-    assert [(v.axis, v.consequence) for v in blocked.violations] == [
-        (Axis.PROVENANCE, Consequence.BLOCK)
-    ]
+    assert (Axis.PROVENANCE, Consequence.BLOCK) in [
+        (v.axis, v.consequence) for v in blocked.violations
+    ], "the entry executable form must be what blocks the leg"
 
     # And the control's control: with the real registry the same call is eligible, so
     # the difference above is the entry's executable form and nothing else.
     unblocked = ac._assess_leg_against_a_supplied_registry(
         ac.REGISTRY_ENTRIES, "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
     )
-    assert unblocked.eligible is True
-    assert unblocked.violations == ()
+    assert (Axis.PROVENANCE, Consequence.BLOCK) not in [
+        (v.axis, v.consequence) for v in unblocked.violations
+    ]
+    assert _checked(unblocked) == ()
 
 
 def test_d114_the_computation_reads_executability_rather_than_a_default():
@@ -2741,3 +2803,241 @@ def test_d115_the_claim_itself_is_unchanged():
             f"the Closed. half now claims {overreach!r}, which contradicts the "
             "disclosure immediately below it"
         )
+
+
+# ======================================================================================
+# D118 — a derived quantity sitting INSIDE the allowlist
+# ======================================================================================
+
+_SRC = pathlib.Path(ac.__file__).parent
+
+
+def _production_modules() -> list[pathlib.Path]:
+    """Every shipped module except the one under test. DERIVED from the package."""
+    return sorted(
+        p for p in _SRC.rglob("*.py")
+        if p.name != pathlib.Path(ac.__file__).name and "__pycache__" not in p.parts
+    )
+
+
+
+def _contains_computation(node: ast.AST) -> bool:
+    """Whether an expression WORKS A VALUE OUT rather than reading one.
+
+    Any call or arithmetic anywhere in the subtree counts, which is what distinguishes
+    ``geometry.shape`` -- reading a field off an object the caller owns -- from
+    ``state.liquid_reynolds(G, x, D)``. Walking the subtree rather than testing the top
+    node is not a refinement: ``y_here = shah_1987_Y(...) if gravity > 0 else None`` is
+    an ``IfExp`` at the top, and the first version of this classifier missed
+    ``branch_value`` entirely because of it -- finding two of the three names it was
+    built to find and reporting a clean allowlist for the third.
+    """
+    return any(isinstance(child, (ast.Call, ast.BinOp)) for child in ast.walk(node))
+
+def _derived_quantities_in_production() -> frozenset[str]:
+    """Parameters of :meth:`Applicability.check` that production code **computes**.
+
+    The classification test D118 asks for, and it is a derivation rather than a list of
+    forbidden names -- a list is a blocklist in allowlist clothing, and this class has
+    been closed by name four times already.
+
+    A keyword argument counts as *computed* when its value is a call or an arithmetic
+    expression, or a local bound to one in the same function. That is deliberately
+    narrower than "not a bare parameter": ``geometry=geometry.shape`` reads a field off
+    an object the caller owns and stays a case fact, while
+    ``liquid_reynolds=state.liquid_reynolds(...)`` and ``branch_value=y_here`` where
+    ``y_here = shah_1987_Y(...)`` are quantities the code works out, which is the
+    property that matters. Attribute access alone is reading; a call is deriving.
+    """
+    universe = {
+        name for name in inspect.signature(Applicability.check).parameters
+        if name != "self"
+    }
+    derived: set[str] = set()
+    for path in _production_modules():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:  # pragma: no cover - a shipped module must parse
+            continue
+        for scope in ast.walk(tree):
+            if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            computed_here = {
+                target.id
+                for node in ast.walk(scope)
+                if isinstance(node, ast.Assign) and _contains_computation(node.value)
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            for node in ast.walk(scope):
+                if not isinstance(node, ast.Call):
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg is None or keyword.arg not in universe:
+                        continue
+                    value = keyword.value
+                    if _contains_computation(value) or (
+                        isinstance(value, ast.Name) and value.id in computed_here
+                    ):
+                        derived.add(keyword.arg)
+    return frozenset(derived)
+
+
+#: Parameters of ``check`` that this boundary can neither take from a caller nor supply
+#: itself, so the axes depending on them are reported unevaluable. DERIVED, so a
+#: quantity that becomes computed in production joins it without an edit here.
+_DERIVED_BEYOND_THIS_BOUNDARY = _derived_quantities_in_production() - frozenset(
+    {"fluid", "gravity_m_s2", "has_executable_form"}
+)
+
+
+def test_d118_no_case_fact_is_a_derived_quantity():
+    """**The classification witness: the allowlist's contents, not its shape.**
+
+    D114 closed ``**case`` by construction and the construction was populated by hand.
+    Nothing checked the hand, so ``branch_value``,
+    ``branch_value_at_reference_gravity`` and ``liquid_reynolds`` sat inside the
+    allowlist being described as "the correlating parameter this case produces" while
+    the production path computed all three from mass flux, hydraulic diameter, quality
+    and fluid state. A caller could hand S5 a straddling pair and choose the verdict --
+    through a name the door was told to admit.
+
+    So: no member of :data:`CASE_FACTS` may be a quantity production code derives. It
+    fails on the day a derived quantity is ADDED to the allowlist rather than the day a
+    reviewer notices, which is the difference between this and three controls on three
+    names.
+    """
+    derived = _derived_quantities_in_production()
+    assert derived, (
+        "no derived quantity was found anywhere in production, so this proves nothing "
+        "-- the derivation is broken, not the allowlist"
+    )
+    misclassified = sorted(ac.CASE_FACTS & derived)
+    assert not misclassified, (
+        f"these are declared case facts a caller may state, and production code "
+        f"computes them: {misclassified}. A value the computation derives cannot also "
+        "be a fact the caller states -- that is how a caller chooses the verdict."
+    )
+
+
+def test_d118_the_derivation_finds_the_three_names_and_spares_the_primitives():
+    """The derivation's own control, in both directions.
+
+    A classifier that flagged everything would satisfy the test above vacuously, and
+    one that flagged nothing would satisfy it too. So: the three names D118 removed
+    must be found, and the three primitives that remain must not be.
+    """
+    derived = _derived_quantities_in_production()
+    for name in ("liquid_reynolds", "branch_value", "branch_value_at_reference_gravity"):
+        assert name in derived, (
+            f"{name} is computed in production and the derivation did not find it"
+        )
+    for name in ("composition", "geometry", "orientation"):
+        assert name not in derived, (
+            f"{name} was classified as derived; it is read off caller-owned hardware, "
+            "and flagging it would empty the allowlist rather than correct it"
+        )
+
+
+@pytest.mark.parametrize(
+    "name", sorted({"liquid_reynolds", "branch_value", "branch_value_at_reference_gravity"})
+)
+def test_d118_a_derived_quantity_is_refused_from_the_case_channel(name):
+    """What a caller who passes one now gets, and that it says which mistake it is."""
+    with pytest.raises(TypeError, match="not a case fact") as refusal:
+        _assess_with(name, 1.0e6)
+    assert "DERIVES from primitive physical state" in str(refusal.value)
+    assert "unevaluable" in str(refusal.value)
+
+
+def test_d118_the_branch_axis_is_reported_unevaluable_rather_than_skipped():
+    """**The absence asymmetry, which is the half a removal alone would have left.**
+
+    Measured before the repair: with ``min_liquid_reynolds`` declared and no value
+    stated, ``check`` emitted ``REGIME``/``BLOCK``; with ``branch_threshold`` declared
+    and no pair stated, the straddle test was skipped in silence and the leg came back
+    ``eligible=True`` with no violation at all. One axis refused on absence, the other
+    passed on it. Removing the three names without this would have converted a
+    caller-set verdict into a silently unchecked axis, which is the worse of the two.
+    """
+    chf = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    spec = ac.adopted_entry("chf").applicability_spec
+    assert spec.branch_threshold is not None, "the adopted entry declares a threshold"
+
+    unevaluable = _unevaluable(chf)
+    assert [(v.axis, v.consequence) for v in unevaluable] == [
+        (Axis.ORIENTATION, Consequence.BLOCK)
+    ]
+    assert "NOT CHECKED" in unevaluable[0].detail
+    assert chf.eligible is False, (
+        "an axis that could not be checked must not leave the leg reporting eligible; "
+        "that is the collapse D75 and D90 exist to prevent, one level out"
+    )
+
+    # And the entry that declares no threshold does not acquire a phantom block.
+    dp = ac.assess_leg(
+        "water", "dp", gravity_m_s2=_REFERENCE_G, composition="two_component",
+        **_FULL_CASE,
+    )
+    assert ac.adopted_entry("dp").applicability_spec.branch_threshold is None
+    assert not [
+        v for v in _unevaluable(dp)
+        if "branch threshold" in v.detail
+    ], "a correlation declaring no threshold must not be blocked on one"
+
+
+def test_d118_a_reader_can_tell_not_checked_from_checked_and_failed():
+    """**Which of the three states a record is in, as data rather than as prose.**
+
+    ``as_record`` carried only the violation *detail strings*, so the distinction lived
+    in wording a consumer would have to read. It now carries ``unevaluable_axes``, and
+    the three states are:
+
+    * ``eligible`` true -- every declared axis was checked and passed;
+    * ``eligible`` false with ``unevaluable_axes`` empty -- checked and failed;
+    * ``eligible`` false with ``unevaluable_axes`` non-empty -- an axis was never
+      evaluated, and the record is not a finding about the case.
+    """
+    at_1g = ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    micro = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+
+    record_1g = at_1g.as_record()
+    assert record_1g["unevaluable_axes"] == ("orientation",)
+    assert record_1g["eligible"] is False
+
+    record_micro = micro.as_record()
+    assert record_micro["unevaluable_axes"] == ("orientation",)
+    assert len(record_micro["violations"]) > len(record_1g["violations"]), (
+        "microgravity adds a CHECKED finding on top of the unevaluable axis, and the "
+        "record must show both rather than collapsing them"
+    )
+    # The distinction is derived from the consequence, not from the wording.
+    assert set(record_micro["unevaluable_axes"]) == {
+        v.axis.value for v in micro.violations if v.consequence is Consequence.BLOCK
+    }
+
+
+def test_d118_the_paired_control_a_genuine_case_fact_still_passes():
+    """"Refuses everything" is not the ask. Each surviving member still works, and one
+    of them still moves an outcome the way a case fact should."""
+    for name in sorted(ac.CASE_FACTS):
+        ac.assess_leg("water", "chf", gravity_m_s2=_REFERENCE_G, **{
+            **_FULL_CASE, name: _FULL_CASE.get(name, "round_tube"
+                                               if name == "geometry" else "single_component"
+                                               if name == "composition"
+                                               else "vertical_upflow"),
+        })
+
+    # composition is declared by the dp correlation, so stating it removes a BLOCK --
+    # a caller-stated primitive still changing the outcome, which is what a case fact is.
+    without = ac.assess_leg("water", "dp", gravity_m_s2=_REFERENCE_G, **_FULL_CASE)
+    with_it = ac.assess_leg(
+        "water", "dp", gravity_m_s2=_REFERENCE_G, composition="two_component",
+        **_FULL_CASE,
+    )
+    blocked_axes_without = {v.axis for v in _unevaluable(without)}
+    blocked_axes_with = {v.axis for v in _unevaluable(with_it)}
+    assert Axis.COMPOSITION in blocked_axes_without
+    assert Axis.COMPOSITION not in blocked_axes_with, (
+        "stating a genuine case fact must still change what the mechanism concludes"
+    )

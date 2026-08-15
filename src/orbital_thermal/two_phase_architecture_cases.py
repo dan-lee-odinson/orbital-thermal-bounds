@@ -199,6 +199,7 @@ from __future__ import annotations
 
 import contextlib as _contextlib
 import contextvars as _contextvars
+import inspect as _inspect
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
@@ -247,22 +248,93 @@ ADOPTED_FOR_RANKING: frozenset[Status] = frozenset({Status.RESOLVED})
 #: set and the computation-stated values together to cover ``check``'s whole signature,
 #: so a new parameter cannot be silently left out of both.
 #:
-#: Each entry is here because it is a property of the *case being assessed* and cannot
-#: be read off the registry:
+#: **The test each member must pass, and D118 is why it is written down.** A member is
+#: a *primitive description of the case*: something a caller reads off their own
+#: hardware and states, which no consumer of :meth:`Applicability.check` computes.
 #:
 #: * ``composition`` -- single- or two-component flow, a property of the loop;
-#: * ``geometry``, ``orientation`` -- the hardware and how it is mounted;
-#: * ``liquid_reynolds`` -- the flow state;
-#: * ``branch_value``, ``branch_value_at_reference_gravity`` -- the correlating
-#:   parameter this case produces, and what it would produce on the ground.
+#: * ``geometry``, ``orientation`` -- the hardware and how it is mounted.
+#:
+#: **Three names were removed at D118 because they fail that test.**
+#: ``liquid_reynolds``, ``branch_value`` and ``branch_value_at_reference_gravity`` are
+#: *derived quantities*: :mod:`orbital_thermal.two_phase` computes the first from
+#: ``state.liquid_reynolds(mass_flux, quality, diameter)`` and the other two from
+#: ``shah_1987_Y`` over mass flux, hydraulic diameter and the fluid's transport
+#: properties. S5 forwarded a caller's values for all three unchanged, so a caller
+#: could choose the verdict -- the same class as ``entries=`` and
+#: ``has_executable_form``, reached this time through a name the allowlist *admitted*.
+#: D114 closed the channel by construction; the construction was populated by hand and
+#: nothing checked the hand.
+#:
+#: The discriminating rule is the one the D114 seam comment already stated about
+#: ``has_executable_form`` -- *a fact about the correlation, not about the case; the
+#: other consumers derive it and S5 was the only caller that did not* -- applied to the
+#: other three values it governs. ``test_d118_no_case_fact_is_a_derived_quantity``
+#: enforces it against what production code actually computes, so it fails on the day a
+#: derived quantity is *added* here rather than the day a reviewer notices.
+#:
+#: This boundary cannot supply the three itself: deriving them needs mass flux,
+#: hydraulic diameter, quality and fluid state, and S5 takes a fluid name, a leg name,
+#: a gravity and a case whose geometry is the string ``"round_tube"``. So the axes that
+#: depend on them are reported **unevaluable** rather than assumed -- see
+#: :func:`_axes_this_boundary_cannot_evaluate`.
 CASE_FACTS: frozenset[str] = frozenset({
     "composition",
     "geometry",
     "orientation",
-    "liquid_reynolds",
-    "branch_value",
-    "branch_value_at_reference_gravity",
 })
+
+
+#: Parameters of :meth:`Applicability.check`, resolved once. Used to tell a caller who
+#: passes a derived quantity *why* it is refused, which is a different mistake from
+#: passing a keyword that means nothing at all.
+_CHECK_PARAMETERS: frozenset[str] = frozenset(
+    name for name in _inspect.signature(Applicability.check).parameters if name != "self"
+)
+
+
+def _axes_this_boundary_cannot_evaluate(spec: Applicability) -> tuple[Violation, ...]:
+    """Axes the entry declares that S5 has no way to check. **Reported, not skipped.**
+
+    D118. Removing the caller's ability to author a correlating parameter would, on its
+    own, convert a caller-set verdict into a *silently unchecked axis* -- which is the
+    worse of the two, and the two axes concerned did not even agree about it. Measured:
+    with ``min_liquid_reynolds`` declared and no value stated, ``check`` emits a
+    ``REGIME``/``BLOCK`` saying the case states none; with ``branch_threshold``
+    declared and no pair stated, the straddle test is skipped in silence and the leg
+    comes back eligible with no violation at all. One axis refused on absence and the
+    other passed on it.
+
+    So the branch axis is made to refuse on absence too, and it is refused **here**
+    rather than in :mod:`~orbital_thermal.registry.applicability` because that module is
+    shared: :mod:`orbital_thermal.two_phase` passes genuinely derived values and must
+    keep evaluating unchanged, and :mod:`orbital_thermal.two_phase_loop` calls the same
+    boundary without a branch pair for entries that declare no threshold. The absence is
+    a fact about *this* boundary's inputs, so it is stated by this boundary.
+
+    **``BLOCK`` is the vocabulary's existing word for exactly this** -- *"it cannot be
+    evaluated because a required statement or source is missing"* -- so no new
+    consequence is invented. That is what lets a reader tell the three states apart:
+    ``DE_RANK`` and ``REJECT`` mean the axis was checked and the case failed it, and
+    ``BLOCK`` means the axis was not checked. :meth:`LegEligibility.as_record` surfaces
+    the same distinction as data rather than as prose.
+    """
+    if spec.branch_threshold is None:
+        return ()
+    return (
+        Violation(
+            Axis.ORIENTATION,
+            Consequence.BLOCK,
+            "the correlation declares a branch threshold "
+            f"({spec.branch_threshold:.4g}) in its own correlating parameter, and "
+            "whether gravity moves this case across it cannot be checked here: the "
+            "parameter is derived from mass flux, hydraulic diameter and the fluid's "
+            "transport properties, none of which this boundary takes. THIS AXIS WAS "
+            "NOT CHECKED -- it is not a finding that the case straddles the threshold, "
+            "and a caller-supplied value for it is refused rather than trusted (D118). "
+            f"{spec.branch_threshold_basis}",
+        ),
+    )
 
 
 def _refuse_keywords_that_are_not_case_facts(
@@ -285,13 +357,24 @@ def _refuse_keywords_that_are_not_case_facts(
             f"A caller states {', '.join(sorted(CASE_FACTS))}."
         )
     unknown = sorted(k for k in case if k not in CASE_FACTS)
-    if unknown:
+    if not unknown:
+        return
+    derived = [k for k in unknown if k in _CHECK_PARAMETERS]
+    if derived:
         raise TypeError(
-            f"{', '.join(unknown)}: not a case fact. `**case` admits only "
-            f"{', '.join(sorted(CASE_FACTS))} -- it is an allowlist, so a parameter "
-            "added to Applicability.check is not a public keyword until it is declared "
-            "one here."
+            f"{', '.join(derived)}: not a case fact. This is a quantity the production "
+            "path DERIVES from primitive physical state -- mass flux, hydraulic "
+            "diameter, quality, fluid properties -- which this boundary does not take, "
+            "so a caller stating it would be authoring the value the applicability "
+            "test compares (D118). The axes that depend on it are reported unevaluable "
+            f"instead. A caller states {', '.join(sorted(CASE_FACTS))}."
         )
+    raise TypeError(
+        f"{', '.join(unknown)}: not a case fact. `**case` admits only "
+        f"{', '.join(sorted(CASE_FACTS))} -- it is an allowlist, so a parameter "
+        "added to Applicability.check is not a public keyword until it is declared "
+        "one here."
+    )
 
 
 class GravityBasis(NamedTuple):
@@ -565,6 +648,15 @@ class LegEligibility:
             "entry_id": self.entry_id,
             "eligible": self.eligible,
             "violations": tuple(v.detail for v in self.violations),
+            # D118: which axes could NOT be checked, as data rather than as prose
+            # buried in a detail string. `eligible: false` with an empty tuple here
+            # means the case was checked and failed; a non-empty one means at least
+            # one declared axis was never evaluated, and the leg is not a finding
+            # about the case. `BLOCK` is the vocabulary's word for that state.
+            "unevaluable_axes": tuple(
+                v.axis.value for v in self.violations
+                if v.consequence is Consequence.BLOCK
+            ),
         }
         if self.chf_dependent:
             basis = self.gravity_basis
@@ -689,6 +781,7 @@ def _assess_leg_against_a_supplied_registry(
         }
         _refuse_keywords_that_are_not_case_facts(case, stated_by_the_computation)
         violations = spec.check(**stated_by_the_computation, **case)  # type: ignore[arg-type]
+        violations = violations + _axes_this_boundary_cannot_evaluate(spec)
 
     disqualifying = tuple(
         v for v in violations
