@@ -2906,42 +2906,132 @@ def _contains_computation(node: ast.AST) -> bool:
     return any(isinstance(child, (ast.Call, ast.BinOp)) for child in ast.walk(node))
 
 
-def _computed_locals(scope: ast.AST) -> set[str]:
-    """Names bound to a worked-out value anywhere in ``scope``. ALL binding forms.
+#: **The binding contract.** The statement types this analysis resolves, as a literal
+#: set, because the claim is exactly this set and nothing more.
+#:
+#: D126. Nine instruments on this gate in a row claimed a category and matched a form,
+#: and every repair was a widening followed by another form: ``BLOCK`` covered seven
+#: sites of eight, the message three names of four, the rule one file of two, the
+#: matcher one call form of two, this derivation one binding form of two. The tenth
+#: widening would have been ``ast.For``. It is not taken.
+#:
+#: Instead the claim narrows to what is written here, and **every delivery path outside
+#: this set is reported UNMEASURED and fails** -- exactly as an unresolvable constructor
+#: already does. A name bound by ``for``, by ``with ... as``, by an ``except`` handler
+#: or by a comprehension is not "not derived"; it is unresolved, and the difference is
+#: the whole of D126. That is what makes "unmeasured is not zero" load-bearing rather
+#: than a phrase that fires only for mappings.
+_BINDING_CONTRACT: tuple[type[ast.AST], ...] = (
+    ast.Assign,
+    ast.AnnAssign,
+    ast.AugAssign,
+    ast.NamedExpr,
+)
 
-    D123/F-03. This read ``ast.Assign`` only, so a type annotation was enough to defeat
-    the whole guard: ``_bo = G / (D * 1000)`` was found and
-    ``_bo: float = G / (D * 1000)`` was not -- same value, same call, same everything,
-    and a new derived parameter admitted to ``CASE_FACTS`` passed the classification
-    witness, the S5-1 witness and the D114 accounting together.
 
-    ``AnnAssign``, tuple and starred targets, ``AugAssign`` and walrus are all ordinary
-    ways to bind a computed value, so all of them bind here.
+def _contract_bindings(scope: ast.AST) -> tuple[set[str], set[str]]:
+    """``(computed, bound)`` for the binding statements named in :data:`_BINDING_CONTRACT`.
+
+    ``bound`` is every name those statements bind; ``computed`` is the subset bound to a
+    worked-out value. A name in neither -- and not a parameter of the enclosing function
+    -- was bound by something this contract does not cover, and the caller reports it
+    UNMEASURED rather than reading it as a value the caller stated.
+
+    The docstring this replaces said "ALL binding forms" over an enumeration of four.
     """
     computed: set[str] = set()
+    bound: set[str] = set()
 
-    def bind(target: ast.AST) -> None:
+    def bind(target: ast.AST, worked_out: bool) -> None:
         if isinstance(target, ast.Name):
-            computed.add(target.id)
+            bound.add(target.id)
+            if worked_out:
+                computed.add(target.id)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
-                bind(element)
+                bind(element, worked_out)
         elif isinstance(target, ast.Starred):
-            bind(target.value)
+            bind(target.value, worked_out)
 
     for node in ast.walk(scope):
-        if isinstance(node, ast.Assign) and _contains_computation(node.value):
+        if not isinstance(node, _BINDING_CONTRACT):
+            continue
+        if isinstance(node, ast.Assign):
             for target in node.targets:
-                bind(target)
-        elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            if _contains_computation(node.value):
-                bind(node.target)
+                bind(target, _contains_computation(node.value))
+        elif isinstance(node, ast.AnnAssign):
+            if node.value is not None:
+                bind(node.target, _contains_computation(node.value))
         elif isinstance(node, ast.AugAssign):
-            bind(node.target)  # `x += f()` and `x += 1` both work a value out
-        elif isinstance(node, ast.NamedExpr) and _contains_computation(node.value):
-            bind(node.target)
-    return computed
+            bind(node.target, True)  # `x += f()` and `x += 1` both work a value out
+        elif isinstance(node, ast.NamedExpr):
+            bind(node.target, _contains_computation(node.value))
+    return computed, bound
 
+
+
+def _module_level_names(tree: ast.Module) -> tuple[set[str], set[str]]:
+    """``(computed, bound)`` at module scope, under the SAME binding contract.
+
+    A keyword value can be a module-level constant -- ``gravity_m_s2=
+    STANDARD_GRAVITY_M_S2`` -- which is neither a function-local binding nor a
+    parameter. Reading those as unresolved would report every constant reference as
+    unmeasured; reading them as automatically safe would exempt a module-level
+    computation from the derivation. So module scope is resolved by the same contract:
+    a constant bound to a literal is not derived, a module-level name bound to a
+    worked-out value is, and an imported name is resolved and not derived.
+    """
+    computed, bound = _contract_bindings(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                bound.add(alias.asname or alias.name.split(".")[0])
+    return computed, bound
+
+
+def _parameters_of(scope: ast.AST) -> set[str]:
+    """The enclosing function's parameters: names a caller states, not the code."""
+    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return set()
+    arguments = scope.args
+    names = {
+        a.arg
+        for a in (
+            list(arguments.posonlyargs)
+            + list(arguments.args)
+            + list(arguments.kwonlyargs)
+        )
+    }
+    for extra in (arguments.vararg, arguments.kwarg):
+        if extra is not None:
+            names.add(extra.arg)
+    return names
+
+
+def _sole_binding_of(name: str, scope: ast.AST):
+    """The one contract binding of ``name``, or ``None`` when there is not exactly one.
+
+    D126/F-02. This was ``_last_binding_of`` and returned the FIRST binding ``ast.walk``
+    happened to reach -- a helper named for the last, returning the first, which is the
+    same defect as a docstring saying "ALL" over four forms. Measured: an ordinary
+    mapping initialised empty and rebound before the call resolved to ``{}``,
+    contributed no keys, and counted as MEASURED, so a form the analysis resolved
+    *incorrectly* became a clean zero.
+
+    ``ast.walk`` has no order that says which binding reaches a call, and deciding that
+    needs control-flow reasoning this analysis does not do. So more than one binding is
+    the unmeasured answer, and the caller fails on it.
+    """
+    found = []
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            found.append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == name and node.value is not None:
+                found.append(node.value)
+    return found[0] if len(found) == 1 else None
 
 
 def _parameter_names_by_function() -> dict[str, frozenset[str]]:
@@ -2990,7 +3080,11 @@ def _expanded_keywords(call: ast.Call, scope: ast.AST):
             continue
         source = keyword.value
         if isinstance(source, ast.Name):
-            source = _last_binding_of(source.id, scope) or source
+            resolved = _sole_binding_of(source.id, scope)
+            if resolved is None:
+                unmeasured.append('name bound more than once, or not by the contract')
+                continue
+            source = resolved
         if isinstance(source, ast.Dict):
             for key in source.keys:
                 if isinstance(key, ast.Constant) and isinstance(key.value, str):
@@ -3052,10 +3146,12 @@ def _derived_quantities_in_production(with_unmeasured: bool = False):
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:  # pragma: no cover - a shipped module must parse
             continue
+        module_computed, module_bound = _module_level_names(tree)
         for scope in ast.walk(tree):
             if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            computed_here = _computed_locals(scope)
+            computed_here, bound_here = _contract_bindings(scope)
+            parameters_here = _parameters_of(scope)
             for node in ast.walk(scope):
                 if not isinstance(node, ast.Call):
                     continue
@@ -3081,10 +3177,24 @@ def _derived_quantities_in_production(with_unmeasured: bool = False):
                     if keyword.arg is None or keyword.arg not in universe:
                         continue
                     value = keyword.value
-                    if _contains_computation(value) or (
-                        isinstance(value, ast.Name) and value.id in computed_here
-                    ):
+                    if _contains_computation(value):
                         derived.add(keyword.arg)
+                    elif isinstance(value, ast.Name):
+                        if value.id in computed_here or value.id in module_computed:
+                            derived.add(keyword.arg)
+                        elif not (
+                            value.id in bound_here
+                            or value.id in parameters_here
+                            or value.id in module_bound
+                        ):
+                            # Bound by something the contract does not cover -- a for
+                            # target, a with-as, a comprehension. Not "not derived":
+                            # unresolved, and D126 says those are the same failure.
+                            relative = path.relative_to(_SRC)
+                            unmeasured.append(
+                                f"{relative.as_posix()}: {keyword.arg} "
+                                f"(name '{value.id}' bound outside the contract)"
+                            )
     if with_unmeasured:
         return frozenset(derived), unmeasured
     return frozenset(derived)
@@ -3113,7 +3223,8 @@ _DERIVED_BEYOND_THIS_BOUNDARY = _derived_quantities_in_production() - frozenset(
 #: Teaching the rule to recognise this one by name is the defect this whole return is
 #: about, so it is declared instead.
 _ACKNOWLEDGED_UNREADABLE_EXPANSIONS = frozenset({
-    "registry/two_phase.py: shah_1987_critical_boiling_number (unreadable mapping)",
+    "registry/two_phase.py: shah_1987_critical_boiling_number "
+    "(name bound more than once, or not by the contract)",
 })
 
 
@@ -3832,7 +3943,7 @@ _BINDING_FORMS = {
 
 
 @pytest.mark.parametrize("form", sorted(_BINDING_FORMS))
-def test_d123_f03_a_derived_value_is_found_in_every_ordinary_binding_form(form):
+def test_d123_f03_a_derived_value_is_found_in_every_form_the_contract_names(form):
     """**F-03: a type annotation was enough to defeat the guard.**
 
     ``_bo = G / (D * 1000)`` was found; ``_bo: float = G / (D * 1000)`` was not. Same
@@ -3851,7 +3962,8 @@ def test_d123_f03_a_derived_value_is_found_in_every_ordinary_binding_form(form):
         node for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
     )
-    assert "_q" in _computed_locals(scope), (
+    computed, _bound = _contract_bindings(scope)
+    assert "_q" in computed, (
         f"a value bound by {form} is not seen as computed, so a keyword carrying it "
         "would be read as a caller's own statement"
     )
@@ -3872,7 +3984,7 @@ def test_d123_f03_a_previously_unknown_derived_parameter_is_found():
         node for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
     )
-    computed = _computed_locals(scope)
+    computed, _bound = _contract_bindings(scope)
     assert "_bo" in computed
 
     call = next(
@@ -3919,3 +4031,138 @@ def test_d123_the_unmeasured_expansions_are_the_declared_ones():
         f"{sorted(set(unmeasured))}, declared "
         f"{sorted(_ACKNOWLEDGED_UNREADABLE_EXPANSIONS)}"
     )
+
+
+# ======================================================================================
+# D126 — a bounded syntax contract, and everything outside it reported
+# ======================================================================================
+
+
+def test_d126_the_contract_is_a_literal_set_and_the_claim_matches_it():
+    """**The claim stops being a category.**
+
+    Nine instruments on this gate claimed coverage of a category and matched a form,
+    and each repair was a widening followed by another form. The tenth widening would
+    have been ``ast.For``; it is not taken. What is asserted instead is that the
+    contract is written down as a literal set, that the docstring states it rather than
+    claiming "all", and that the set is what the resolver actually uses.
+    """
+    assert set(_BINDING_CONTRACT) == {
+        ast.Assign,
+        ast.AnnAssign,
+        ast.AugAssign,
+        ast.NamedExpr,
+    }
+    documentation = (_contract_bindings.__doc__ or "") + (
+        _derived_quantities_in_production.__doc__ or ""
+    )
+    # A QUOTED phrase is a citation of a claim, not a claim -- both docstrings record
+    # what they replaced, and a check that cannot tell the two apart fires on the text
+    # that states the rule. That is the self-referential defect this gate has counted
+    # repeatedly, so quoted spans are removed before the claim is read.
+    documentation = re.sub(r'"[^"]*"', " ", documentation)
+    for overclaim in ("ALL binding forms", "all of them bind", "every binding form"):
+        assert overclaim not in documentation, (
+            f"the analysis claims {overclaim!r} over an enumeration of "
+            f"{len(_BINDING_CONTRACT)}"
+        )
+    assert "ast.For" not in ast.unparse(
+        ast.parse(inspect.getsource(_contract_bindings))
+    ), "ast.For is outside the contract; a name it binds must be UNMEASURED, not read"
+
+
+def test_d126_f03_a_name_bound_outside_the_contract_is_unmeasured_not_undetected():
+    """**The outside-the-contract control, and it is the point of the ruling.**
+
+    A ``for`` target is not in the contract. The old analysis read a keyword carrying
+    one as "not derived" -- a clean zero -- so a derived quantity admitted to
+    ``CASE_FACTS`` passed every witness. Under D126 it is UNRESOLVED, which fails.
+
+    This is the control that fails when someone adds a binder and forgets the contract,
+    which is why it is not a replay of the four forms already listed.
+    """
+    source = (
+        "def produce(mass_flux, geometry):\n"
+        "    for _bo in [mass_flux / (geometry.d * 1000.0)]:\n"
+        "        pass\n"
+        "    return check(boiling_number=_bo)\n"
+    )
+    scope = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+    )
+    computed, bound = _contract_bindings(scope)
+    assert "_bo" not in computed and "_bo" not in bound, (
+        "a for target is outside the contract and must not be resolved by it"
+    )
+    assert "_bo" not in _parameters_of(scope), "nor is it something a caller stated"
+    # So the derivation has no basis to call it either derived or not: unmeasured.
+
+
+def test_d126_f02_a_rebound_mapping_is_unmeasured_rather_than_read_as_empty():
+    """**F-02: a helper named for the last binding returned the first.**
+
+    ``_extra = {}`` then ``_extra = {...}`` resolved to the empty literal, contributed
+    no keys and counted as MEASURED -- a form the analysis resolved *incorrectly*
+    becoming a clean zero, which is the unmeasured policy broken by the repair that
+    introduced it. ``ast.walk`` has no order that decides which binding reaches a call,
+    so more than one binding is the unmeasured answer.
+    """
+    rebound = (
+        "def produce(mass_flux):\n"
+        "    _extra = {}\n"
+        "    _extra = {'boiling_number': mass_flux * 2.0}\n"
+        "    return check(**_extra)\n"
+    )
+    tree = ast.parse(rebound)
+    scope = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
+    assert _sole_binding_of("_extra", scope) is None, (
+        "two bindings must not resolve to whichever one the walk reached first"
+    )
+    call = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "check"
+    )
+    names, unmeasured = _expanded_keywords(call, scope)
+    assert not names and unmeasured, "a rebound mapping must be reported, not read"
+
+    # And the control in the other direction: bound once, it still resolves.
+    once = (
+        "def produce(mass_flux):\n"
+        "    _extra = {'boiling_number': mass_flux * 2.0}\n"
+        "    return check(**_extra)\n"
+    )
+    tree = ast.parse(once)
+    scope = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
+    call = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "check"
+    )
+    names, unmeasured = _expanded_keywords(call, scope)
+    assert names == {"boiling_number"} and not unmeasured
+
+
+def test_d126_the_sole_binding_helper_is_named_for_what_it_does():
+    """A helper named ``_last_binding_of`` that returned the first is the same defect
+    as a docstring saying "ALL" over four forms, one level down."""
+    assert "_last_binding_of" not in inspect.getsource(_expanded_keywords)
+    assert _sole_binding_of.__name__ == "_sole_binding_of"
+
+
+def test_d126_a_module_level_constant_is_resolved_by_the_same_contract():
+    """The other direction: the contract must not report ordinary references.
+
+    ``gravity_m_s2=STANDARD_GRAVITY_M_S2`` is neither a local binding nor a parameter.
+    Reporting it unmeasured would drown the signal; exempting module scope would let a
+    module-level computation through. Module scope is resolved by the same four
+    binders, so a literal constant is resolved and a computed one is derived.
+    """
+    tree = ast.parse(
+        "STANDARD = 9.80665\n"
+        "DERIVED = compute() * 2\n"
+        "def produce():\n"
+        "    return check(gravity_m_s2=STANDARD)\n"
+    )
+    computed, bound = _module_level_names(tree)
+    assert "STANDARD" in bound and "STANDARD" not in computed
+    assert "DERIVED" in computed
