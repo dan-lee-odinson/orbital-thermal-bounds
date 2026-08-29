@@ -29,6 +29,7 @@ from __future__ import annotations
 import ast
 import builtins
 import dataclasses
+import enum
 import inspect
 import math
 import pathlib
@@ -2892,18 +2893,107 @@ def _production_modules() -> list[pathlib.Path]:
 
 
 
-def _contains_computation(node: ast.AST) -> bool:
-    """Whether an expression WORKS A VALUE OUT rather than reading one.
+class _Shape(enum.Enum):
+    """What an expression is, including the answer "I do not recognise this".
 
-    Any call or arithmetic anywhere in the subtree counts, which is what distinguishes
-    ``geometry.shape`` -- reading a field off an object the caller owns -- from
-    ``state.liquid_reynolds(G, x, D)``. Walking the subtree rather than testing the top
-    node is not a refinement: ``y_here = shah_1987_Y(...) if gravity > 0 else None`` is
-    an ``IfExp`` at the top, and the first version of this classifier missed
-    ``branch_value`` entirely because of it -- finding two of the three names it was
-    built to find and reporting a clean allowlist for the third.
+    **D129.** Ten cycles asked whether the analysis recognised a form, and after each
+    answer another form arrived. Every one of those classifiers -- the widened ones and
+    the contract-bounded one alike -- ended in a definite answer: ``_contains_computation``
+    returned ``False`` for every shape it did not name, and ``_resolve_callee`` returned
+    "not a class". So each depended on its author having thought of the shape, and a
+    shape nobody thought of was silently a "no".
+
+    The third answer is the point. A shape the code does not explicitly recognise is
+    ``UNKNOWN``, ``UNKNOWN`` is unmeasured, and unmeasured fails. The forms will keep
+    coming; what changes is whether the next one arrives as a reviewer's finding or as a
+    red row on the day it is written.
     """
-    return any(isinstance(child, (ast.Call, ast.BinOp)) for child in ast.walk(node))
+
+    COMPUTED = "computed"
+    NOT_COMPUTED = "not_computed"
+    UNKNOWN = "unknown"
+
+
+#: Expression nodes that WORK A VALUE OUT. Explicit, and ``ast.UnaryOp`` is here
+#: because D129/F-02 found ``boiling_number=-mass_flux`` classified as not-computed by
+#: a claim that said "any call or arithmetic" and matched two node types.
+_COMPUTING_SHAPES: tuple[type[ast.AST], ...] = (
+    ast.Call,
+    ast.BinOp,
+    ast.UnaryOp,
+    ast.Compare,
+    ast.Await,
+    ast.ListComp,
+    ast.SetComp,
+    ast.DictComp,
+    ast.GeneratorExp,
+)
+
+#: Expression nodes that READ a value rather than working one out. A ``Constant`` is a
+#: fine thing to recognise as not-computed; a shape nobody has thought about is not.
+_READING_SHAPES: tuple[type[ast.AST], ...] = (
+    ast.Name,
+    ast.Constant,
+    ast.Attribute,
+    ast.Subscript,
+    ast.Slice,
+    ast.Lambda,
+    ast.JoinedStr,
+    ast.FormattedValue,
+)
+
+
+def _worst_shape(shapes) -> _Shape:
+    """``COMPUTED`` beats ``UNKNOWN`` beats ``NOT_COMPUTED``.
+
+    A container with one definitely-computed element is definitely computed -- that is
+    a conclusion, not a guess. One with an unrecognised element and nothing computed is
+    unknown, because the unrecognised element could be either.
+    """
+    collected = list(shapes)
+    if any(shape is _Shape.COMPUTED for shape in collected):
+        return _Shape.COMPUTED
+    if any(shape is _Shape.UNKNOWN for shape in collected):
+        return _Shape.UNKNOWN
+    return _Shape.NOT_COMPUTED
+
+
+def _classify_expression(node: ast.AST) -> _Shape:
+    """Whether ``node`` works a value out, reads one, or is a shape not recognised here.
+
+    Every branch below names the shapes it decides. The terminal answer is ``UNKNOWN``
+    and it is reached by falling out of every named branch, which is the D129 ruling in
+    one line: only shapes the code explicitly recognises get a definite answer.
+    """
+    if isinstance(node, _COMPUTING_SHAPES):
+        return _Shape.COMPUTED
+    if isinstance(node, ast.BoolOp):
+        # `a or b` SELECTS one of its operands; it does not work a new value out. The
+        # first version classified it as computed and so read `fluid or state.fluid`
+        # as a derived quantity -- a case fact turned into a rule fact by a fallback.
+        return _worst_shape(_classify_expression(part) for part in node.values)
+    if isinstance(node, ast.IfExp):
+        # The TEST decides which branch is taken; it does not contribute to the value.
+        # Counting it made `geometry=None if geometry is None else geometry.shape` a
+        # computed value, because `is None` is an ast.Compare -- which would have
+        # classified two genuine case facts as derived quantities.
+        return _worst_shape(
+            _classify_expression(part) for part in (node.body, node.orelse)
+        )
+    if isinstance(node, ast.NamedExpr):
+        return _classify_expression(node.value)
+    if isinstance(node, ast.Starred):
+        return _classify_expression(node.value)
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        return _worst_shape(_classify_expression(part) for part in node.elts)
+    if isinstance(node, ast.Dict):
+        return _worst_shape(
+            _classify_expression(part)
+            for part in list(node.values) + [k for k in node.keys if k is not None]
+        )
+    if isinstance(node, _READING_SHAPES):
+        return _Shape.NOT_COMPUTED
+    return _Shape.UNKNOWN
 
 
 #: **The binding contract.** The statement types this analysis resolves, as a literal
@@ -2929,7 +3019,7 @@ _BINDING_CONTRACT: tuple[type[ast.AST], ...] = (
 )
 
 
-def _contract_bindings(scope: ast.AST) -> tuple[set[str], set[str]]:
+def _contract_bindings(scope: ast.AST) -> tuple[set[str], set[str], set[str]]:
     """``(computed, bound)`` for the binding statements named in :data:`_BINDING_CONTRACT`.
 
     ``bound`` is every name those statements bind; ``computed`` is the subset bound to a
@@ -2941,36 +3031,40 @@ def _contract_bindings(scope: ast.AST) -> tuple[set[str], set[str]]:
     """
     computed: set[str] = set()
     bound: set[str] = set()
+    unknown: set[str] = set()
 
-    def bind(target: ast.AST, worked_out: bool) -> None:
+    def bind(target: ast.AST, shape: _Shape) -> None:
         if isinstance(target, ast.Name):
             bound.add(target.id)
-            if worked_out:
+            if shape is _Shape.COMPUTED:
                 computed.add(target.id)
+            elif shape is _Shape.UNKNOWN:
+                unknown.add(target.id)
         elif isinstance(target, (ast.Tuple, ast.List)):
             for element in target.elts:
-                bind(element, worked_out)
+                bind(element, shape)
         elif isinstance(target, ast.Starred):
-            bind(target.value, worked_out)
+            bind(target.value, shape)
 
     for node in ast.walk(scope):
         if not isinstance(node, _BINDING_CONTRACT):
             continue
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                bind(target, _contains_computation(node.value))
+                bind(target, _classify_expression(node.value))
         elif isinstance(node, ast.AnnAssign):
             if node.value is not None:
-                bind(node.target, _contains_computation(node.value))
+                bind(node.target, _classify_expression(node.value))
         elif isinstance(node, ast.AugAssign):
-            bind(node.target, True)  # `x += f()` and `x += 1` both work a value out
+            # `x += f()` and `x += 1` both work a value out.
+            bind(node.target, _Shape.COMPUTED)
         elif isinstance(node, ast.NamedExpr):
-            bind(node.target, _contains_computation(node.value))
-    return computed, bound
+            bind(node.target, _classify_expression(node.value))
+    return computed, bound, unknown
 
 
 
-def _module_level_names(tree: ast.Module) -> tuple[set[str], set[str]]:
+def _module_level_names(tree: ast.Module) -> tuple[set[str], set[str], set[str]]:
     """``(computed, bound)`` at module scope, under the SAME binding contract.
 
     A keyword value can be a module-level constant -- ``gravity_m_s2=
@@ -2981,12 +3075,12 @@ def _module_level_names(tree: ast.Module) -> tuple[set[str], set[str]]:
     a constant bound to a literal is not derived, a module-level name bound to a
     worked-out value is, and an imported name is resolved and not derived.
     """
-    computed, bound = _contract_bindings(tree)
+    computed, bound, unknown = _contract_bindings(tree)
     for node in ast.walk(tree):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
                 bound.add(alias.asname or alias.name.split(".")[0])
-    return computed, bound
+    return computed, bound, unknown
 
 
 def _parameters_of(scope: ast.AST) -> set[str]:
@@ -3146,11 +3240,11 @@ def _derived_quantities_in_production(with_unmeasured: bool = False):
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:  # pragma: no cover - a shipped module must parse
             continue
-        module_computed, module_bound = _module_level_names(tree)
+        module_computed, module_bound, module_unknown = _module_level_names(tree)
         for scope in ast.walk(tree):
             if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            computed_here, bound_here = _contract_bindings(scope)
+            computed_here, bound_here, unknown_here = _contract_bindings(scope)
             parameters_here = _parameters_of(scope)
             for node in ast.walk(scope):
                 if not isinstance(node, ast.Call):
@@ -3177,11 +3271,25 @@ def _derived_quantities_in_production(with_unmeasured: bool = False):
                     if keyword.arg is None or keyword.arg not in universe:
                         continue
                     value = keyword.value
-                    if _contains_computation(value):
+                    relative = path.relative_to(_SRC)
+                    shape = _classify_expression(value)
+                    if shape is _Shape.COMPUTED:
                         derived.add(keyword.arg)
+                    elif shape is _Shape.UNKNOWN:
+                        # D129: the value is a shape this analysis does not recognise.
+                        # Not "not derived" -- unrecognised, which is unmeasured.
+                        unmeasured.append(
+                            f"{relative.as_posix()}: {keyword.arg} "
+                            f"(value shape {type(value).__name__} not recognised)"
+                        )
                     elif isinstance(value, ast.Name):
                         if value.id in computed_here or value.id in module_computed:
                             derived.add(keyword.arg)
+                        elif value.id in unknown_here or value.id in module_unknown:
+                            unmeasured.append(
+                                f"{relative.as_posix()}: {keyword.arg} "
+                                f"(name '{value.id}' bound to an unrecognised shape)"
+                            )
                         elif not (
                             value.id in bound_here
                             or value.id in parameters_here
@@ -3190,7 +3298,6 @@ def _derived_quantities_in_production(with_unmeasured: bool = False):
                             # Bound by something the contract does not cover -- a for
                             # target, a with-as, a comprehension. Not "not derived":
                             # unresolved, and D126 says those are the same failure.
-                            relative = path.relative_to(_SRC)
                             unmeasured.append(
                                 f"{relative.as_posix()}: {keyword.arg} "
                                 f"(name '{value.id}' bound outside the contract)"
@@ -3486,17 +3593,58 @@ def _bindings_in(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
             names[node.name] = node.name
 
     # Local rebinding, repeated so `V = _V = Violation` resolves whatever the order.
+    # D129/F-01: ANNOTATED rebinding too. `_v: type = Violation` is an AnnAssign whose
+    # value is an ast.Name -- inside a contract node type, and still invisible, because
+    # the branch recorded a name only when the value was a call. The alias then hit the
+    # capitalisation branch of the resolver and was dropped as not-a-class.
     for _ in range(3):
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Name)):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name):
+                targets = [t for t in node.targets if isinstance(t, ast.Name)]
+                value = node.value
+            elif (
+                isinstance(node, ast.AnnAssign)
+                and isinstance(node.target, ast.Name)
+                and isinstance(node.value, ast.Name)
+            ):
+                targets = [node.target]
+                value = node.value
+            else:
                 continue
-            source = names.get(node.value.id)
+            source = names.get(value.id)
             if source is None:
                 continue
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    names.setdefault(target.id, source)
+            for target in targets:
+                names.setdefault(target.id, source)
     return names, modules
+
+
+def _names_bound_to_values(tree: ast.Module) -> set[str]:
+    """Every name this module binds to a runtime value, plus parameters.
+
+    A called name that is bound HERE is a runtime callable and deliberately not a class
+    construction; a called name bound NOWHERE this scan can see is the unknown answer.
+    Before D129 both were "not a class", which is how an annotated alias disappeared.
+    """
+    bound, _computed, _unknown = set(), set(), set()
+    computed, contract_bound, unknown = _contract_bindings(tree)
+    bound |= contract_bound
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            bound.add(node.name)
+            bound |= _parameters_of(node)
+        elif isinstance(node, ast.ClassDef):
+            bound.add(node.name)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            if isinstance(node.target, ast.Name):
+                bound.add(node.target.id)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+        elif isinstance(node, ast.withitem) and isinstance(node.optional_vars, ast.Name):
+            bound.add(node.optional_vars.id)
+        elif isinstance(node, ast.comprehension) and isinstance(node.target, ast.Name):
+            bound.add(node.target.id)
+    return bound
 
 
 def _resolve_callee(
@@ -3522,18 +3670,25 @@ def _resolve_callee(
     if isinstance(func, ast.Name):
         if func.id in names:
             return names[func.id]
-        if func.id in modules or func.id in dir(builtins) or func.id in local_defs:
-            return "<not-a-class>"
-        if func.id[:1].isupper():
-            return None          # a class-shaped name bound by nothing we can see
-        return "<not-a-class>"   # a runtime callable: a parameter, or a computed local
+        if func.id in modules:
+            return "<not-a-class>"          # a module used as a callable: not one
+        if func.id in dir(builtins):
+            return "<not-a-class>"          # a builtin
+        if func.id in local_defs:
+            return "<not-a-class>"          # bound here to a runtime value
+        return None                         # bound by nothing this scan can see
     if isinstance(func, ast.Attribute):
         if isinstance(func.value, ast.Name) and func.value.id in modules:
-            return func.attr
+            return func.attr                # module.Something(...)
+        if func.attr.startswith("_"):
+            return "<not-a-class>"          # a dunder or private method: __setattr__,
+            #                                 super().__init__, object.__setattr__
         if func.attr[:1].isupper():
-            return None          # a class-shaped attribute on something unidentified
-        return "<not-a-class>"   # ordinary method call
-    return None                  # getattr(...)(...), a call on a call, a subscript
+            return None                     # class-shaped attribute, base unidentified
+        if func.attr[:1].islower():
+            return "<not-a-class>"          # a method call on an object
+        return None
+    return None                             # the terminal answer is UNKNOWN
 
 
 def _local_definitions(tree: ast.Module) -> set[str]:
@@ -3560,7 +3715,7 @@ def _scan_violation_constructions(source: str, path: pathlib.Path):
     """
     tree = ast.parse(source)
     names, modules = _bindings_in(tree)
-    defined = _local_definitions(tree)
+    defined = _names_bound_to_values(tree)
 
     sites = []
     unmeasured = []
@@ -3962,7 +4117,7 @@ def test_d123_f03_a_derived_value_is_found_in_every_form_the_contract_names(form
         node for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
     )
-    computed, _bound = _contract_bindings(scope)
+    computed, _bound, _unknown = _contract_bindings(scope)
     assert "_q" in computed, (
         f"a value bound by {form} is not seen as computed, so a keyword carrying it "
         "would be read as a caller's own statement"
@@ -3984,7 +4139,7 @@ def test_d123_f03_a_previously_unknown_derived_parameter_is_found():
         node for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
     )
-    computed, _bound = _contract_bindings(scope)
+    computed, _bound, _unknown = _contract_bindings(scope)
     assert "_bo" in computed
 
     call = next(
@@ -4091,7 +4246,7 @@ def test_d126_f03_a_name_bound_outside_the_contract_is_unmeasured_not_undetected
         node for node in ast.walk(ast.parse(source))
         if isinstance(node, ast.FunctionDef)
     )
-    computed, bound = _contract_bindings(scope)
+    computed, bound, _unknown = _contract_bindings(scope)
     assert "_bo" not in computed and "_bo" not in bound, (
         "a for target is outside the contract and must not be resolved by it"
     )
@@ -4163,6 +4318,166 @@ def test_d126_a_module_level_constant_is_resolved_by_the_same_contract():
         "def produce():\n"
         "    return check(gravity_m_s2=STANDARD)\n"
     )
-    computed, bound = _module_level_names(tree)
+    computed, bound, _unknown = _module_level_names(tree)
     assert "STANDARD" in bound and "STANDARD" not in computed
     assert "DERIVED" in computed
+
+
+# ======================================================================================
+# D129 — the classifiers fail closed, and the witness lands on their SHAPE
+# ======================================================================================
+
+#: Every classifier in this file, with the answer its terminal fall-through must give.
+#: A registry rather than a list of forms: what is checked below is the STRUCTURE of
+#: these functions, so it stays true for shapes nobody has thought of.
+_CLASSIFIERS = (
+    ("_classify_expression", "_Shape.UNKNOWN"),
+    ("_resolve_callee", "None"),
+)
+
+
+def _function_ast(name: str) -> ast.FunctionDef:
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} is not defined in this module")
+
+
+@pytest.mark.parametrize("name,terminal", _CLASSIFIERS, ids=[c[0] for c in _CLASSIFIERS])
+def test_d129_a_classifier_falls_through_to_unknown_and_not_to_an_answer(name, terminal):
+    """**The row this cycle is for. It lands on the classifier, not on the forms.**
+
+    Ten cycles asked "does the analysis recognise this form?" and after every answer
+    another form arrived: seven BLOCK sites of eight, one file of two, one call form of
+    two, one binding form of two, a bounded contract, and then a form INSIDE a contract
+    node type and an arithmetic node outside a category named in prose. Every one of
+    those classifiers ended in a definite answer, so each depended on its author having
+    thought of the shape.
+
+    What is asserted here is structural and needs nobody to anticipate anything: the
+    last statement of each classifier is the UNKNOWN answer, and every definite answer
+    it gives is inside an explicit branch. A classifier whose fall-through is a
+    conclusion fails this, whatever forms it happens to name.
+    """
+    function = _function_ast(name)
+
+    last = function.body[-1]
+    assert isinstance(last, ast.Return) and last.value is not None, (
+        f"{name} does not end in a return; its fall-through answer cannot be read"
+    )
+    assert ast.unparse(last.value) == terminal, (
+        f"{name} falls through to {ast.unparse(last.value)!r}, a definite answer. "
+        f"The terminal answer must be {terminal!r}: a shape the code does not "
+        "recognise is unknown, not a 'no'."
+    )
+
+    # Every OTHER return must be reached through an explicit branch, so no definite
+    # answer is given by position rather than by decision.
+    branchless = []
+    for statement in function.body[:-1]:
+        for node in ast.walk(statement):
+            if isinstance(node, ast.Return) and not isinstance(statement, (ast.If, ast.Try)):
+                branchless.append(node.lineno)
+    assert not branchless, (
+        f"{name} returns outside any branch at lines {branchless}; a definite answer "
+        "must be a decision the code makes, not a statement it reaches"
+    )
+
+
+def test_d129_the_classifiers_report_unknown_for_a_shape_they_do_not_name():
+    """The behavioural half: an unrecognised shape really does come back UNKNOWN.
+
+    ``ast.Yield`` is named by neither shape list, which is the point -- if it were, the
+    test would be a replay of the recognised set. What matters is the answer for a node
+    that is in neither, and that answer must not be "not computed".
+    """
+    yielded = ast.parse("def f():\n    x = yield 1\n")
+    value = next(
+        node.value for node in ast.walk(yielded) if isinstance(node, ast.Assign)
+    )
+    assert _classify_expression(value) is _Shape.UNKNOWN
+
+    # And the constructor resolver, for a callee bound by nothing it can see.
+    call = next(
+        node for node in ast.walk(ast.parse("mystery_factory(1, 2)"))
+        if isinstance(node, ast.Call)
+    )
+    assert _resolve_callee(call, {}, {}, set()) is None
+
+
+def test_d129_f01_an_annotated_class_alias_is_a_construction():
+    """``_v: type = Violation`` -- inside a contract node type, and still invisible.
+
+    The AnnAssign branch recorded a name only when the value was a call, so a
+    name-to-name annotated alias bound nothing, and calling it hit the lower-case
+    branch and was dropped as not-a-class. Four instruments were silent on it.
+    """
+    source = (
+        "from orbital_thermal.registry.applicability import Violation\n"
+        "_v: type = Violation\n"
+        "def f():\n"
+        "    return _v(Axis.REGIME, Consequence.BLOCK, 'silent')\n"
+    )
+    sites, unmeasured = _scan_violation_constructions(source, pathlib.Path("planted.py"))
+    assert not unmeasured
+    assert len(sites) == 1 and sites[0][3] is False, (
+        "the annotated alias is a Violation construction and it is silent on cause"
+    )
+
+
+def test_d129_f01_an_unresolvable_lowercase_callee_is_unmeasured_not_not_a_class():
+    """The general half of F-01: unbound is unknown, whatever its capitalisation.
+
+    The old branch answered "not a class" for every lower-case name it could not place,
+    which is what let the alias through once its binding was invisible.
+    """
+    source = "def f():\n    return factory(1)\n"
+    _sites, unmeasured = _scan_violation_constructions(source, pathlib.Path("planted.py"))
+    assert unmeasured, "a callee bound by nothing visible must be reported"
+
+    # The control: bound here, it is a deliberate not-a-class and not a report.
+    bound = "def factory(x):\n    return x\ndef f():\n    return factory(1)\n"
+    sites, unmeasured = _scan_violation_constructions(bound, pathlib.Path("planted.py"))
+    assert not sites and not unmeasured
+
+
+def test_d129_f02_unary_arithmetic_is_recognised_as_computed():
+    """``boiling_number=-mass_flux`` was neither computed nor unmeasured.
+
+    ``_contains_computation`` said "any call or arithmetic" and matched ``ast.Call`` and
+    ``ast.BinOp``; unary arithmetic is ``ast.UnaryOp``. The category claim is withdrawn
+    -- the shapes are a literal list now -- and ``UnaryOp`` is on it.
+    """
+    negated = ast.parse("-mass_flux").body[0].value
+    assert _classify_expression(negated) is _Shape.COMPUTED
+    assert ast.UnaryOp in _COMPUTING_SHAPES
+
+
+def test_d129_a_selection_is_not_a_derivation():
+    """The control against fixing F-02 by calling everything computed.
+
+    ``fluid or state.fluid`` and ``None if x is None else x.shape`` select between read
+    values; classifying them as computed turned two genuine case facts into derived
+    quantities, which would have emptied ``CASE_FACTS`` rather than guarding it.
+    """
+    for selection in ("a or b", "None if a is None else a.shape"):
+        node = ast.parse(selection).body[0].value
+        assert _classify_expression(node) is _Shape.NOT_COMPUTED, selection
+    for derivation in ("a or compute()", "b if a is None else compute()"):
+        node = ast.parse(derivation).body[0].value
+        assert _classify_expression(node) is _Shape.COMPUTED, derivation
+
+
+def test_d129_the_fail_closed_report_is_readable():
+    """What the report looks like, because a report nobody reads is not a guard.
+
+    Fail-closed over every expression shape would flood; the recognised sets are
+    explicit and chosen so the residue is small enough to read, which is the same
+    problem the signature-derived relevance rule solved once already.
+    """
+    _derived, derivation_rows = _derived_quantities_in_production(with_unmeasured=True)
+    constructor_rows = _violation_scan_unmeasured()
+    assert len(constructor_rows) == 0, [str(r) for r in constructor_rows]
+    assert len(derivation_rows) == 1, derivation_rows
+    assert set(derivation_rows) == _ACKNOWLEDGED_UNREADABLE_EXPANSIONS
