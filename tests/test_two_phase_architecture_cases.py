@@ -27,6 +27,7 @@ falsifying shape itself and requiring it to be refused.
 from __future__ import annotations
 
 import ast
+import builtins
 import dataclasses
 import inspect
 import math
@@ -35,6 +36,7 @@ import re
 import subprocess
 import sys
 import warnings
+from typing import NamedTuple
 
 import pytest
 from conftest import _child_env
@@ -2903,26 +2905,148 @@ def _contains_computation(node: ast.AST) -> bool:
     """
     return any(isinstance(child, (ast.Call, ast.BinOp)) for child in ast.walk(node))
 
-def _derived_quantities_in_production() -> frozenset[str]:
+
+def _computed_locals(scope: ast.AST) -> set[str]:
+    """Names bound to a worked-out value anywhere in ``scope``. ALL binding forms.
+
+    D123/F-03. This read ``ast.Assign`` only, so a type annotation was enough to defeat
+    the whole guard: ``_bo = G / (D * 1000)`` was found and
+    ``_bo: float = G / (D * 1000)`` was not -- same value, same call, same everything,
+    and a new derived parameter admitted to ``CASE_FACTS`` passed the classification
+    witness, the S5-1 witness and the D114 accounting together.
+
+    ``AnnAssign``, tuple and starred targets, ``AugAssign`` and walrus are all ordinary
+    ways to bind a computed value, so all of them bind here.
+    """
+    computed: set[str] = set()
+
+    def bind(target: ast.AST) -> None:
+        if isinstance(target, ast.Name):
+            computed.add(target.id)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            for element in target.elts:
+                bind(element)
+        elif isinstance(target, ast.Starred):
+            bind(target.value)
+
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Assign) and _contains_computation(node.value):
+            for target in node.targets:
+                bind(target)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            if _contains_computation(node.value):
+                bind(node.target)
+        elif isinstance(node, ast.AugAssign):
+            bind(node.target)  # `x += f()` and `x += 1` both work a value out
+        elif isinstance(node, ast.NamedExpr) and _contains_computation(node.value):
+            bind(node.target)
+    return computed
+
+
+
+def _parameter_names_by_function() -> dict[str, frozenset[str]]:
+    """Every package function's parameter names, by function name.
+
+    Used to decide whether a call site could be DELIVERING applicability parameters at
+    all. Without that, an unreadable ``**mapping`` anywhere in the package -- a
+    deprecation shim forwarding ``*args, **kwargs``, say -- would be reported as an
+    unmeasured applicability delivery, and a report that cries about ten irrelevant
+    sites is a report nobody reads. Derived from signatures, not from names.
+    """
+    out: dict[str, set[str]] = {}
+    for path in _production_modules():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:  # pragma: no cover
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                arguments = node.args
+                names = {
+                    a.arg
+                    for a in (
+                        list(arguments.posonlyargs)
+                        + list(arguments.args)
+                        + list(arguments.kwonlyargs)
+                    )
+                }
+                out.setdefault(node.name, set()).update(names)
+    return {name: frozenset(params) for name, params in out.items()}
+
+
+def _expanded_keywords(call: ast.Call, scope: ast.AST):
+    """``(names, unmeasured)`` for the ``**mapping`` expansions at one call site.
+
+    A call may pass its arguments through a mapping -- ``check(**y_kwargs)`` -- and the
+    keys of that mapping are keyword arguments as surely as if they were written out.
+    A mapping this scan can read is expanded; one it cannot is reported UNMEASURED, the
+    same rule the constructor resolver uses, because a scan that cannot decide must say
+    so rather than count zero.
+    """
+    names: set[str] = set()
+    unmeasured: list[str] = []
+    for keyword in call.keywords:
+        if keyword.arg is not None:
+            continue
+        source = keyword.value
+        if isinstance(source, ast.Name):
+            source = _last_binding_of(source.id, scope) or source
+        if isinstance(source, ast.Dict):
+            for key in source.keys:
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    names.add(key.value)
+                else:
+                    unmeasured.append("non-literal key")
+        elif isinstance(source, ast.Call) and getattr(source.func, "id", "") == "dict":
+            names.update(k.arg for k in source.keywords if k.arg is not None)
+            if any(k.arg is None for k in source.keywords):
+                unmeasured.append("nested expansion")
+        else:
+            unmeasured.append("unreadable mapping")
+    return names, unmeasured
+
+
+def _last_binding_of(name: str, scope: ast.AST):
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == name for t in node.targets
+        ):
+            return node.value
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.target.id == name:
+                return node.value
+    return None
+
+
+def _derived_quantities_in_production(with_unmeasured: bool = False):
     """Parameters of :meth:`Applicability.check` that production code **computes**.
 
     The classification test D118 asks for, and it is a derivation rather than a list of
     forbidden names -- a list is a blocklist in allowlist clothing, and this class has
     been closed by name four times already.
 
-    A keyword argument counts as *computed* when its value is a call or an arithmetic
-    expression, or a local bound to one in the same function. That is deliberately
-    narrower than "not a bare parameter": ``geometry=geometry.shape`` reads a field off
-    an object the caller owns and stays a case fact, while
-    ``liquid_reynolds=state.liquid_reynolds(...)`` and ``branch_value=y_here`` where
-    ``y_here = shah_1987_Y(...)`` are quantities the code works out, which is the
-    property that matters. Attribute access alone is reading; a call is deriving.
+    A keyword argument counts as *computed* when its value works a value out, or is a
+    local bound to one by any ordinary binding form, or arrives through a ``**mapping``
+    whose keys this scan can read. That is deliberately narrower than "not a bare
+    parameter": ``geometry=geometry.shape`` reads a field off an object the caller owns
+    and stays a case fact, while ``liquid_reynolds=state.liquid_reynolds(...)`` and
+    ``branch_value=y_here`` where ``y_here = shah_1987_Y(...)`` are quantities the code
+    works out.
+
+    **D123/F-03 widened the binding forms and added the unmeasured half.** Reading only
+    ``ast.Assign`` meant an annotation defeated the guard outright, and the D120 control
+    tested REMOVAL from the population rather than ADDITION outside it -- so it could
+    only ever go red for a name already in the derived set, never for one that had never
+    entered it. What a scan cannot read it now reports; what it can read has grown to
+    the ordinary ways a value gets a name.
     """
     universe = {
         name for name in inspect.signature(Applicability.check).parameters
         if name != "self"
     }
+    parameters_by_function = _parameter_names_by_function()
     derived: set[str] = set()
+    unmeasured: list[str] = []
     for path in _production_modules():
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -2931,16 +3055,28 @@ def _derived_quantities_in_production() -> frozenset[str]:
         for scope in ast.walk(tree):
             if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            computed_here = {
-                target.id
-                for node in ast.walk(scope)
-                if isinstance(node, ast.Assign) and _contains_computation(node.value)
-                for target in node.targets
-                if isinstance(target, ast.Name)
-            }
+            computed_here = _computed_locals(scope)
             for node in ast.walk(scope):
                 if not isinstance(node, ast.Call):
                     continue
+                callee = node.func
+                callee_name = (
+                    callee.id if isinstance(callee, ast.Name)
+                    else callee.attr if isinstance(callee, ast.Attribute)
+                    else None
+                )
+                delivers = bool(
+                    callee_name
+                    and parameters_by_function.get(callee_name, frozenset()) & universe
+                )
+                if delivers:
+                    expanded, could_not_read = _expanded_keywords(node, scope)
+                    relative = path.relative_to(_SRC)
+                    unmeasured.extend(
+                        f"{relative.as_posix()}: {callee_name} ({u})"
+                        for u in could_not_read
+                    )
+                    derived.update(expanded & universe)
                 for keyword in node.keywords:
                     if keyword.arg is None or keyword.arg not in universe:
                         continue
@@ -2949,6 +3085,8 @@ def _derived_quantities_in_production() -> frozenset[str]:
                         isinstance(value, ast.Name) and value.id in computed_here
                     ):
                         derived.add(keyword.arg)
+    if with_unmeasured:
+        return frozenset(derived), unmeasured
     return frozenset(derived)
 
 
@@ -2958,6 +3096,25 @@ def _derived_quantities_in_production() -> frozenset[str]:
 _DERIVED_BEYOND_THIS_BOUNDARY = _derived_quantities_in_production() - frozenset(
     {"fluid", "gravity_m_s2", "has_executable_form"}
 )
+
+
+
+#: Call sites where a ``**mapping`` cannot be read, acknowledged with the reason.
+#:
+#: D123/F-03. "Unmeasured is not zero" is only worth anything if a NEW unreadable site
+#: fails, so the known ones are declared rather than tolerated in silence, and
+#: ``test_d123_the_unmeasured_expansions_are_the_declared_ones`` fails in both
+#: directions. Keyed by module and callee rather than by line number, which drifts.
+#:
+#: The single entry is the registry's own CHF function forwarding ``**kwargs`` into
+#: ``shah_1987_critical_boiling_number``. It cannot deliver an applicability parameter
+#: -- it is physics, not a ``check`` call -- but the relevance rule is derived from
+#: SIGNATURES rather than from names, and that callee happens to take ``gravity_m_s2``.
+#: Teaching the rule to recognise this one by name is the defect this whole return is
+#: about, so it is declared instead.
+_ACKNOWLEDGED_UNREADABLE_EXPANSIONS = frozenset({
+    "registry/two_phase.py: shah_1987_critical_boiling_number (unreadable mapping)",
+})
 
 
 def test_d118_no_case_fact_is_a_derived_quantity():
@@ -3151,45 +3308,197 @@ def test_d119_a_block_that_is_a_conclusion_is_not_reported_as_unevaluable():
     assert record["unevaluable_axes"] == ("orientation",)
 
 
+
+# ======================================================================================
+# D123 — resolving what a name is BOUND to, so a rule governs a category and not a
+# spelling. Shared by the cause rule (F-02) and the derived-quantity rule (F-03).
+# ======================================================================================
+
+
+class _Unmeasured(NamedTuple):
+    """A construction the analysis could not resolve. **Not the same as absent.**
+
+    D123's shape, three times over: an instrument measured a form and claimed a
+    category. The half that outlives the next spelling is not a longer list of forms --
+    it is that a scan which cannot decide says so. A zero that means "none" and a zero
+    that means "I could not look" are different numbers, and every rule below fails
+    loudly on the second.
+    """
+
+    path: pathlib.Path
+    lineno: int
+    reason: str
+
+
+def _package_root() -> pathlib.Path:
+    return pathlib.Path(_applicability.__file__).parents[1]
+
+
+def _package_modules() -> list[pathlib.Path]:
+    return sorted(
+        p for p in _package_root().rglob("*.py") if "__pycache__" not in p.parts
+    )
+
+
+def _bindings_in(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
+    """What each local name is bound to: ``(names, module_aliases)``.
+
+    ``names`` maps a local name to a dotted target -- ``Violation`` however it was
+    spelled at the import, and through any number of local rebindings. ``module_aliases``
+    maps a local name to the module it refers to, so ``ap.Violation`` resolves as well as
+    a bare name.
+
+    Follows: ``from X import Violation``, ``... as _V``, ``import X.Y as ap``,
+    ``from . import applicability``, and chained local aliases ``V = _V``.
+    """
+    names: dict[str, str] = {}
+    modules: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            base = (node.module or "").split(".")[-1]
+            for alias in node.names:
+                local = alias.asname or alias.name
+                if alias.name and alias.name[:1].isupper():
+                    names[local] = alias.name          # a class, however spelled
+                else:
+                    modules[local] = alias.name or base  # `from . import applicability`
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                modules[alias.asname or alias.name.split(".")[0]] = (
+                    alias.name.split(".")[-1]
+                )
+    # A class defined HERE binds its own name -- applicability.py does not import
+    # Violation, it declares it, and the first version of this resolver could not see
+    # the nineteen sites in the file the rule was originally written for.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            names[node.name] = node.name
+
+    # Local rebinding, repeated so `V = _V = Violation` resolves whatever the order.
+    for _ in range(3):
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Name)):
+                continue
+            source = names.get(node.value.id)
+            if source is None:
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    names.setdefault(target.id, source)
+    return names, modules
+
+
+def _resolve_callee(
+    call: ast.Call,
+    names: dict[str, str],
+    modules: dict[str, str],
+    local_defs: set[str],
+) -> str | None:
+    """What ``call`` constructs, or ``None`` when the analysis cannot say.
+
+    ``None`` is the UNMEASURED answer and callers must treat it as such rather than as
+    "not a Violation" -- that conflation is F-02 exactly.
+
+    **The bound, stated rather than left for the next return to find.** A name bound
+    to an *expression* -- a callable parameter, a computed local -- is read as a
+    runtime value and not as a construction this scan can attribute; only a callee the
+    scan cannot even name comes back UNMEASURED. So an indirect ``getattr`` lookup and
+    a call on a call are reported, while ``f(...)`` for a callable parameter is not.
+    Imported aliases, local aliases, locally defined classes and module attributes are
+    resolved outright, which is the population the four controls below exercise.
+    """
+    func = call.func
+    if isinstance(func, ast.Name):
+        if func.id in names:
+            return names[func.id]
+        if func.id in modules or func.id in dir(builtins) or func.id in local_defs:
+            return "<not-a-class>"
+        if func.id[:1].isupper():
+            return None          # a class-shaped name bound by nothing we can see
+        return "<not-a-class>"   # a runtime callable: a parameter, or a computed local
+    if isinstance(func, ast.Attribute):
+        if isinstance(func.value, ast.Name) and func.value.id in modules:
+            return func.attr
+        if func.attr[:1].isupper():
+            return None          # a class-shaped attribute on something unidentified
+        return "<not-a-class>"   # ordinary method call
+    return None                  # getattr(...)(...), a call on a call, a subscript
+
+
+def _local_definitions(tree: ast.Module) -> set[str]:
+    return {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    }
+
+def _scan_violation_constructions(source: str, path: pathlib.Path):
+    """``(sites, unmeasured)`` for one module, by CONSTRUCTOR IDENTITY not by spelling.
+
+    D123/F-02. The D120 version matched ``ast.Name`` whose ``id`` was the string
+    ``"Violation"``. An aliased import -- ``from .registry.applicability import
+    Violation as _V`` -- produced a twenty-first construction site that the rule, the
+    suite and the linter all passed, and the row asserting "the bound is real" inferred
+    a whole-population claim from two syntax counts while its only control planted a
+    form it already saw.
+
+    So the name is resolved to what it is BOUND to, through imported aliases, module
+    attribute access and local rebinding. And a construction that cannot be resolved --
+    ``getattr(mod, "Violation")(...)``, a call on a call -- is returned as UNMEASURED
+    rather than counted as zero, because a scan that cannot decide must say so.
+    """
+    tree = ast.parse(source)
+    names, modules = _bindings_in(tree)
+    defined = _local_definitions(tree)
+
+    sites = []
+    unmeasured = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        target = _resolve_callee(node, names, modules, defined)
+        if target is None:
+            unmeasured.append(
+                _Unmeasured(path, node.lineno, ast.dump(node.func)[:60])
+            )
+            continue
+        if target != "Violation":
+            continue
+        consequence = node.args[1] if len(node.args) > 1 else None
+        name = consequence.attr if isinstance(consequence, ast.Attribute) else "?"
+        states = any(keyword.arg == "cause" for keyword in node.keywords)
+        sites.append((path, node.lineno, name, states))
+    return sites, unmeasured
+
+
 def _violation_sites() -> list[tuple[pathlib.Path, int, str, bool]]:
     """Every ``Violation`` construction in the package. DERIVED from the package.
 
     D120: the D119 version of this read one file -- ``applicability.__file__`` -- and
-    the package has two that construct violations. The S5 module's own unevaluable
-    branch block, added the cycle before, was outside the rule; a silent ``BLOCK`` site
-    added beside it passed the rule, the suite and the linter. Its real site was covered
-    only by sixteen behavioural assertions that happen to depend on its effect, which is
-    coverage by luck rather than by rule.
-
-    That is the third cycle running of one shape: a rule true of the category it was
-    measured against and silent about the category beside it. ``BLOCK`` covered seven
-    sites and missed the eighth; the refusal message covered three names and misnamed
-    the fourth; the rule written to make that impossible covered one file and missed the
-    second. So the file set is derived from the package rather than named, and the scan
-    reports what it found so that "nothing is silent" cannot be the answer of a scan
-    that is reading nothing.
+    the package has two that construct violations. D123: it also matched a spelling
+    rather than the constructor, so an alias was invisible to it.
 
     Returns ``(path, lineno, consequence, states_a_cause)`` per site.
     """
-    package_root = pathlib.Path(_applicability.__file__).parents[1]
-    sites: list[tuple[pathlib.Path, int, str, bool]] = []
-    for path in sorted(package_root.rglob("*.py")):
-        if "__pycache__" in path.parts:
-            continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if not (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "Violation"
-            ):
-                continue
-            consequence = node.args[1] if len(node.args) > 1 else None
-            name = (
-                consequence.attr if isinstance(consequence, ast.Attribute) else "?"
-            )
-            states = any(keyword.arg == "cause" for keyword in node.keywords)
-            sites.append((path.relative_to(package_root), node.lineno, name, states))
+    root = _package_root()
+    sites = []
+    for path in _package_modules():
+        found, _ = _scan_violation_constructions(
+            path.read_text(encoding="utf-8"), path.relative_to(root)
+        )
+        sites.extend(found)
     return sites
+
+
+def _violation_scan_unmeasured() -> list[_Unmeasured]:
+    root = _package_root()
+    out = []
+    for path in _package_modules():
+        _, unmeasured = _scan_violation_constructions(
+            path.read_text(encoding="utf-8"), path.relative_to(root)
+        )
+        out.extend(unmeasured)
+    return out
 
 
 def test_d120_every_violation_site_states_whether_its_axis_was_evaluated():
@@ -3200,7 +3509,7 @@ def test_d120_every_violation_site_states_whether_its_axis_was_evaluated():
     being ``EVALUATED_AND_FAILED``, which was correct for them, so flipping it without
     making them explicit would have silently misclassified eleven correct sites in order
     to fix a default nothing used. The rule now governs the category it is about --
-    violations -- rather than the subset the last finding happened to arrive through.
+    violations -- rather than the subset the last finding arrived through.
     """
     sites = _violation_sites()
 
@@ -3228,6 +3537,22 @@ def test_d120_every_violation_site_states_whether_its_axis_was_evaluated():
     assert not silent, (
         "these Violation sites do not say whether their axis was evaluated, so the "
         f"record derives it from a default the author never chose: {silent}"
+    )
+
+
+def test_d123_a_construction_the_scan_cannot_resolve_is_reported_not_absorbed():
+    """**UNMEASURED is not zero, and this is the half that outlives the next spelling.**
+
+    A longer list of syntaxes is always one syntax short -- that is F-02, F-03 and the
+    C-04 matcher, three instruments in one return. What generalises is that the scan
+    reports what it could not decide, so a construction it cannot resolve fails the rule
+    instead of passing it by being invisible.
+    """
+    unmeasured = _violation_scan_unmeasured()
+    assert not unmeasured, (
+        "these constructions could not be resolved to a class, so the cause rule "
+        "cannot say whether they are Violation sites: "
+        + "; ".join(f"{u.path}:{u.lineno}" for u in unmeasured)
     )
 
 
@@ -3353,3 +3678,244 @@ def test_d119_the_three_category_refusal_survives_for_the_real_three(name):
         _assess_with(name, 1.0e6)
     assert "DERIVES from primitive physical state" in str(refusal.value)
     assert "unevaluable" in str(refusal.value)
+
+
+# ======================================================================================
+# D123 — three instruments that matched a form and claimed a category
+# ======================================================================================
+
+
+def test_d123_f01_a_mixed_cause_axis_is_reconstructable_from_the_record_alone():
+    """**F-01, red at 312bfdd. The record is what S6 consumes.**
+
+    The shipped microgravity CHF leg carries two ORIENTATION violations with opposite
+    causes: a de-rank that is a finding, and a block that is the absence of one.
+    ``unevaluable_axes`` says ``('orientation',)`` and ``violations`` is a tuple of bare
+    strings, so a consumer could not tell which statement was which without parsing
+    prose or keeping the pre-serialisation object. That is D119's conclusion-versus-
+    absence ambiguity re-created at the hand-off, one layer out -- and carrying both
+    kinds on ONE axis is exactly what makes an axis-name tuple ambiguous.
+    """
+    leg = ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE)
+    record = leg.as_record()
+
+    on_orientation = [
+        entry for entry in record["violation_records"]
+        if entry["axis"] == Axis.ORIENTATION.value
+    ]
+    assert len(on_orientation) == 2, (
+        "this record is the witness's whole point: two statements on one axis"
+    )
+    causes = {entry["cause"] for entry in on_orientation}
+    assert causes == {
+        Cause.EVALUATED_AND_FAILED.value,
+        Cause.NOT_EVALUATED.value,
+    }, "the two statements must be distinguishable, and on this record they differ"
+
+    # Reconstructed from the record ALONE -- no object, no prose.
+    finding = [e for e in on_orientation if e["cause"] == Cause.EVALUATED_AND_FAILED.value]
+    absence = [e for e in on_orientation if e["cause"] == Cause.NOT_EVALUATED.value]
+    assert len(finding) == 1 and len(absence) == 1
+    assert finding[0]["consequence"] == Consequence.DE_RANK.value
+    assert absence[0]["consequence"] == Consequence.BLOCK.value
+
+
+def test_d123_f01_the_existing_violations_key_is_unchanged_and_parallel():
+    """Additive, as ruled: S6 keeps consuming what it consumes.
+
+    ``violations`` stays a tuple of the same detail strings in the same order, and the
+    typed list is a parallel of it -- so a consumer can zip them, and neither can be
+    the reason the other is wrong.
+    """
+    for leg in (
+        ac.assess_leg("water", "chf", gravity_m_s2=_MICROGRAVITY, **_FULL_CASE),
+        ac.assess_leg("water", "dp", gravity_m_s2=_REFERENCE_G, **_FULL_CASE),
+    ):
+        record = leg.as_record()
+        assert record["violations"] == tuple(v.detail for v in leg.violations)
+        assert all(isinstance(v, str) for v in record["violations"])
+        assert [e["detail"] for e in record["violation_records"]] == list(
+            record["violations"]
+        )
+        # unevaluable_axes is REDUCED from the typed list rather than recomputed from
+        # the object, so the two projections cannot disagree about one record.
+        assert record["unevaluable_axes"] == tuple(
+            e["axis"] for e in record["violation_records"]
+            if e["cause"] == Cause.NOT_EVALUATED.value
+        )
+
+
+_ALIAS_FORMS = {
+    "imported alias": (
+        "from orbital_thermal.registry.applicability import Violation as _V\n"
+        "def f():\n"
+        "    return _V(Axis.REGIME, Consequence.BLOCK, 'silent')\n"
+    ),
+    "local alias": (
+        "from orbital_thermal.registry.applicability import Violation\n"
+        "V = Violation\n"
+        "def f():\n"
+        "    return V(Axis.REGIME, Consequence.BLOCK, 'silent')\n"
+    ),
+    "attribute access": (
+        "from orbital_thermal.registry import applicability as ap\n"
+        "def f():\n"
+        "    return ap.Violation(Axis.REGIME, Consequence.BLOCK, 'silent')\n"
+    ),
+}
+
+
+@pytest.mark.parametrize("form", sorted(_ALIAS_FORMS))
+def test_d123_f02_every_alias_form_is_seen_as_a_construction(form):
+    """**F-02: constructor identity, not the spelling of a call target.**
+
+    The D120 rule matched ``ast.Name`` whose id was the string ``"Violation"``. An
+    aliased import produced a twenty-first site that the rule, the suite and ruff all
+    passed, and its only control planted the attribute form -- the one form it already
+    saw. Each of the four forms the ruling names is planted here; three resolve, and
+    the fourth is below.
+    """
+    sites, unmeasured = _scan_violation_constructions(
+        _ALIAS_FORMS[form], pathlib.Path("planted.py")
+    )
+    assert not unmeasured, f"{form} should resolve, not come back unmeasured"
+    assert len(sites) == 1, f"the {form} construction was not seen at all"
+    assert sites[0][2] == "BLOCK" and sites[0][3] is False, (
+        "the planted site is silent on cause and must be reported as such"
+    )
+
+
+def test_d123_f02_an_indirect_lookup_is_unmeasured_not_absent():
+    """The fourth form, and the one that cannot be resolved: it must SAY so.
+
+    A longer list of syntaxes is always one syntax short. What generalises is that a
+    scan which cannot decide reports it, so the construction fails the rule rather than
+    passing by being invisible.
+    """
+    source = (
+        "from orbital_thermal.registry import applicability as ap\n"
+        "def f():\n"
+        "    return getattr(ap, 'Violation')(Axis.REGIME, Consequence.BLOCK, 'x')\n"
+    )
+    sites, unmeasured = _scan_violation_constructions(source, pathlib.Path("planted.py"))
+    assert not sites
+    assert unmeasured, (
+        "an indirect lookup resolved to nothing and was counted as zero, which is the "
+        "conflation F-02 is about"
+    )
+    assert unmeasured[0].lineno == 3
+
+
+def test_d123_f02_a_resolvable_non_violation_call_is_neither_site_nor_unmeasured():
+    """The control against the other failure: a scan that reports everything.
+
+    An ordinary call must be neither a site nor unmeasured, or "nothing unmeasured"
+    becomes unachievable and the signal is worthless.
+    """
+    source = (
+        "import math\n"
+        "def f(callback):\n"
+        "    total = math.sqrt(4.0)\n"
+        "    return callback(total)\n"
+    )
+    sites, unmeasured = _scan_violation_constructions(source, pathlib.Path("planted.py"))
+    assert not sites and not unmeasured
+
+
+_BINDING_FORMS = {
+    "plain assignment": "    _q = mass_flux * 2.0\n",
+    "annotated assignment": "    _q: float = mass_flux * 2.0\n",
+    "tuple unpacking": "    _q, _other = compute(mass_flux)\n",
+    "augmented assignment": "    _q = 1.0\n    _q += mass_flux\n",
+    "walrus": "    print(_q := mass_flux * 2.0)\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(_BINDING_FORMS))
+def test_d123_f03_a_derived_value_is_found_in_every_ordinary_binding_form(form):
+    """**F-03: a type annotation was enough to defeat the guard.**
+
+    ``_bo = G / (D * 1000)`` was found; ``_bo: float = G / (D * 1000)`` was not. Same
+    value, same call, same everything -- and a new derived parameter admitted to
+    ``CASE_FACTS`` passed the classification witness, the S5-1 witness and the D114
+    accounting together, because all three consume this one derivation.
+
+    **The control introduces a parameter the suite has never seen.** Replaying
+    ``liquid_reynolds``, ``branch_value`` and ``branch_value_at_reference_gravity``
+    cannot detect this class: those names are already in the derived set, so a witness
+    built on them can only ever go red for their REMOVAL, never for an ADDITION outside
+    it. That asymmetry is what let this through.
+    """
+    source = "def producer(mass_flux):\n" + _BINDING_FORMS[form] + "    return _q\n"
+    scope = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+    )
+    assert "_q" in _computed_locals(scope), (
+        f"a value bound by {form} is not seen as computed, so a keyword carrying it "
+        "would be read as a caller's own statement"
+    )
+
+
+def test_d123_f03_a_previously_unknown_derived_parameter_is_found():
+    """The end-to-end control, on a name that exists nowhere in the package.
+
+    Not a replay of the three: a parameter the suite has never seen, supplied from an
+    annotated binding -- the exact form and the exact scenario that passed at 312bfdd.
+    """
+    source = (
+        "def produce(mass_flux_kg_m2s, geometry):\n"
+        "    _bo: float = mass_flux_kg_m2s / (geometry.hydraulic_diameter_m * 1000.0)\n"
+        "    return check(boiling_number=_bo, gravity_m_s2=9.81)\n"
+    )
+    scope = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+    )
+    computed = _computed_locals(scope)
+    assert "_bo" in computed
+
+    call = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "check"
+    )
+    supplied = {
+        keyword.arg for keyword in call.keywords
+        if isinstance(keyword.value, ast.Name) and keyword.value.id in computed
+    }
+    assert "boiling_number" in supplied, (
+        "a derived quantity supplied through an annotated binding is invisible, which "
+        "is enough to admit it to CASE_FACTS with every witness green"
+    )
+
+
+def test_d123_f03_a_readable_mapping_expansion_delivers_its_keys():
+    """``check(**mapping)`` carries keyword arguments as surely as writing them out."""
+    source = (
+        "def produce(g):\n"
+        "    kw = dict(gravity_m_s2=g * 2.0, geometry='round_tube')\n"
+        "    return check(**kw)\n"
+    )
+    tree = ast.parse(source)
+    scope = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef))
+    call = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "check"
+    )
+    names, unmeasured = _expanded_keywords(call, scope)
+    assert names == {"gravity_m_s2", "geometry"} and not unmeasured
+
+
+def test_d123_the_unmeasured_expansions_are_the_declared_ones():
+    """Unmeasured is not zero, and it is not a licence either.
+
+    A ``**mapping`` the scan cannot read is reported. The ones that exist are declared
+    with their reason so a NEW one fails, in both directions -- the same discipline
+    ``UNEVALUABLE_AT_THIS_BOUNDARY`` is held to.
+    """
+    _, unmeasured = _derived_quantities_in_production(with_unmeasured=True)
+    assert set(unmeasured) == _ACKNOWLEDGED_UNREADABLE_EXPANSIONS, (
+        "the unreadable mapping expansions have moved: found "
+        f"{sorted(set(unmeasured))}, declared "
+        f"{sorted(_ACKNOWLEDGED_UNREADABLE_EXPANSIONS)}"
+    )

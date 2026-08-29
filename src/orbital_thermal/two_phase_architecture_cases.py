@@ -671,6 +671,27 @@ class LegEligibility:
             "entry_id": self.entry_id,
             "eligible": self.eligible,
             "violations": tuple(v.detail for v in self.violations),
+            # D123/F-01: the typed parallel to `violations`, same order, one entry per
+            # violation. `violations` is unchanged and stays the string tuple S6
+            # already consumes; this is additive.
+            #
+            # The strings alone could not carry the distinction D119 built. The shipped
+            # microgravity CHF leg holds TWO violations on the SAME axis with OPPOSITE
+            # causes -- an ORIENTATION de-rank that is a finding, and an ORIENTATION
+            # block that is the absence of one -- so `unevaluable_axes` reading
+            # ('orientation',) tells a consumer that the axis is implicated without
+            # telling it which of the two statements is which. Recovering that from the
+            # record meant parsing prose or keeping the pre-serialisation object, which
+            # is D119's ambiguity re-created at the hand-off, one layer out.
+            "violation_records": tuple(
+                {
+                    "axis": v.axis.value,
+                    "consequence": v.consequence.value,
+                    "detail": v.detail,
+                    "cause": v.cause.value,
+                }
+                for v in self.violations
+            ),
             # D118: which axes could NOT be checked, as data rather than as prose
             # buried in a detail string. `eligible: false` with an empty tuple here
             # means every axis that fired was evaluated and the case failed it; a
@@ -684,11 +705,18 @@ class LegEligibility:
             # BLOCK as "never checked" reported the entry's own conclusion as the
             # absence of one, on exactly the record built to show that conclusion
             # moving the outcome.
-            "unevaluable_axes": tuple(
-                v.axis.value for v in self.violations
-                if v.cause is Cause.NOT_EVALUATED
-            ),
+            # D123: derived from `violation_records` above rather than recomputed
+            # from `self.violations`. Two projections of one fact cannot disagree if
+            # only one of them reads the source. Kept because it is lossy, not wrong:
+            # it answers "is any axis unevaluated" in one lookup, and the typed list
+            # answers "which statement is which".
+            "unevaluable_axes": (),
         }
+        record["unevaluable_axes"] = tuple(
+            entry["axis"]
+            for entry in record["violation_records"]  # type: ignore[index]
+            if entry["cause"] == Cause.NOT_EVALUATED.value
+        )
         if self.chf_dependent:
             basis = self.gravity_basis
             if basis is None:  # pragma: no cover - __post_init__ forecloses it
