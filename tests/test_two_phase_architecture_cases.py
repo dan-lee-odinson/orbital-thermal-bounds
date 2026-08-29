@@ -4562,17 +4562,22 @@ def test_d129_the_fail_closed_report_is_readable():
 # ======================================================================================
 
 
-def _expression_fields_of(node_type: type[ast.AST]) -> tuple[str, ...]:
-    """The fields of ``node_type`` that hold expressions, read from the ASDL signature.
+def _expression_fields_with_modifier(
+    node_type: type[ast.AST],
+) -> tuple[tuple[str, str], ...]:
+    """``(field, modifier)`` for every expression field, read from the ASDL signature.
 
     CPython carries each AST class's grammar rule in its docstring --
-    ``Attribute(expr value, identifier attr, expr_context ctx)`` -- so which node types
-    have expression children is a fact about the grammar rather than an opinion about
-    the node. That is what makes the witness below derivable: nobody has to be right
-    about ``Attribute``.
+    ``Attribute(expr value, identifier attr, expr_context ctx)``,
+    ``Slice(expr? lower, expr? upper, expr? step)``, ``JoinedStr(expr* values)`` -- so
+    which node types have expression children, and whether a child is one node or a
+    list of them, are facts about the grammar rather than opinions about the node.
 
-    The type token is matched exactly after stripping ``?`` and ``*``, because
-    ``expr_context`` contains ``expr`` and is not one.
+    The type token is matched exactly after stripping the modifier, because
+    ``expr_context`` contains ``expr`` and is not one. The modifier is RETURNED rather
+    than discarded: the behavioural control needs to know whether to plant a node or a
+    list of nodes, and a second reader of the same docstring is two records that can
+    drift, which is how D124 arose. Callers that only want the names project them off.
     """
     documentation = (node_type.__doc__ or "").strip()
     opened = documentation.find("(")
@@ -4581,12 +4586,20 @@ def _expression_fields_of(node_type: type[ast.AST]) -> tuple[str, ...]:
         f"{node_type.__name__} carries no ASDL signature, so this witness cannot read "
         "the grammar and must not pass by finding nothing"
     )
-    fields = []
+    fields: list[tuple[str, str]] = []
     for declaration in documentation[opened + 1 : closed].split(","):
         parts = declaration.split()
-        if len(parts) == 2 and parts[0].rstrip("?*") == "expr":
-            fields.append(parts[1])
+        if len(parts) != 2:
+            continue
+        token, name = parts
+        if token.rstrip("?*") == "expr":
+            fields.append((name, token[len("expr"):]))
     return tuple(fields)
+
+
+def _expression_fields_of(node_type: type[ast.AST]) -> tuple[str, ...]:
+    """The names alone, projected off the one reader above."""
+    return tuple(name for name, _modifier in _expression_fields_with_modifier(node_type))
 
 
 def test_d130_every_reading_shape_is_a_genuine_leaf():
@@ -4761,8 +4774,23 @@ def _fields_visited_by(branch: ast.If) -> set[str]:
     }
 
 
-def test_d131_a_recursing_branch_visits_every_expression_child_it_answers_over():
-    """**Completeness, from the grammar rather than from an example list.**
+def test_d131_a_recursing_branch_references_every_expression_child_it_answers_over():
+    """**A diagnostic, and NOT the completeness check. D133 renamed it to say so.**
+
+    It asserts the branch REFERENCES every expression field the grammar gives its type.
+    That is necessary and it is not sufficient: a branch may read a field for some other
+    purpose and still answer definitely over it, which is exactly C-08 --
+
+        parts = [node.lower, node.upper]
+        if node.step is not None and isinstance(node.step, ast.Constant):
+            parts.append(node.step)
+
+    mentions ``node.step`` twice, satisfies this row, and classifies ``a[1:2:f(i)]`` as
+    a read. Completeness is
+    ``test_d133_a_computation_in_any_child_makes_the_whole_expression_computed``, which
+    asserts on the ANSWER. This row is kept because it fails earlier and names the
+    branch, which the behavioural row cannot do -- three cycles of assertions about what
+    the source looks like are why it is no longer the claim.
 
     The D130 witness required a branch to contain a recursive call and never asked what
     it recursed into. Cutting ``Slice`` from three children to two left
@@ -4867,3 +4895,144 @@ def test_d131_the_exemption_set_is_declared_in_one_place():
         if isinstance(target, ast.Name) and target.id == "_UNVISITED_FIELDS"
     ]
     assert len(bindings) == 1, f"{len(bindings)} records of what is unvisited"
+
+
+# ======================================================================================
+# D133 — assert on the ANSWER, generated from the grammar
+# ======================================================================================
+
+
+
+#: Placeholders for the NON-expression fields of a planted node, by ASDL token. These
+#: are construction details rather than claims: the classifier reads only expression
+#: fields and ``isinstance``, but leaving the rest unset raises a DeprecationWarning
+#: that becomes an error in Python 3.15, and a control that stops building on a future
+#: interpreter is a control that stops checking.
+_ASDL_PLACEHOLDERS = {
+    "identifier": lambda: "x",
+    "expr_context": ast.Load,
+    "int": lambda: -1,
+    "boolop": ast.And,
+    "operator": ast.Add,
+    "unaryop": ast.USub,
+    "arguments": lambda: ast.arguments(
+        posonlyargs=[], args=[], vararg=None, kwonlyargs=[],
+        kw_defaults=[], kwarg=None, defaults=[],
+    ),
+    "constant": lambda: None,
+    "string": lambda: None,
+}
+
+
+def _all_fields_with_token(node_type: type[ast.AST]) -> tuple[tuple[str, str], str]:
+    """Every field of ``node_type`` with its ASDL token, from the one reader's source."""
+    documentation = (node_type.__doc__ or "").strip()
+    opened = documentation.find("(")
+    closed = documentation.rfind(")")
+    declared = []
+    for declaration in documentation[opened + 1 : closed].split(","):
+        parts = declaration.split()
+        if len(parts) == 2:
+            declared.append((parts[1], parts[0]))
+    return tuple(declared)
+
+
+def _planted_node(node_type: type[ast.AST], field: str) -> ast.AST:
+    """A node of ``node_type`` with a COMPUTED value in ``field`` and reads elsewhere.
+
+    Built from the ASDL signature rather than written out: every expression field gets
+    a bare ``ast.Name`` -- a read -- except ``field``, which gets a zero-argument call.
+    ``expr*`` fields get a one-element list. Non-expression fields are left unset, which
+    is safe because the classifier reads only expression fields and ``isinstance``.
+
+    **Some of these nodes are not valid Python and that is deliberate.** A computed
+    value in ``NamedExpr.target`` cannot be written as source at all. The control is
+    about the classifier's mechanism -- does a computation in this child reach the
+    answer -- and not about parseable code, so a reader should not take an unwritable
+    plant for a bug.
+    """
+    def read() -> ast.AST:
+        return ast.Name(id="x", ctx=ast.Load())
+
+    def computation() -> ast.AST:
+        return ast.Call(func=ast.Name(id="f", ctx=ast.Load()), args=[], keywords=[])
+
+    arguments: dict[str, object] = {}
+    expression_fields = dict(_expression_fields_with_modifier(node_type))
+    for name, token in _all_fields_with_token(node_type):
+        if name in expression_fields:
+            value = computation() if name == field else read()
+            arguments[name] = [value] if "*" in expression_fields[name] else value
+            continue
+        placeholder = _ASDL_PLACEHOLDERS.get(token.rstrip("?*"))
+        if placeholder is not None:
+            arguments[name] = [] if "*" in token else placeholder()
+    return node_type(**arguments)
+
+
+def _plantable_children() -> list[tuple[str, str]]:
+    """``(type name, field)`` for every non-exempt expression child of a recursing type.
+
+    Derived twice over: the types come from the classifier's own recursing branches, the
+    fields from the grammar, and the exemptions from :data:`_UNVISITED_FIELDS`. Nothing
+    here is a list somebody wrote.
+    """
+    plantable = []
+    for type_name in sorted(_recursing_branches()):
+        node_type = getattr(ast, type_name)
+        exempt = set(_UNVISITED_FIELDS.get(node_type, ()))
+        for field, _modifier in _expression_fields_with_modifier(node_type):
+            if field not in exempt:
+                plantable.append((type_name, field))
+    return plantable
+
+
+@pytest.mark.parametrize(
+    "type_name,field", _plantable_children(),
+    ids=[f"{t}.{f}" for t, f in _plantable_children()],
+)
+def test_d133_a_computation_in_any_child_makes_the_whole_expression_computed(
+    type_name, field
+):
+    """**The completeness check, asserting on the ANSWER rather than on the source.**
+
+    Three cycles asserted on what the branch looked like -- D130 that it contained a
+    recursive call, D131 that it referenced each field -- and each time the next
+    narrowing sat one step below the assertion. C-08 was a branch that read
+    ``node.step`` twice without ever classifying it.
+
+    The syntactic repair is not the answer either: requiring the field to appear as an
+    ARGUMENT of the classifier call goes red on eleven of the fourteen correct branches,
+    because they route the field through a comprehension iterable. That would be another
+    enumeration of forms, which is the thing being repaired.
+
+    So: put a computation in each child the grammar says the node has, and require the
+    classifier to say COMPUTED. A branch that skips a child, reads it without
+    classifying it, or classifies it conditionally fails here whatever its source looks
+    like.
+    """
+    node_type = getattr(ast, type_name)
+    planted = _planted_node(node_type, field)
+    assert _classify_expression(planted) is _Shape.COMPUTED, (
+        f"a computation planted in {type_name}.{field} does not reach the answer: the "
+        "branch answers definitely over a child it never classifies"
+    )
+
+
+def test_d133_the_behavioural_control_has_something_to_check():
+    """The control's control: it must cover the recursing types and their children.
+
+    "All COMPUTED" is also what a generator that produced nothing would report, and the
+    mirror row -- all reads must give NOT_COMPUTED -- was measured NOT to discriminate,
+    so it is deliberately absent rather than present and inert.
+    """
+    plantable = _plantable_children()
+    assert len(plantable) >= 14, f"only {len(plantable)} children generated"
+    covered = {type_name for type_name, _field in plantable}
+    assert covered == set(_recursing_branches()), (
+        "a type with a recursing branch produced no plantable child"
+    )
+    assert ("Slice", "step") in plantable and ("Subscript", "slice") in plantable
+    # The one exempt field is absent from the population, not silently passing in it.
+    assert ("IfExp", "test") not in plantable
+    assert ("IfExp", "body") in plantable and ("IfExp", "orelse") in plantable
