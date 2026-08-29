@@ -2929,17 +2929,26 @@ _COMPUTING_SHAPES: tuple[type[ast.AST], ...] = (
     ast.GeneratorExp,
 )
 
-#: Expression nodes that READ a value rather than working one out. A ``Constant`` is a
-#: fine thing to recognise as not-computed; a shape nobody has thought about is not.
+#: Expression nodes that are GENUINE LEAVES: no expression child, so a leaf answer is
+#: the whole answer.
+#:
+#: **D130.** This list used to hold eight node types and six of them carry expression
+#: children -- ``Attribute``, ``Subscript``, ``Slice``, ``Lambda``, ``JoinedStr``,
+#: ``FormattedValue``. Naming them here meant answering ``NOT_COMPUTED`` for
+#: ``f(q).attr``, ``[a * b][0]`` and ``f'{a + b}'`` regardless of what those children
+#: did, and it was a REGRESSION: the old whole-subtree walk caught
+#: ``_bo = [computed][0]`` and the structural classifier stopped at the shapes it named.
+#:
+#: The fail-closed default could never have caught this, and that is worth stating
+#: plainly rather than treating D129 as having been wrong: failing closed removes the
+#: dependence on anticipating an UNRECOGNISED shape; it does nothing about a shape that
+#: is recognised and answered wrongly. A leaf answer is legitimate only for a leaf, and
+#: whether a node is a leaf is a fact about the grammar --
+#: ``test_d130_every_reading_shape_is_a_genuine_leaf`` derives it from the ASDL
+#: signature rather than from anybody's judgement about ``Attribute``.
 _READING_SHAPES: tuple[type[ast.AST], ...] = (
     ast.Name,
     ast.Constant,
-    ast.Attribute,
-    ast.Subscript,
-    ast.Slice,
-    ast.Lambda,
-    ast.JoinedStr,
-    ast.FormattedValue,
 )
 
 
@@ -2990,6 +2999,34 @@ def _classify_expression(node: ast.AST) -> _Shape:
         return _worst_shape(
             _classify_expression(part)
             for part in list(node.values) + [k for k in node.keys if k is not None]
+        )
+    if isinstance(node, ast.Attribute):
+        # A read OF a read is a read; a read of a computation is not. Recursing into
+        # `.value` makes that fall out, with no rule about which attributes are reads:
+        # `state.mu_f_Pa_s` stays NOT_COMPUTED and `(a + b).real` does not.
+        return _classify_expression(node.value)
+    if isinstance(node, ast.Subscript):
+        return _worst_shape(
+            _classify_expression(part) for part in (node.value, node.slice)
+        )
+    if isinstance(node, ast.Slice):
+        return _worst_shape(
+            _classify_expression(part)
+            for part in (node.lower, node.upper, node.step)
+            if part is not None
+        )
+    if isinstance(node, ast.Lambda):
+        # The body is not evaluated where the lambda is written, so this can only
+        # OVER-report -- and over-reporting a callable as computed is the safe side of
+        # the leaf-over-computing-child defect. No keyword in the universe is a lambda.
+        return _classify_expression(node.body)
+    if isinstance(node, ast.JoinedStr):
+        return _worst_shape(_classify_expression(part) for part in node.values)
+    if isinstance(node, ast.FormattedValue):
+        return _worst_shape(
+            _classify_expression(part)
+            for part in (node.value, node.format_spec)
+            if part is not None
         )
     if isinstance(node, _READING_SHAPES):
         return _Shape.NOT_COMPUTED
@@ -4481,3 +4518,158 @@ def test_d129_the_fail_closed_report_is_readable():
     assert len(constructor_rows) == 0, [str(r) for r in constructor_rows]
     assert len(derivation_rows) == 1, derivation_rows
     assert set(derivation_rows) == _ACKNOWLEDGED_UNREADABLE_EXPANSIONS
+
+
+# ======================================================================================
+# D130 — a leaf answer is legitimate only for a leaf, and the grammar says which is which
+# ======================================================================================
+
+
+def _expression_fields_of(node_type: type[ast.AST]) -> tuple[str, ...]:
+    """The fields of ``node_type`` that hold expressions, read from the ASDL signature.
+
+    CPython carries each AST class's grammar rule in its docstring --
+    ``Attribute(expr value, identifier attr, expr_context ctx)`` -- so which node types
+    have expression children is a fact about the grammar rather than an opinion about
+    the node. That is what makes the witness below derivable: nobody has to be right
+    about ``Attribute``.
+
+    The type token is matched exactly after stripping ``?`` and ``*``, because
+    ``expr_context`` contains ``expr`` and is not one.
+    """
+    documentation = (node_type.__doc__ or "").strip()
+    opened = documentation.find("(")
+    closed = documentation.rfind(")")
+    assert documentation.startswith(node_type.__name__) and 0 < opened < closed, (
+        f"{node_type.__name__} carries no ASDL signature, so this witness cannot read "
+        "the grammar and must not pass by finding nothing"
+    )
+    fields = []
+    for declaration in documentation[opened + 1 : closed].split(","):
+        parts = declaration.split()
+        if len(parts) == 2 and parts[0].rstrip("?*") == "expr":
+            fields.append(parts[1])
+    return tuple(fields)
+
+
+def test_d130_every_reading_shape_is_a_genuine_leaf():
+    """**The witness lands on the SHAPE OF THE RECOGNISED SET, not on the shapes in it.**
+
+    A node with expression children is not a leaf, and answering ``NOT_COMPUTED`` for
+    one is a definite answer over children nobody looked at. Six of the eight former
+    members carried children: ``f(q).attr``, ``[a * b][0]``, ``a[f(i):g(j)]``,
+    ``lambda: f(q)``, ``f'{a + b}'`` all came back not-computed.
+
+    Derived from the grammar, so it fails on the day someone puts ``Attribute`` back --
+    which is the same move as the classifier-shape witness, one level in. The
+    fail-closed default could not have caught this: it removes the dependence on
+    anticipating an unrecognised shape and says nothing about a recognised one answered
+    wrongly.
+    """
+    offenders = {
+        node_type.__name__: _expression_fields_of(node_type)
+        for node_type in _READING_SHAPES
+        if _expression_fields_of(node_type)
+    }
+    assert not offenders, (
+        "these are named as leaves and carry expression children, so the classifier "
+        f"answers over children it never looked at: {offenders}"
+    )
+
+    # The control: the derivation must actually find expression fields somewhere, or
+    # "no offenders" is the answer of a reader that reads nothing.
+    assert _expression_fields_of(ast.Attribute) == ("value",)
+    assert _expression_fields_of(ast.Slice) == ("lower", "upper", "step")
+    assert _expression_fields_of(ast.Name) == ()
+
+
+def test_d130_every_shape_with_children_is_reached_by_a_recursing_branch():
+    """The other half: a node type that carries children must be recursed into or be
+    unknown. Nothing named may answer definitely over children it ignores.
+
+    ``_COMPUTING_SHAPES`` is exempt and deliberately so -- a call is computed whatever
+    its arguments are, which is a conclusion about the node itself rather than an answer
+    over its children.
+    """
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    classifier = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef) and node.name == "_classify_expression"
+    )
+    recursed: set[str] = set()
+    for statement in classifier.body:
+        if not isinstance(statement, ast.If):
+            continue
+        test = statement.test
+        if not (
+            isinstance(test, ast.Call)
+            and getattr(test.func, "id", "") == "isinstance"
+            and len(test.args) == 2
+        ):
+            continue
+        # The branch must actually recurse, or naming the type proves nothing.
+        if not any(
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "_classify_expression"
+            for node in ast.walk(statement)
+        ):
+            continue
+        named = test.args[1]
+        for candidate in (
+            named.elts if isinstance(named, ast.Tuple) else [named]
+        ):
+            if isinstance(candidate, ast.Attribute):
+                recursed.add(candidate.attr)
+    for name in ("Attribute", "Subscript", "Slice", "Lambda", "JoinedStr",
+                 "FormattedValue"):
+        assert name in recursed, (
+            f"ast.{name} carries expression children and has no branch that recurses "
+            "into them"
+        )
+
+
+def test_d130_a_read_of_a_computation_is_a_computation_and_a_read_of_a_read_is_not():
+    """Both directions, which is what stops the fix from being 'call everything computed'."""
+    for read in (
+        "state.mu_f_Pa_s",
+        "geometry.hydraulic_diameter_m",
+        "a.b.c",
+        "a[0]",
+        "'text'",
+    ):
+        node = ast.parse(read).body[0].value
+        assert _classify_expression(node) is _Shape.NOT_COMPUTED, read
+    for computation in (
+        "f(q).attr",
+        "(a + b).real",
+        "a[f(i)]",
+        "[a * b][0]",
+        "a[f(i):g(j)]",
+        "lambda: f(q)",
+        "f'{a + b}'",
+    ):
+        node = ast.parse(computation).body[0].value
+        assert _classify_expression(node) is _Shape.COMPUTED, computation
+
+
+def test_d130_the_subscripted_list_regression_is_caught_again():
+    """The regression itself: caught at 45f2cba, silent at f0ecf09, caught here.
+
+    ``_bo = [mass_flux / (D * 1000.0)][0]`` binds a computed value through a subscript
+    of a list literal. The whole-subtree walk saw the ``BinOp``; the structural
+    classifier stopped at ``Subscript`` and answered as a leaf.
+    """
+    source = (
+        "def produce(mass_flux, geometry):\n"
+        "    _bo = [mass_flux / (geometry.hydraulic_diameter_m * 1000.0)][0]\n"
+        "    return check(boiling_number=_bo)\n"
+    )
+    scope = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef)
+    )
+    computed, _bound, _unknown = _contract_bindings(scope)
+    assert "_bo" in computed, (
+        "a value computed inside a subscripted literal is a computed value; reading it "
+        "as a leaf is how a caller-steerable eligibility went silent"
+    )
