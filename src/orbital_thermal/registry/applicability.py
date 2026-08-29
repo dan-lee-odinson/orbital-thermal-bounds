@@ -65,7 +65,7 @@ class Consequence(str, Enum):
 
 
 class Cause(str, Enum):
-    """Why a violation was raised, which is a different question from what it does.
+    r"""Why a violation was raised, which is a different question from what it does.
 
     **D119.** :class:`Consequence` answers *what happens to the case*; it does not
     answer *whether the axis was evaluated*, and ``BLOCK`` was carrying both meanings.
@@ -81,11 +81,22 @@ class Cause(str, Enum):
     from the wording -- is guessing, and guessing right seven times out of eight is how
     this arose.
 
-    ``EVALUATED_AND_FAILED`` is the default deliberately. A new site that forgets to
-    say which it is reports a conclusion, which is the safe direction: the failure being
-    repaired is a conclusion presented as an absence, never the reverse.
-    ``test_d119_every_block_site_states_whether_the_axis_was_evaluated`` fails on any
-    ``BLOCK`` that does not say, so the omission is caught on the day it is written.
+    **The default is** ``NOT_EVALUATED``\ **, and D120 corrected it from the other
+    direction.** D119 defaulted to ``EVALUATED_AND_FAILED`` on the reasoning that "the
+    failure being repaired is a conclusion presented as an absence, never the reverse".
+    That generalised from the single site D119 repaired to a population running 8:1 the
+    other way -- eight of the nine ``BLOCK`` sites in the package are absences -- which
+    is the same shape as the defect it was guarding against.
+
+    It is also the wrong half to be safe on. An absence misreported as a conclusion is a
+    record asserting that a case failed an axis nothing checked: a claim with no basis,
+    which is the error this whole gate exists to refuse. A conclusion misreported as an
+    absence only understates. So a site that forgets understates.
+
+    No site relies on it. ``test_d120_every_violation_site_states_whether_its_axis_was_evaluated``
+    scans every file in the package that constructs a :class:`Violation` -- not one
+    module by name -- and fails on any site that does not say. The default is for the
+    type; the rule is for the author.
     """
 
     #: The axis could not be evaluated: no value for it was stated.
@@ -114,9 +125,9 @@ class Violation:
     axis: Axis
     consequence: Consequence
     detail: str
-    #: Whether the axis was evaluated. Defaults to the conclusion reading; see
-    #: :class:`Cause` for why that direction is the safe default (D119).
-    cause: Cause = Cause.EVALUATED_AND_FAILED
+    #: Whether the axis was evaluated. Defaults to the UNDERSTATING reading; see
+    #: :class:`Cause` for why that is the safe direction (D120 corrects D119).
+    cause: Cause = Cause.NOT_EVALUATED
 
     def __str__(self) -> str:  # pragma: no cover - formatting only
         return f"[{self.axis.value}/{self.consequence.value}] {self.detail}"
@@ -296,9 +307,8 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation declares a fluid applicability but the case "
                         "states no fluid; an unstated fluid cannot be checked against it",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             else:
                 key = fluid.strip().lower()
@@ -309,6 +319,7 @@ class Applicability:
                             Consequence.DE_RANK,
                             f"'{fluid}' is explicitly outside the correlation's fluid "
                             f"basis. {self.fluids_basis}",
+                            cause=Cause.EVALUATED_AND_FAILED,
                         )
                     )
                 elif self.fluids and key not in {f.lower() for f in self.fluids}:
@@ -319,6 +330,7 @@ class Applicability:
                             f"'{fluid}' is not in the correlation's development "
                             f"database ({', '.join(sorted(self.fluids))}). "
                             f"{self.fluids_basis}",
+                            cause=Cause.EVALUATED_AND_FAILED,
                         )
                     )
 
@@ -332,9 +344,8 @@ class Applicability:
                         "the correlation declares a composition basis "
                         f"({', '.join(sorted(self.compositions))}) but the case states "
                         "none",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif composition.strip().lower() not in {
                 c.lower() for c in self.compositions
@@ -346,6 +357,7 @@ class Applicability:
                         f"composition '{composition}' is outside the correlation's "
                         f"basis ({', '.join(sorted(self.compositions))}). "
                         f"{self.compositions_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
 
@@ -359,9 +371,8 @@ class Applicability:
                         "the correlation declares a geometry basis "
                         f"({', '.join(sorted(self.geometries))}) but the case states no "
                         "geometry; channel geometry is source-required (S0 Sec. 5)",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif geometry.strip().lower() not in {g.lower() for g in self.geometries}:
                 v.append(
@@ -370,6 +381,7 @@ class Applicability:
                         Consequence.DE_RANK,
                         f"geometry '{geometry}' is outside the correlation's basis "
                         f"({', '.join(sorted(self.geometries))}). {self.geometries_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
 
@@ -383,9 +395,8 @@ class Applicability:
                         "the correlation declares an orientation basis "
                         f"({', '.join(sorted(self.orientations))}) but the case states "
                         "none",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif orientation.strip().lower() not in {o.lower() for o in self.orientations}:
                 v.append(
@@ -395,6 +406,7 @@ class Applicability:
                         f"orientation '{orientation}' is outside the correlation's basis "
                         f"({', '.join(sorted(self.orientations))}). "
                         f"{self.orientations_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
 
@@ -407,9 +419,8 @@ class Applicability:
                         "the correlation is gravity-explicit (its correlating parameter "
                         "contains g) but the case states no gravitational acceleration. "
                         f"{self.gravity_basis}",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif gravity_m_s2 <= 0.0:
                 v.append(
@@ -420,6 +431,7 @@ class Applicability:
                         "positive, and the correlating parameter divides by it: the "
                         "correlation has no zero-gravity limit and cannot be evaluated "
                         f"for this case. {self.gravity_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
         # The gravity the DATABASE was taken at is a separate declaration from whether
@@ -436,9 +448,8 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation's database was taken at a stated gravity "
                         f"({ref:.5g} m/s^2) but the case states none",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif (
                 gravity_m_s2 is not None
@@ -457,6 +468,7 @@ class Applicability:
                         "correlating parameter is most sensitive to -- an "
                         "applicability violation, not a parameter change "
                         f"(Director ruling D6). {self.gravity_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
 
@@ -488,6 +500,7 @@ class Applicability:
                             f"{self.branch_threshold:.4g}. The calculation procedure "
                             "itself changes, so this is not the same correlation the "
                             f"ground data validated. {self.branch_threshold_basis}",
+                            cause=Cause.EVALUATED_AND_FAILED,
                         )
                     )
 
@@ -500,9 +513,8 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation declares a minimum liquid Reynolds number "
                         f"({self.min_liquid_reynolds:g}) but the case states none",
-
-                    cause=Cause.NOT_EVALUATED,
-                )
+                        cause=Cause.NOT_EVALUATED,
+                    )
                 )
             elif liquid_reynolds < self.min_liquid_reynolds:
                 v.append(
@@ -512,6 +524,7 @@ class Applicability:
                         f"liquid Reynolds number {liquid_reynolds:.4g} is below the "
                         f"turbulent threshold {self.min_liquid_reynolds:g} required by "
                         f"the correlation's convective base. {self.reynolds_basis}",
+                        cause=Cause.EVALUATED_AND_FAILED,
                     )
                 )
 
@@ -523,7 +536,6 @@ class Applicability:
                     Consequence.BLOCK,
                     "an evaluated value is needed but the entry carries no executable "
                     "form; a registry entry without an evaluator cannot supply one",
-
                     cause=Cause.EVALUATED_AND_FAILED,
                 )
             )
@@ -600,6 +612,7 @@ def case_contradictions(
                     "registered as a pure substance, and simultaneously declares "
                     "two_component flow. Those cannot both be true, so the case is "
                     "self-contradictory rather than merely out of basis.",
+                    cause=Cause.EVALUATED_AND_FAILED,
                 )
             )
 
@@ -612,6 +625,7 @@ def case_contradictions(
                     f"the case declares horizontal orientation but supplies a static "
                     f"height of {height_m:.6g} m. The static head is identically zero "
                     "in horizontal flow, so a non-zero height contradicts the label.",
+                    cause=Cause.EVALUATED_AND_FAILED,
                 )
             )
 

@@ -3151,36 +3151,130 @@ def test_d119_a_block_that_is_a_conclusion_is_not_reported_as_unevaluable():
     assert record["unevaluable_axes"] == ("orientation",)
 
 
-def test_d119_every_block_site_states_whether_the_axis_was_evaluated():
-    """**Not a name check: every ``BLOCK`` must SAY which it is, or this fails.**
+def _violation_sites() -> list[tuple[pathlib.Path, int, str, bool]]:
+    """Every ``Violation`` construction in the package. DERIVED from the package.
 
-    Special-casing ``PROVENANCE`` would repair the instance and leave the class: the
-    next ``BLOCK`` that is a conclusion rather than an absence would be misclassified on
-    the day it was written and found on the day a reviewer noticed. Seven-of-eight is
-    how this arose.
+    D120: the D119 version of this read one file -- ``applicability.__file__`` -- and
+    the package has two that construct violations. The S5 module's own unevaluable
+    branch block, added the cycle before, was outside the rule; a silent ``BLOCK`` site
+    added beside it passed the rule, the suite and the linter. Its real site was covered
+    only by sixteen behavioural assertions that happen to depend on its effect, which is
+    coverage by luck rather than by rule.
 
-    So the requirement is stated over the emission sites themselves, parsed out of the
-    shared module: a ``Violation`` carrying ``Consequence.BLOCK`` must pass ``cause=``
-    explicitly. The default exists for the type, not for the author.
+    That is the third cycle running of one shape: a rule true of the category it was
+    measured against and silent about the category beside it. ``BLOCK`` covered seven
+    sites and missed the eighth; the refusal message covered three names and misnamed
+    the fourth; the rule written to make that impossible covered one file and missed the
+    second. So the file set is derived from the package rather than named, and the scan
+    reports what it found so that "nothing is silent" cannot be the answer of a scan
+    that is reading nothing.
+
+    Returns ``(path, lineno, consequence, states_a_cause)`` per site.
     """
-    source = pathlib.Path(_applicability.__file__).read_text(encoding="utf-8")
-    silent = []
-    for node in ast.walk(ast.parse(source)):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == "Violation"):
+    package_root = pathlib.Path(_applicability.__file__).parents[1]
+    sites: list[tuple[pathlib.Path, int, str, bool]] = []
+    for path in sorted(package_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
             continue
-        consequence = node.args[1] if len(node.args) > 1 else None
-        if not (isinstance(consequence, ast.Attribute) and consequence.attr == "BLOCK"):
-            continue
-        if not any(keyword.arg == "cause" for keyword in node.keywords):
-            silent.append(node.lineno)
-    assert not silent, (
-        "these BLOCK sites do not say whether the axis was evaluated, so a consumer "
-        f"has to guess from the axis or the wording: lines {silent}"
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "Violation"
+            ):
+                continue
+            consequence = node.args[1] if len(node.args) > 1 else None
+            name = (
+                consequence.attr if isinstance(consequence, ast.Attribute) else "?"
+            )
+            states = any(keyword.arg == "cause" for keyword in node.keywords)
+            sites.append((path.relative_to(package_root), node.lineno, name, states))
+    return sites
+
+
+def test_d120_every_violation_site_states_whether_its_axis_was_evaluated():
+    """**The rule, over every file that raises one -- not one module by name.**
+
+    Widened from ``BLOCK`` to every :class:`Violation` because flipping the default
+    required it: eleven ``DE_RANK``/``REJECT`` sites were relying on the old default
+    being ``EVALUATED_AND_FAILED``, which was correct for them, so flipping it without
+    making them explicit would have silently misclassified eleven correct sites in order
+    to fix a default nothing used. The rule now governs the category it is about --
+    violations -- rather than the subset the last finding happened to arrive through.
+    """
+    sites = _violation_sites()
+
+    # Both-directions control, the shape the D118 classification witness has: a scan
+    # that has stopped finding its population must fail loudly rather than report a
+    # clean sweep of nothing.
+    assert len(sites) >= 20, (
+        f"the scan found only {len(sites)} Violation sites; it was built against 20 in "
+        "2 files. Either the population moved or the derivation stopped reading it -- "
+        "re-derive it rather than lowering this number"
     )
-    # The control: the scan must be finding sites at all, or "none are silent" is empty.
-    blocks = source.count("Consequence.BLOCK,")
-    assert blocks >= 8, f"only {blocks} BLOCK sites seen; the scan is not reading them"
+    files = {path for path, _, _, _ in sites}
+    assert len(files) >= 2, (
+        f"every Violation site the scan can see is in {files}. The D119 rule read one "
+        "file and missed the second; a scan that has narrowed back to one file is that "
+        "defect returning, not a simplification"
+    )
+    assert any("registry" in path.parts for path, _, _, _ in sites)
+
+    silent = [
+        f"{path}:{lineno} ({consequence})"
+        for path, lineno, consequence, states in sites
+        if not states
+    ]
+    assert not silent, (
+        "these Violation sites do not say whether their axis was evaluated, so the "
+        f"record derives it from a default the author never chose: {silent}"
+    )
+
+
+def test_d120_the_default_understates_rather_than_asserting_an_unchecked_finding():
+    """**The default points where the population does, and D119's reasoning was wrong.**
+
+    D119 defaulted to ``EVALUATED_AND_FAILED``, reasoning that the failure being
+    repaired is "a conclusion presented as an absence, never the reverse". That
+    generalised from the one site D119 repaired to a population running 8:1 the other
+    way, which is the same shape as the defect it guarded against -- and it was the
+    wrong half to be safe on. An absence misreported as a conclusion is a record
+    asserting a case failed an axis nothing checked: a claim with no basis. A conclusion
+    misreported as an absence only understates.
+    """
+    assert (
+        dataclasses.fields(_applicability.Violation)[-1].default is Cause.NOT_EVALUATED
+    ), "the default must be the understating one"
+
+    # The population it is defaulting for, measured rather than remembered.
+    block_causes = [
+        keyword.value.attr
+        for path, lineno, consequence, _ in _violation_sites()
+        if consequence == "BLOCK"
+        for keyword in _cause_keywords(path, lineno)
+    ]
+    assert block_causes, "no BLOCK site states a cause, so this measures nothing"
+    assert block_causes.count("NOT_EVALUATED") > block_causes.count(
+        "EVALUATED_AND_FAILED"
+    ), (
+        "the BLOCK population no longer runs toward NOT_EVALUATED, so the reasoning "
+        "for this default should be re-derived rather than inherited"
+    )
+
+
+def _cause_keywords(path, lineno):
+    """The ``cause=`` keyword node at one site, so the default's population can be
+    measured from the sites themselves rather than from a remembered ratio."""
+    package_root = pathlib.Path(_applicability.__file__).parents[1]
+    for node in ast.walk(ast.parse((package_root / path).read_text(encoding="utf-8"))):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "Violation"
+            and node.lineno == lineno
+        ):
+            return [k for k in node.keywords if k.arg == "cause"]
+    return []
 
 
 def test_d119_the_record_distinguishes_all_four_states():
