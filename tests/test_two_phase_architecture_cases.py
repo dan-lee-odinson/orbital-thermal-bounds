@@ -2952,6 +2952,38 @@ _READING_SHAPES: tuple[type[ast.AST], ...] = (
 )
 
 
+
+#: Expression fields a recursing branch deliberately does NOT visit, with the reason.
+#:
+#: **D131.** The structural witness required each branch to contain a recursive call
+#: and never asked what it recursed INTO, so cutting ``Slice`` from three children to
+#: two left ``a[1:2:f(i)]`` reading NOT_COMPUTED with the whole suite green. The map
+#: that names the missing child -- :func:`_expression_fields_of` -- was already computed
+#: three lines above the assertion that did not consult it.
+#:
+#: This is the ONE record of what is unvisited. The witness reads it rather than
+#: carrying its own copy, because two records that can drift is how D124 arose, and
+#: every entry must be paired with an executed demonstration in
+#: :data:`_EXEMPTION_EVIDENCE` that visiting the field gives the WRONG answer. An
+#: exemption with no red row behind it is a claim with no instrument.
+#:
+#: There is exactly one entry, and it is last cycle's own correction: an ``IfExp``'s
+#: test decides which branch is taken and does not contribute to the value. Visiting it
+#: makes ``None if geometry is None else geometry.shape`` computed -- ``is None`` is an
+#: ``ast.Compare`` -- which reclassifies two genuine case facts as derived quantities
+#: and fails six rows.
+_UNVISITED_FIELDS: dict[type[ast.AST], tuple[str, ...]] = {
+    ast.IfExp: ("test",),
+}
+
+#: One expression per exemption where visiting the exempt field would flip a correct
+#: NOT_COMPUTED into COMPUTED. Keyed by (node type, field), so an exemption added
+#: without a demonstration fails rather than being taken on the author's word.
+_EXEMPTION_EVIDENCE: dict[tuple[type[ast.AST], str], str] = {
+    (ast.IfExp, "test"): "None if geometry is None else geometry.shape",
+}
+
+
 def _worst_shape(shapes) -> _Shape:
     """``COMPUTED`` beats ``UNKNOWN`` beats ``NOT_COMPUTED``.
 
@@ -2990,7 +3022,12 @@ def _classify_expression(node: ast.AST) -> _Shape:
             _classify_expression(part) for part in (node.body, node.orelse)
         )
     if isinstance(node, ast.NamedExpr):
-        return _classify_expression(node.value)
+        # `target` is always a Name, so visiting it cannot change an answer -- which is
+        # why it is visited rather than exempted. An exemption that buys nothing is a
+        # line in a list that later has to be defended (D131).
+        return _worst_shape(
+            _classify_expression(part) for part in (node.target, node.value)
+        )
     if isinstance(node, ast.Starred):
         return _classify_expression(node.value)
     if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
@@ -4673,3 +4710,160 @@ def test_d130_the_subscripted_list_regression_is_caught_again():
         "a value computed inside a subscripted literal is a computed value; reading it "
         "as a leaf is how a caller-steerable eligibility went silent"
     )
+
+
+# ======================================================================================
+# D131 — a branch that recurses must recurse into every child it answers over
+# ======================================================================================
+
+
+def _recursing_branches() -> dict[str, ast.If]:
+    """The classifier's ``isinstance`` branches that actually recurse, by type name.
+
+    A branch counts only if it contains a call to :func:`_classify_expression`; naming
+    a type and then answering without recursing is the shape D130 closed.
+    """
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    classifier = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef) and node.name == "_classify_expression"
+    )
+    branches: dict[str, ast.If] = {}
+    for statement in classifier.body:
+        if not isinstance(statement, ast.If):
+            continue
+        test = statement.test
+        if not (
+            isinstance(test, ast.Call)
+            and getattr(test.func, "id", "") == "isinstance"
+            and len(test.args) == 2
+        ):
+            continue
+        if not any(
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "_classify_expression"
+            for node in ast.walk(statement)
+        ):
+            continue
+        named = test.args[1]
+        for candidate in (named.elts if isinstance(named, ast.Tuple) else [named]):
+            if isinstance(candidate, ast.Attribute):
+                branches[candidate.attr] = statement
+    return branches
+
+
+def _fields_visited_by(branch: ast.If) -> set[str]:
+    """The fields of ``node`` a branch reads."""
+    return {
+        node.attr
+        for node in ast.walk(branch)
+        if isinstance(node, ast.Attribute) and getattr(node.value, "id", "") == "node"
+    }
+
+
+def test_d131_a_recursing_branch_visits_every_expression_child_it_answers_over():
+    """**Completeness, from the grammar rather than from an example list.**
+
+    The D130 witness required a branch to contain a recursive call and never asked what
+    it recursed into. Cutting ``Slice`` from three children to two left
+    ``a[1:2:f(i)]`` reading NOT_COMPUTED with 213 rows green -- and the companion cut,
+    ``Subscript`` down to ``value`` alone, was caught only because ``a[f(i)]`` happens
+    to be on a hand-written list of examples. ``a[1:2:f(i)]`` was not on it.
+
+    So the needed fields come from :func:`_expression_fields_of`, which the leaf
+    witness's own control already exercises, minus whatever
+    :data:`_UNVISITED_FIELDS` declares. One record, read here rather than copied.
+    """
+    branches = _recursing_branches()
+    assert branches, "no recursing branch was found, so this proves nothing"
+
+    incomplete = {}
+    for type_name, branch in branches.items():
+        node_type = getattr(ast, type_name)
+        exempt = set(_UNVISITED_FIELDS.get(node_type, ()))
+        needed = set(_expression_fields_of(node_type)) - exempt
+        missing = needed - _fields_visited_by(branch)
+        if missing:
+            incomplete[type_name] = sorted(missing)
+    assert not incomplete, (
+        "these branches recurse but answer definitely over expression children they "
+        f"never visit: {incomplete}. A field is either visited or declared in "
+        "_UNVISITED_FIELDS with a measurement behind it."
+    )
+
+    # The control the leaf witness has: the derivation must find fields somewhere, or
+    # "nothing incomplete" is the answer of a reader that reads nothing.
+    assert set(_expression_fields_of(ast.Slice)) == {"lower", "upper", "step"}
+    assert "Slice" in branches and _fields_visited_by(branches["Slice"]) >= {
+        "lower",
+        "upper",
+        "step",
+    }
+
+
+@pytest.mark.parametrize(
+    "node_type,field",
+    sorted(
+        ((t, f) for t, fields in _UNVISITED_FIELDS.items() for f in fields),
+        key=lambda pair: (pair[0].__name__, pair[1]),
+    ),
+    ids=lambda value: value if isinstance(value, str) else value.__name__,
+)
+def test_d131_every_exemption_has_a_measurement_behind_it(node_type, field):
+    """An exemption is a claim, and a claim on this gate needs an instrument.
+
+    For each declared exemption there must be an expression where visiting the field
+    would flip a correct NOT_COMPUTED into COMPUTED. That is executed here, so an
+    exemption added on somebody's word fails for want of a demonstration rather than
+    being believed.
+    """
+    assert field in _expression_fields_of(node_type), (
+        f"{node_type.__name__}.{field} is not an expression field, so exempting it "
+        "from recursion is exempting nothing"
+    )
+    source = _EXEMPTION_EVIDENCE.get((node_type, field))
+    assert source, (
+        f"{node_type.__name__}.{field} is exempt from recursion with no measurement "
+        "behind it; declare the expression that shows visiting it gives a wrong answer"
+    )
+
+    node = ast.parse(source).body[0].value
+    assert isinstance(node, node_type)
+    assert _classify_expression(node) is _Shape.NOT_COMPUTED, (
+        f"{source!r} is the evidence for exempting {field}, and it does not classify "
+        "as a read, so it cannot show that visiting the field would be wrong"
+    )
+    assert _classify_expression(getattr(node, field)) is _Shape.COMPUTED, (
+        f"visiting {node_type.__name__}.{field} would not change the answer for "
+        f"{source!r}, so the exemption is unnecessary -- visit it instead"
+    )
+
+
+def test_d131_the_exemption_set_is_declared_in_one_place():
+    """Two records that can drift is how D124 arose, so there is one.
+
+    The witness above reads :data:`_UNVISITED_FIELDS`; nothing else may carry a second
+    copy of what is unvisited, and the branches themselves point at it rather than
+    restating it.
+    """
+    assert set(_UNVISITED_FIELDS) == {ast.IfExp}, (
+        "the exemption set has grown; each new entry needs its own measurement and its "
+        "own reason at the branch"
+    )
+    assert _UNVISITED_FIELDS[ast.IfExp] == ("test",)
+    # Counted by PARSING, not by searching the text: a string search finds this
+    # assertion, which mentions the name in order to state the rule about it. That is
+    # the self-referential shape this gate has counted repeatedly, and the answer has
+    # been the same every time -- a binding is a binding, a mention of one is not.
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    bindings = [
+        target.id
+        for node in ast.parse(source).body
+        for target in (
+            [node.target] if isinstance(node, ast.AnnAssign)
+            else node.targets if isinstance(node, ast.Assign)
+            else []
+        )
+        if isinstance(target, ast.Name) and target.id == "_UNVISITED_FIELDS"
+    ]
+    assert len(bindings) == 1, f"{len(bindings)} records of what is unvisited"
