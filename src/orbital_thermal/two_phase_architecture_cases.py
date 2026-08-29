@@ -199,11 +199,16 @@ from __future__ import annotations
 
 import contextlib as _contextlib
 import contextvars as _contextvars
-import inspect as _inspect
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from .registry.applicability import Applicability, Axis, Consequence, Violation
+from .registry.applicability import (
+    Applicability,
+    Axis,
+    Cause,
+    Consequence,
+    Violation,
+)
 from .registry.provenance import CorrelationEntry, Status
 from .registry.two_phase import TWO_PHASE_CORRELATIONS
 
@@ -285,13 +290,6 @@ CASE_FACTS: frozenset[str] = frozenset({
 })
 
 
-#: Parameters of :meth:`Applicability.check`, resolved once. Used to tell a caller who
-#: passes a derived quantity *why* it is refused, which is a different mistake from
-#: passing a keyword that means nothing at all.
-_CHECK_PARAMETERS: frozenset[str] = frozenset(
-    name for name in _inspect.signature(Applicability.check).parameters if name != "self"
-)
-
 
 def _axes_this_boundary_cannot_evaluate(spec: Applicability) -> tuple[Violation, ...]:
     """Axes the entry declares that S5 has no way to check. **Reported, not skipped.**
@@ -333,8 +331,33 @@ def _axes_this_boundary_cannot_evaluate(spec: Applicability) -> tuple[Violation,
             "NOT CHECKED -- it is not a finding that the case straddles the threshold, "
             "and a caller-supplied value for it is refused rather than trusted (D118). "
             f"{spec.branch_threshold_basis}",
+            cause=Cause.NOT_EVALUATED,
         ),
     )
+
+
+#: Parameters of :meth:`Applicability.check` that are **derived quantities** -- values
+#: the production path computes from primitive physical state -- which this boundary
+#: neither accepts from a caller nor can work out for itself.
+#:
+#: **D119.** The refusal below used to name this category for *any* parameter of
+#: ``check`` that was not a case fact, which made it a claim the runtime could not
+#: support: a parameter named ``mounting_bracket_colour`` would have been told it was a
+#: quantity derived from mass flux. The module now holds the category as a declaration
+#: rather than inferring it from a proxy, and
+#: ``test_d119_the_declared_derived_quantities_match_what_production_computes``
+#: certifies the declaration against what production code actually computes, in **both**
+#: directions. So the message is entitled to name the category, and a parameter that is
+#: in none of the three sets gets a refusal that claims nothing about what it is.
+#:
+#: Declared here rather than computed here on purpose: computing it means parsing the
+#: package's own source at import time, and a boundary that reads source files to
+#: decide what to refuse is a worse thing than a declaration a test keeps honest.
+UNEVALUABLE_AT_THIS_BOUNDARY: frozenset[str] = frozenset({
+    "liquid_reynolds",
+    "branch_value",
+    "branch_value_at_reference_gravity",
+})
 
 
 def _refuse_keywords_that_are_not_case_facts(
@@ -359,7 +382,7 @@ def _refuse_keywords_that_are_not_case_facts(
     unknown = sorted(k for k in case if k not in CASE_FACTS)
     if not unknown:
         return
-    derived = [k for k in unknown if k in _CHECK_PARAMETERS]
+    derived = [k for k in unknown if k in UNEVALUABLE_AT_THIS_BOUNDARY]
     if derived:
         raise TypeError(
             f"{', '.join(derived)}: not a case fact. This is a quantity the production "
@@ -650,12 +673,20 @@ class LegEligibility:
             "violations": tuple(v.detail for v in self.violations),
             # D118: which axes could NOT be checked, as data rather than as prose
             # buried in a detail string. `eligible: false` with an empty tuple here
-            # means the case was checked and failed; a non-empty one means at least
-            # one declared axis was never evaluated, and the leg is not a finding
-            # about the case. `BLOCK` is the vocabulary's word for that state.
+            # means every axis that fired was evaluated and the case failed it; a
+            # non-empty one means at least one declared axis was never evaluated, so
+            # the record is not a finding about the case on that axis.
+            #
+            # D119: derived from `cause` and NOT from `Consequence.BLOCK`. BLOCK
+            # carries two meanings -- seven of its eight sites fire because the case
+            # states nothing, and the eighth fires because the entry declares it needs
+            # an executable form and has none. That axis IS evaluated, and reading
+            # BLOCK as "never checked" reported the entry's own conclusion as the
+            # absence of one, on exactly the record built to show that conclusion
+            # moving the outcome.
             "unevaluable_axes": tuple(
                 v.axis.value for v in self.violations
-                if v.consequence is Consequence.BLOCK
+                if v.cause is Cause.NOT_EVALUATED
             ),
         }
         if self.chf_dependent:

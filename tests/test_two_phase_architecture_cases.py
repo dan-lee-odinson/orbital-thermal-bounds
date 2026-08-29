@@ -40,8 +40,14 @@ import pytest
 from conftest import _child_env
 
 from orbital_thermal import two_phase_architecture_cases as ac
+from orbital_thermal.registry import applicability as _applicability
 from orbital_thermal.registry import two_phase as _tp_module
-from orbital_thermal.registry.applicability import Applicability, Axis, Consequence
+from orbital_thermal.registry.applicability import (
+    Applicability,
+    Axis,
+    Cause,
+    Consequence,
+)
 from orbital_thermal.registry.provenance import CorrelationEntry, Status
 
 #: Standard gravity, as the registry declares it. Read from the adopted CHF entry rather
@@ -62,6 +68,16 @@ _FULL_CASE = {"geometry": "round_tube", "orientation": "vertical_upflow"}
 _STATED_BY_THE_COMPUTATION = frozenset({"fluid", "gravity_m_s2", "has_executable_form"})
 
 
+#: Values chosen so that a refusal in the S5-1 property means the input was REFUSED
+#: rather than merely malformed. Anything not named here is probed with a float.
+_PLAUSIBLE_VALUE_FOR = {
+    "fluid": "water",
+    "composition": "two_component",
+    "geometry": "round_tube",
+    "orientation": "vertical_upflow",
+    "has_executable_form": True,
+}
+
 def _checked(leg):
     """Violations from axes that were actually evaluated.
 
@@ -72,12 +88,15 @@ def _checked(leg):
     :func:`_unevaluable`. Before D118 the two were indistinguishable at the CHF leg,
     because the branch axis passed in silence instead of blocking.
     """
-    return tuple(v for v in leg.violations if v.consequence is not Consequence.BLOCK)
+    # D119: split on WHY, not on WHAT. A BLOCK raised because the entry failed a
+    # declared requirement is a conclusion the mechanism reached, so it belongs
+    # here; only a BLOCK raised because nothing was stated is an absence.
+    return tuple(v for v in leg.violations if v.cause is Cause.EVALUATED_AND_FAILED)
 
 
 def _unevaluable(leg):
     """The axes the assessment could not check, as violations."""
-    return tuple(v for v in leg.violations if v.consequence is Consequence.BLOCK)
+    return tuple(v for v in leg.violations if v.cause is Cause.NOT_EVALUATED)
 
 class _RouteNotExercised(UserWarning):
     """A construction route this interpreter cannot offer, so the witness could not run it.
@@ -118,12 +137,62 @@ def test_s5_1_eligibility_moves_when_the_adopted_correlation_set_moves():
 
 
 def test_s5_1_no_caller_argument_can_set_an_outcome():
-    """**S5-1**'s third falsifier: "an eligibility that can be set by a caller"."""
+    """**S5-1**'s third falsifier: "an eligibility that can be set by a caller".
+
+    **D119 rewrote this witness. The criterion is unchanged; only the evidence is.**
+
+    It used to check five spellings -- ``eligible``, ``eligibility``, ``force``,
+    ``override``, ``result`` -- against the *named* parameters of the two entry points.
+    ``inspect.signature`` reports ``**case`` as a single ``VAR_KEYWORD`` entry, so the
+    witness for "no caller argument can set an outcome" could not see the forwarding
+    channel -- and that channel is the one both of the last two findings arrived
+    through, and the only one that has ever carried one. A name-list guarding two
+    signatures could not have caught ``has_executable_form`` or ``branch_value``,
+    because neither is spelled like an outcome.
+
+    So the property is derived over the whole public surface instead. Every input a
+    caller can supply, from the entry points' signatures *and* from
+    :meth:`Applicability.check` whose parameters ``**case`` forwards, must be one of:
+
+    * **refused** -- it never reaches the computation; or
+    * **accepted, and primitive** -- a declared case fact, which
+      ``test_d118_no_case_fact_is_a_derived_quantity`` separately certifies is not a
+      quantity production code works out.
+
+    An input that is accepted *and* derived is exactly "a caller setting an outcome",
+    stated as a property rather than as a vocabulary. The five spellings are kept below
+    because they cost nothing, but they are corroboration now, not the check.
+    """
     for fn in (ac.assess_fluid, ac.assess_leg):
         params = set(inspect.signature(fn).parameters)
         assert not (params & {"eligible", "eligibility", "force", "override", "result"}), (
             f"{fn.__name__} takes an argument that could set an outcome: {sorted(params)}"
         )
+
+    derived = _derived_quantities_in_production()
+    assert derived, "the derivation found nothing, so the property below is vacuous"
+
+    accepted_and_derived = []
+    for name in sorted(_public_case_inputs()):
+        if name in _STATED_BY_THE_COMPUTATION or name == "leg":
+            continue  # stated by the computation, or the leg being assessed
+        try:
+            _assess_with(name, _PLAUSIBLE_VALUE_FOR.get(name, 1.0e6))
+        except TypeError as refusal:
+            assert "not a case fact" in str(refusal), (
+                f"{name} was refused for an unrelated reason: {refusal}"
+            )
+            continue
+        except ValueError:
+            continue  # reached a validator and was refused by it -- still not accepted
+        if name in derived:
+            accepted_and_derived.append(name)
+
+    assert not accepted_and_derived, (
+        "these inputs are accepted from a caller AND are quantities production code "
+        f"derives, so a caller supplies the value the rule is applied to: "
+        f"{accepted_and_derived}. That is an eligibility a caller can set."
+    )
 
 
 def test_s5_1_an_absent_correlation_is_not_an_ineligibility():
@@ -3041,3 +3110,152 @@ def test_d118_the_paired_control_a_genuine_case_fact_still_passes():
     assert Axis.COMPOSITION not in blocked_axes_with, (
         "stating a genuine case fact must still change what the mechanism concludes"
     )
+
+
+# ======================================================================================
+# D119 — a BLOCK that is a conclusion, and a message entitled to its category
+# ======================================================================================
+
+
+def test_d119_a_block_that_is_a_conclusion_is_not_reported_as_unevaluable():
+    """**C-01, red at 4433baa on this exact record.**
+
+    ``unevaluable_axes`` derived from ``Consequence.BLOCK``, and ``BLOCK`` means two
+    things: seven of its eight sites fire because the case states nothing on the axis,
+    and the eighth fires because the entry declares it requires an executable form and
+    has none. That axis IS evaluated -- ``has_executable_form`` is stated by the
+    computation and is never ``None`` -- and the entry failed it.
+
+    So the record announced *"at least one declared axis was never evaluated"* about the
+    one record whose whole purpose is to show the entry's executable form MOVING the
+    outcome. This is the D114 paired control, read through the field D118 added.
+    """
+    entries = _entry_with_no_reachable_executable_form()
+    leg = ac._assess_leg_against_a_supplied_registry(
+        entries, "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE
+    )
+    record = leg.as_record()
+
+    provenance = [v for v in leg.violations if v.axis is Axis.PROVENANCE]
+    assert provenance, "the control must produce the provenance block it is built on"
+    assert provenance[0].consequence is Consequence.BLOCK
+    assert provenance[0].cause is Cause.EVALUATED_AND_FAILED, (
+        "the entry was asked for an executable form and did not have one; that axis "
+        "was evaluated"
+    )
+    assert "provenance" not in record["unevaluable_axes"], (
+        "a conclusion about the entry is being reported as the absence of one"
+    )
+    # The branch axis on the same record genuinely was not evaluated, so the field is
+    # not simply empty -- it is discriminating.
+    assert record["unevaluable_axes"] == ("orientation",)
+
+
+def test_d119_every_block_site_states_whether_the_axis_was_evaluated():
+    """**Not a name check: every ``BLOCK`` must SAY which it is, or this fails.**
+
+    Special-casing ``PROVENANCE`` would repair the instance and leave the class: the
+    next ``BLOCK`` that is a conclusion rather than an absence would be misclassified on
+    the day it was written and found on the day a reviewer noticed. Seven-of-eight is
+    how this arose.
+
+    So the requirement is stated over the emission sites themselves, parsed out of the
+    shared module: a ``Violation`` carrying ``Consequence.BLOCK`` must pass ``cause=``
+    explicitly. The default exists for the type, not for the author.
+    """
+    source = pathlib.Path(_applicability.__file__).read_text(encoding="utf-8")
+    silent = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == "Violation"):
+            continue
+        consequence = node.args[1] if len(node.args) > 1 else None
+        if not (isinstance(consequence, ast.Attribute) and consequence.attr == "BLOCK"):
+            continue
+        if not any(keyword.arg == "cause" for keyword in node.keywords):
+            silent.append(node.lineno)
+    assert not silent, (
+        "these BLOCK sites do not say whether the axis was evaluated, so a consumer "
+        f"has to guess from the axis or the wording: lines {silent}"
+    )
+    # The control: the scan must be finding sites at all, or "none are silent" is empty.
+    blocks = source.count("Consequence.BLOCK,")
+    assert blocks >= 8, f"only {blocks} BLOCK sites seen; the scan is not reading them"
+
+
+def test_d119_the_record_distinguishes_all_four_states():
+    """Passed, checked-and-failed, absent-statement, entry-conclusion -- as data."""
+    horizontal = {"geometry": "round_tube", "orientation": "horizontal"}
+
+    passed = ac.assess_leg(
+        "water", "dp", gravity_m_s2=_REFERENCE_G, composition="two_component",
+        **horizontal,
+    ).as_record()
+    assert passed["eligible"] is True and passed["violations"] == ()
+    assert passed["unevaluable_axes"] == ()
+
+    checked_and_failed = ac.assess_leg(
+        "water", "dp", gravity_m_s2=_REFERENCE_G, composition="two_component",
+        **_FULL_CASE,
+    ).as_record()
+    assert checked_and_failed["eligible"] is False
+    assert checked_and_failed["violations"]
+    assert checked_and_failed["unevaluable_axes"] == ()
+
+    absent_statement = ac.assess_leg(
+        "water", "dp", gravity_m_s2=_REFERENCE_G, **horizontal
+    ).as_record()
+    assert absent_statement["unevaluable_axes"] == ("composition",)
+
+    entry_conclusion = ac._assess_leg_against_a_supplied_registry(
+        _entry_with_no_reachable_executable_form(), "water", "chf",
+        gravity_m_s2=_REFERENCE_G, **_FULL_CASE,
+    ).as_record()
+    assert "provenance" not in entry_conclusion["unevaluable_axes"]
+    assert any("executable form" in d for d in entry_conclusion["violations"]), (
+        "the conclusion must still be REPORTED -- it is a finding, not a silence"
+    )
+
+
+def test_d119_the_declared_derived_quantities_match_what_production_computes():
+    """**C-02: the runtime's claim is certified against production, both directions.**
+
+    The refusal names a category -- *this is a quantity the production path derives* --
+    and before D119 nothing entitled it to: the test was membership in the ``check``
+    signature, so a parameter nothing computes would have been told it was derived from
+    mass flux. The module now declares the category and this certifies the declaration,
+    so the runtime does not have to parse its own package in order to be honest.
+    """
+    computed = _derived_quantities_in_production() - _STATED_BY_THE_COMPUTATION
+    assert ac.UNEVALUABLE_AT_THIS_BOUNDARY == computed, (
+        "the declared derived quantities and what production actually computes have "
+        f"drifted: declared {sorted(ac.UNEVALUABLE_AT_THIS_BOUNDARY)}, computed "
+        f"{sorted(computed)}"
+    )
+    assert not (ac.UNEVALUABLE_AT_THIS_BOUNDARY & ac.CASE_FACTS)
+
+
+def test_d119_a_parameter_that_is_not_derived_gets_a_refusal_that_claims_nothing():
+    """The message must not name a category it cannot support."""
+    with pytest.raises(TypeError) as refusal:
+        ac.assess_leg(
+            "water", "chf", gravity_m_s2=_REFERENCE_G, **_FULL_CASE,
+            mounting_bracket_colour="red",
+        )
+    text = str(refusal.value)
+    assert "not a case fact" in text and "admits only" in text
+    assert "DERIVES from primitive physical state" not in text, (
+        "the refusal is asserting a property of this keyword that nothing established"
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted({"liquid_reynolds", "branch_value", "branch_value_at_reference_gravity"}),
+)
+def test_d119_the_three_category_refusal_survives_for_the_real_three(name):
+    """C-02's constraint: the entitled message must still be given where it is true."""
+    with pytest.raises(TypeError) as refusal:
+        _assess_with(name, 1.0e6)
+    assert "DERIVES from primitive physical state" in str(refusal.value)
+    assert "unevaluable" in str(refusal.value)

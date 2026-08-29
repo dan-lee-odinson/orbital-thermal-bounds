@@ -64,6 +64,35 @@ class Consequence(str, Enum):
     BLOCK = "block"
 
 
+class Cause(str, Enum):
+    """Why a violation was raised, which is a different question from what it does.
+
+    **D119.** :class:`Consequence` answers *what happens to the case*; it does not
+    answer *whether the axis was evaluated*, and ``BLOCK`` was carrying both meanings.
+    Seven of the eight sites that emit it do so because the case states nothing on the
+    axis -- genuinely not evaluated. The eighth fires when the entry declares it
+    requires an executable form and does not have one: that axis WAS evaluated and the
+    entry failed it. A consumer deriving "never checked" from ``BLOCK`` alone therefore
+    reported a conclusion as the absence of one, on exactly the record whose purpose was
+    to show that the entry's executable form moves the outcome.
+
+    The distinction lives here, on the violation, because only the site that raises one
+    knows which it is. Deriving it downstream -- from the axis, from the consequence,
+    from the wording -- is guessing, and guessing right seven times out of eight is how
+    this arose.
+
+    ``EVALUATED_AND_FAILED`` is the default deliberately. A new site that forgets to
+    say which it is reports a conclusion, which is the safe direction: the failure being
+    repaired is a conclusion presented as an absence, never the reverse.
+    ``test_d119_every_block_site_states_whether_the_axis_was_evaluated`` fails on any
+    ``BLOCK`` that does not say, so the omission is caught on the day it is written.
+    """
+
+    #: The axis could not be evaluated: no value for it was stated.
+    NOT_EVALUATED = "not_evaluated"
+    #: The axis was evaluated and the case, or the entry, failed it.
+    EVALUATED_AND_FAILED = "evaluated_and_failed"
+
 _SEVERITY: dict[Consequence, int] = {
     Consequence.DE_RANK: 0,
     Consequence.REJECT: 1,
@@ -85,6 +114,9 @@ class Violation:
     axis: Axis
     consequence: Consequence
     detail: str
+    #: Whether the axis was evaluated. Defaults to the conclusion reading; see
+    #: :class:`Cause` for why that direction is the safe default (D119).
+    cause: Cause = Cause.EVALUATED_AND_FAILED
 
     def __str__(self) -> str:  # pragma: no cover - formatting only
         return f"[{self.axis.value}/{self.consequence.value}] {self.detail}"
@@ -264,7 +296,9 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation declares a fluid applicability but the case "
                         "states no fluid; an unstated fluid cannot be checked against it",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             else:
                 key = fluid.strip().lower()
@@ -298,7 +332,9 @@ class Applicability:
                         "the correlation declares a composition basis "
                         f"({', '.join(sorted(self.compositions))}) but the case states "
                         "none",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif composition.strip().lower() not in {
                 c.lower() for c in self.compositions
@@ -323,7 +359,9 @@ class Applicability:
                         "the correlation declares a geometry basis "
                         f"({', '.join(sorted(self.geometries))}) but the case states no "
                         "geometry; channel geometry is source-required (S0 Sec. 5)",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif geometry.strip().lower() not in {g.lower() for g in self.geometries}:
                 v.append(
@@ -345,7 +383,9 @@ class Applicability:
                         "the correlation declares an orientation basis "
                         f"({', '.join(sorted(self.orientations))}) but the case states "
                         "none",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif orientation.strip().lower() not in {o.lower() for o in self.orientations}:
                 v.append(
@@ -367,7 +407,9 @@ class Applicability:
                         "the correlation is gravity-explicit (its correlating parameter "
                         "contains g) but the case states no gravitational acceleration. "
                         f"{self.gravity_basis}",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif gravity_m_s2 <= 0.0:
                 v.append(
@@ -394,7 +436,9 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation's database was taken at a stated gravity "
                         f"({ref:.5g} m/s^2) but the case states none",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif (
                 gravity_m_s2 is not None
@@ -456,7 +500,9 @@ class Applicability:
                         Consequence.BLOCK,
                         "the correlation declares a minimum liquid Reynolds number "
                         f"({self.min_liquid_reynolds:g}) but the case states none",
-                    )
+
+                    cause=Cause.NOT_EVALUATED,
+                )
                 )
             elif liquid_reynolds < self.min_liquid_reynolds:
                 v.append(
@@ -477,6 +523,8 @@ class Applicability:
                     Consequence.BLOCK,
                     "an evaluated value is needed but the entry carries no executable "
                     "form; a registry entry without an evaluator cannot supply one",
+
+                    cause=Cause.EVALUATED_AND_FAILED,
                 )
             )
         return tuple(v)
