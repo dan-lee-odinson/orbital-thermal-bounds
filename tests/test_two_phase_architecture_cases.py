@@ -4633,51 +4633,6 @@ def test_d130_every_reading_shape_is_a_genuine_leaf():
     assert _expression_fields_of(ast.Name) == ()
 
 
-def test_d130_every_shape_with_children_is_reached_by_a_recursing_branch():
-    """The other half: a node type that carries children must be recursed into or be
-    unknown. Nothing named may answer definitely over children it ignores.
-
-    ``_COMPUTING_SHAPES`` is exempt and deliberately so -- a call is computed whatever
-    its arguments are, which is a conclusion about the node itself rather than an answer
-    over its children.
-    """
-    source = pathlib.Path(__file__).read_text(encoding="utf-8")
-    classifier = next(
-        node for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.FunctionDef) and node.name == "_classify_expression"
-    )
-    recursed: set[str] = set()
-    for statement in classifier.body:
-        if not isinstance(statement, ast.If):
-            continue
-        test = statement.test
-        if not (
-            isinstance(test, ast.Call)
-            and getattr(test.func, "id", "") == "isinstance"
-            and len(test.args) == 2
-        ):
-            continue
-        # The branch must actually recurse, or naming the type proves nothing.
-        if not any(
-            isinstance(node, ast.Call)
-            and getattr(node.func, "id", "") == "_classify_expression"
-            for node in ast.walk(statement)
-        ):
-            continue
-        named = test.args[1]
-        for candidate in (
-            named.elts if isinstance(named, ast.Tuple) else [named]
-        ):
-            if isinstance(candidate, ast.Attribute):
-                recursed.add(candidate.attr)
-    for name in ("Attribute", "Subscript", "Slice", "Lambda", "JoinedStr",
-                 "FormattedValue"):
-        assert name in recursed, (
-            f"ast.{name} carries expression children and has no branch that recurses "
-            "into them"
-        )
-
-
 def test_d130_a_read_of_a_computation_is_a_computation_and_a_read_of_a_read_is_not():
     """Both directions, which is what stops the fix from being 'call everything computed'."""
     for read in (
@@ -5036,3 +4991,119 @@ def test_d133_the_behavioural_control_has_something_to_check():
     # The one exempt field is absent from the population, not silently passing in it.
     assert ("IfExp", "test") not in plantable
     assert ("IfExp", "body") in plantable and ("IfExp", "orelse") in plantable
+
+
+# ======================================================================================
+# D134 — membership comes from the grammar, and the last hand-written list retires
+# ======================================================================================
+
+
+def _module_level_tuples() -> dict[str, tuple[str, ...]]:
+    """Module-level tuples of ``ast.X`` references, by binding name.
+
+    ``_COMPUTING_SHAPES`` and ``_READING_SHAPES`` name their types by reference rather
+    than in an ``isinstance`` call's own argument, so a branch that names a type through
+    a tuple would otherwise be invisible to the scan below.
+    """
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    found: dict[str, tuple[str, ...]] = {}
+    for node in ast.parse(source).body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = (
+            [node.target] if isinstance(node, ast.AnnAssign) else node.targets
+        )
+        if not isinstance(node.value, ast.Tuple):
+            continue
+        value = node.value
+        names = tuple(
+            element.attr for element in value.elts if isinstance(element, ast.Attribute)
+        )
+        if not names:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                found[target.id] = names
+    return found
+
+
+def _types_named_by_the_classifier() -> set[str]:
+    """Every AST type name the classifier mentions, however it mentions it.
+
+    Resolved from the ``isinstance`` branches -- a bare ``ast.X``, a tuple of them
+    written inline, or a module-level tuple referred to by name. This is the POPULATION
+    the completeness rows are asked about, and D134 is that it was previously taken from
+    :func:`_recursing_branches`, which by construction holds only branches that already
+    recurse. A branch that stopped recursing left the population and took its own
+    witness rows with it: replacing the ``Dict`` branch with a leaf answer dropped the
+    plantable rows from 21 to 19 with the whole suite green, because a count floor and a
+    self-equality both shrink with the thing they are measuring.
+    """
+    source = pathlib.Path(__file__).read_text(encoding="utf-8")
+    tuples = _module_level_tuples()
+    classifier = next(
+        node for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.FunctionDef) and node.name == "_classify_expression"
+    )
+    named: set[str] = set()
+    for node in ast.walk(classifier):
+        if not (
+            isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "isinstance"
+            and len(node.args) == 2
+        ):
+            continue
+        argument = node.args[1]
+        candidates = argument.elts if isinstance(argument, ast.Tuple) else [argument]
+        for candidate in candidates:
+            if isinstance(candidate, ast.Attribute):
+                named.add(candidate.attr)
+            elif isinstance(candidate, ast.Name) and candidate.id in tuples:
+                named.update(tuples[candidate.id])
+    return named
+
+
+def test_d134_every_named_type_with_children_recurses_or_is_a_conclusion():
+    """**The population comes from the grammar now, and D130's six-name list is gone.**
+
+    Four findings walked down one level each: the branch does not recurse; it recurses
+    but skips a child; it references a child without classifying it; and now the branch
+    is not there to be checked at all. Each repair was correct and each instrument was
+    scoped by something a previous author had written down -- here, a list of six names.
+
+    The rule instead: a type the classifier NAMES and which the grammar says has
+    expression children must either be in :data:`_COMPUTING_SHAPES` -- a conclusion
+    about the node itself whatever its children are, for the reason its own docstring
+    gives -- or have a branch that recurses. ``_READING_SHAPES`` needs no exemption:
+    ``Name`` and ``Constant`` carry no expression children, so the rule passes over them
+    without being told to, and an exemption that buys nothing is a line that later has
+    to be defended (D131).
+    """
+    named = _types_named_by_the_classifier()
+    recursing = set(_recursing_branches())
+    conclusions = {node_type.__name__ for node_type in _COMPUTING_SHAPES}
+
+    missing = sorted(
+        type_name for type_name in named
+        if _expression_fields_of(getattr(ast, type_name))
+        and type_name not in recursing
+        and type_name not in conclusions
+    )
+    assert not missing, (
+        "these types are named by the classifier and carry expression children, but "
+        f"neither recurse into them nor are conclusions about the node: {missing}. A "
+        "branch that stops recursing must fail here rather than leaving the population "
+        "it would have been checked by."
+    )
+
+    # Non-vacuity: the named set must exceed the recursing set, or this is the same
+    # self-equality that could not see a lost member.
+    assert len(named) >= 20, f"only {len(named)} types resolved from the classifier"
+    assert named > recursing, (
+        "the named set is not wider than the recursing set, so this witness is reading "
+        "the same population it is supposed to check against"
+    )
+    assert conclusions <= named and "Name" in named and "Constant" in named, (
+        "the module-level shape tuples are not being resolved, so a branch naming a "
+        "type through one of them would be invisible here"
+    )
