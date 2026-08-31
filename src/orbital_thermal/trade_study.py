@@ -24,6 +24,7 @@ data only.
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -48,6 +49,17 @@ class ReasonCode(str, Enum):
     RESIDUAL_NONCONVERGENCE = "residual_nonconvergence"
     OTHER_FEASIBILITY_FAILURE = "other_feasibility_failure"
     MASS_ACCOUNTING_INCOMPLETE = "mass_accounting_incomplete"  # standing note on every mass point
+    # --- S6 (OTB-G006). Added, never substituted: every member above keeps its value, so
+    # the Stage-1 export rows and the sha S6-5 pins are untouched by their presence.
+    #: An applicability axis could not be evaluated -- the case stated nothing on it.
+    #: Distinct from "checked and passed" (S6-2), and derived from ``Cause.NOT_EVALUATED``
+    #: on the violation rather than from ``BLOCK``, which carries both meanings (D119/D120).
+    AXIS_NOT_EVALUATED = "axis_not_evaluated"
+    #: An applicability axis WAS evaluated and the case failed it with consequence
+    #: ``DE_RANK``: reportable as a sensitivity, never ranked (S6-6).
+    APPLICABILITY_DE_RANK = "applicability_de_rank"
+    #: No registry entry declares a validity domain for the fluid (``SourceGatedFluidError``).
+    SOURCE_GATED_FLUID = "source_gated_fluid"
 
 
 # map B5 architecture-case reasons -> B6 reason codes
@@ -209,6 +221,20 @@ class TradeDef:
     y_key: str
     y_maximize: bool
     dominating_assumption: str
+    #: Which points this trade will consider for its non-dominated set (S6, D144).
+    #:
+    #: ``None`` keeps the Stage-1 rule exactly: **only rank-eligible feasible points
+    #: enter a front**. That rule is NOT widened by S6 -- a de-ranked point appears in a
+    #: front's *exported table*, never in ``member_point_ids`` (D144 Q2=2b).
+    #:
+    #: A two-phase trade supplies a narrower filter instead, because a point that lacks
+    #: an objective must not reach a trade that ranks on it. The framework already fails
+    #: closed there -- :func:`_metric` is ``point.metrics[key]``, so a two-phase point
+    #: reaching a mass front raises ``KeyError`` rather than ranking as a silent zero on
+    #: a minimise axis. That KeyError is this filter's witness, and
+    #: ``test_s6_the_candidate_filter_has_a_witness`` weakens the filter deliberately to
+    #: watch it fire (S-3: a witness not seen to fail is not a witness).
+    candidate: Callable[[object], bool] | None = None
 
 
 TRADES: tuple[TradeDef, ...] = (
@@ -262,10 +288,15 @@ class ParetoFront:
 
 
 def pareto_front(points: list[EvaluatedPoint], t: TradeDef) -> ParetoFront:
-    """Non-dominated subset over the **feasible** points for trade ``t``. Records dominance
+    """Non-dominated subset over the **candidate** points for trade ``t``. Records dominance
     flags on each point. Empty / single-member fronts are marked ``degenerate`` (never silently
-    omitted)."""
-    feasible = [p for p in points if p.feasible]
+    omitted).
+
+    The candidate set is ``t.candidate`` and defaults to the Stage-1 rule -- only
+    rank-eligible feasible points enter a front. S6 does not widen that rule; it lets a
+    two-phase trade state a *narrower* one (D144)."""
+    admit = t.candidate if t.candidate is not None else (lambda p: p.feasible)
+    feasible = [p for p in points if admit(p)]
     members: list[EvaluatedPoint] = []
     for p in feasible:
         dominators = [q for q in feasible if q is not p and _dominates(q, p, t)]
